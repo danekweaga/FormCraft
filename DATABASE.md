@@ -9,6 +9,8 @@
 | `supabase/migrations/20260809051937_create_my_content_schema.sql` | My Content intelligence |
 | `supabase/migrations/20260809051941_create_video_analysis_schema.sql` | Video Breakdown Lab |
 | `supabase/migrations/20260809054814_create_creator_growth_schema.sql` | Creator Growth foundations (Roadmap, Experiment Lab expand, Idea Gate, Pre-Publish, Editing plans, Audience Miner) |
+| `supabase/migrations/20260809104334_create_social_connections_schema.sql` | Owned social connections, OAuth credentials (service-role only), sync jobs, metric snapshots, post dedupe |
+| `supabase/migrations/20260809131644_create_growth_g_intelligence_schema.sql` | Audience insights, roadmap suggestions, AI usage, intelligence feedback, lesson/classification extensions |
 
 Apply with Supabase CLI against a linked project or local stack:
 

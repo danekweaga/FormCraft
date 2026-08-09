@@ -10,7 +10,7 @@ export function LessonActions({ lessonId }: { lessonId: string }) {
   const [isPending, startTransition] = useTransition();
 
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       <Button
         size="sm"
         variant="default"
@@ -27,6 +27,19 @@ export function LessonActions({ lessonId }: { lessonId: string }) {
       <Button
         size="sm"
         variant="outline"
+        disabled={isPending}
+        onClick={() =>
+          startTransition(async () => {
+            await updateLessonStatus(lessonId, "keep_testing");
+            router.refresh();
+          })
+        }
+      >
+        Keep testing
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
         disabled={isPending}
         onClick={() =>
           startTransition(async () => {

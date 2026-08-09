@@ -93,7 +93,7 @@ export function evaluateIdeaHeuristic(ideaText: string): IdeaGateHeuristic {
 }
 
 export type PrePublishHeuristicResult = {
-  mode: "heuristic_stub";
+  mode: "heuristic_stub" | "openrouter_ai";
   summary: string;
   checks: Array<{ id: string; pass: boolean; note: string }>;
   confidenceNote: string;

@@ -25,7 +25,7 @@ export default async function AnalyzePage() {
     <div>
       <PageHeader
         title="Video Breakdown Lab"
-        description="Paste a transcript for a structured script breakdown. This phase uses honest heuristics only — no fake AI providers, no visual analysis."
+        description="Paste a transcript for an OpenRouter-powered script breakdown using your selected Content analysis model. Visual claims remain disabled without visual evidence."
       />
 
       <div className="grid gap-6 lg:grid-cols-2">

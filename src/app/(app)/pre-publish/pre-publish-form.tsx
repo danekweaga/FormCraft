@@ -22,8 +22,8 @@ export function PrePublishForm() {
           Review a script
         </h2>
         <p className="mt-1 text-sm text-secondary">
-          Stores a Pre-Publish review with a heuristic stub result. Full LLM
-          stress-testing is deferred.
+          Uses the model assigned to Pre-publish review on the Models page.
+          Baseline checks remain available if OpenRouter cannot respond.
         </p>
       </div>
       <div className="space-y-2">
@@ -40,7 +40,7 @@ export function PrePublishForm() {
         </p>
       ) : null}
       <Button type="submit" disabled={pending}>
-        {pending ? "Reviewing…" : "Run stub review"}
+        {pending ? "Reviewing…" : "Review with AI"}
       </Button>
     </form>
   );

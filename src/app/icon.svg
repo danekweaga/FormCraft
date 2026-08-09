@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" rx="8" fill="#183fe6"/>
+  <!-- Bold geometric F in paper cream -->
+  <path
+    fill="#F4F1EA"
+    d="M8.5 7h15v3.75H12.75v3.5h8.5V18h-8.5v7H8.5V7z"
+  />
+  <!-- Ascending craft bars (landing motif) -->
+  <rect x="22.25" y="20.25" width="2.5" height="4.75" rx="0.45" fill="#F4F1EA" opacity="0.45"/>
+  <rect x="25.75" y="17" width="2.5" height="8" rx="0.45" fill="#F4F1EA" opacity="0.75"/>
+</svg>

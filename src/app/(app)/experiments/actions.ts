@@ -1,12 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { createExperimentSchema } from "@/lib/growth/schemas";
+import { attachPostToExperiment } from "@/lib/social/sync/experiment-metrics";
 import { createClient } from "@/lib/supabase/server";
 
 export type ExperimentActionState = {
   error?: string;
   success?: boolean;
+  message?: string;
 };
 
 export async function createExperiment(
@@ -49,4 +52,48 @@ export async function createExperiment(
 
   revalidatePath("/experiments");
   return { success: true };
+}
+
+export async function attachExperimentPost(
+  _prev: ExperimentActionState,
+  formData: FormData,
+): Promise<ExperimentActionState> {
+  const parsed = z
+    .object({
+      experimentId: z.string().uuid(),
+      postId: z.string().uuid(),
+    })
+    .safeParse({
+      experimentId: formData.get("experimentId"),
+      postId: formData.get("postId"),
+    });
+
+  if (!parsed.success) {
+    return { error: "Choose a valid experiment and post." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+
+  try {
+    await attachPostToExperiment({
+      userId: user.id,
+      experimentId: parsed.data.experimentId,
+      postId: parsed.data.postId,
+    });
+    revalidatePath("/experiments");
+    revalidatePath("/my-content");
+    return {
+      success: true,
+      message:
+        "Post attached. Experiment metrics will refresh from connected syncs.",
+    };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Attach failed.",
+    };
+  }
 }

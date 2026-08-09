@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import {
@@ -19,11 +20,42 @@ import {
   type ContentBaselines,
 } from "@/lib/my-content/baseline";
 import type { ContentPostRow } from "@/lib/my-content/schemas";
+import {
+  connectionFollowerCount,
+  connectionFreshness,
+  formatFollowerCount,
+  formatRelativeTime,
+  sourceLabelForSynced,
+} from "@/lib/social/freshness";
+import {
+  getOwnedProvider,
+  isOwnedPlatform,
+} from "@/lib/social/providers";
+import type { OwnedPlatform, SocialConnectionRow } from "@/lib/social/types";
 import { createClient } from "@/lib/supabase/server";
+import {
+  RefreshAllConnectedButton,
+  SyncNowButton,
+} from "../connections/connection-actions";
+import { RunIntelligenceButton } from "./intelligence-actions";
 import { LessonActions } from "./lesson-actions";
 import { ManualPostDialog } from "./my-content-actions";
 
-type SearchParams = Promise<{ q?: string }>;
+type SearchParams = Promise<{
+  q?: string;
+  filter?: string;
+  source?: string;
+  platform?: string;
+}>;
+
+const FILTERS = [
+  { id: "all", label: "All" },
+  { id: "instagram", label: "Instagram" },
+  { id: "tiktok", label: "TikTok" },
+  { id: "youtube", label: "YouTube" },
+  { id: "manual", label: "Manual" },
+  { id: "uploaded", label: "Uploaded" },
+] as const;
 
 function formatDate(value: string | null) {
   if (!value) return "Date unknown";
@@ -60,7 +92,14 @@ function PostCard({
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         <Badge variant="default">{post.platform.replace(/_/g, " ")}</Badge>
-        <Badge variant="primary">{post.source_label}</Badge>
+        <Badge variant="primary">
+          {post.source === "connected_account"
+            ? sourceLabelForSynced(
+                post.platform,
+                post.metrics_refreshed_at ?? null,
+              )
+            : post.source_label}
+        </Badge>
       </div>
       <p className="mt-3 line-clamp-2 text-sm text-secondary">{post.caption}</p>
       <div className="mt-4 flex flex-wrap gap-3 text-xs text-secondary">
@@ -80,7 +119,12 @@ export default async function MyContentPage({
 }: {
   searchParams: SearchParams;
 }) {
-  const { q } = await searchParams;
+  const { q, filter, source, platform } = await searchParams;
+  const activeFilter = filter ?? (source === "connected_account" && platform
+    ? platform
+    : source === "manual_entry"
+      ? "manual"
+      : "all");
   const supabase = await createClient();
   const {
     data: { user },
@@ -92,14 +136,48 @@ export default async function MyContentPage({
     .from("performance_lessons")
     .select("id, lesson, evidence, confidence, sample_size, status, created_at")
     .eq("user_id", user.id)
-    .in("status", ["suggested", "confirmed"])
+    .in("status", ["suggested", "testing", "confirmed", "supported"])
     .order("created_at", { ascending: false })
     .limit(10);
+
+  const { data: ownedConnections } = await supabase
+    .from("social_connections")
+    .select(
+      "id, platform, status, last_successful_sync_at, last_error, sync_frequency_hours, metadata, username, display_name",
+    )
+    .eq("user_id", user.id)
+    .eq("account_type", "owned")
+    .neq("status", "disconnected")
+    .order("created_at", { ascending: false });
+
+  const connectedAccounts = (
+    (ownedConnections ?? []) as Array<
+      Pick<
+        SocialConnectionRow,
+        | "id"
+        | "platform"
+        | "status"
+        | "last_successful_sync_at"
+        | "last_error"
+        | "sync_frequency_hours"
+        | "metadata"
+        | "username"
+        | "display_name"
+      >
+    >
+  )
+    .filter((connection): connection is typeof connection & {
+      platform: OwnedPlatform;
+    } => isOwnedPlatform(connection.platform));
+
+  const refreshableCount = connectedAccounts.filter((connection) =>
+    getOwnedProvider(connection.platform).isConfigured(),
+  ).length;
 
   let postsQuery = supabase
     .from("content_posts")
     .select(
-      "id, platform, source, source_label, title, caption, published_at, views, likes, comments, shares, saves, followers_gained, is_winner, needs_review, relative_performance, created_at",
+      "id, platform, source, source_label, title, caption, published_at, views, likes, comments, shares, saves, followers_gained, is_winner, needs_review, relative_performance, created_at, metrics_refreshed_at, social_connection_id",
     )
     .eq("user_id", user.id)
     .order("published_at", { ascending: false, nullsFirst: false });
@@ -108,6 +186,27 @@ export default async function MyContentPage({
     postsQuery = postsQuery.or(
       `title.ilike.%${q.trim()}%,caption.ilike.%${q.trim()}%`,
     );
+  }
+
+  if (activeFilter === "instagram") {
+    postsQuery = postsQuery.eq("platform", "instagram");
+  } else if (activeFilter === "tiktok") {
+    postsQuery = postsQuery.eq("platform", "tiktok");
+  } else if (activeFilter === "youtube") {
+    postsQuery = postsQuery.in("platform", ["youtube", "youtube_shorts"]);
+  } else if (activeFilter === "manual") {
+    postsQuery = postsQuery.in("source", ["manual_entry", "post_url", "csv_import"]);
+  } else if (activeFilter === "uploaded") {
+    postsQuery = postsQuery.in("source", ["video_upload", "transcript_upload"]);
+  } else if (source === "connected_account") {
+    postsQuery = postsQuery.eq("source", "connected_account");
+    if (platform) {
+      if (platform === "youtube") {
+        postsQuery = postsQuery.in("platform", ["youtube", "youtube_shorts"]);
+      } else {
+        postsQuery = postsQuery.eq("platform", platform);
+      }
+    }
   }
 
   const { data: posts } = await postsQuery;
@@ -121,8 +220,16 @@ export default async function MyContentPage({
     <div>
       <PageHeader
         title="My Content"
-        description="Your published content library and what FormCraft learns from it. Connected social accounts are deferred — add posts manually for now."
-        actions={<ManualPostDialog />}
+        description="Your published content library — synced from connected accounts and manual entry. Both coexist."
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <RunIntelligenceButton />
+            <Button asChild variant="outline">
+              <Link href="/connections">Connections</Link>
+            </Button>
+            <ManualPostDialog />
+          </div>
+        }
       />
 
       <div className="mb-8 rounded-lg border border-outline-variant/15 bg-surface-container-lowest/60 p-4 text-sm text-secondary">
@@ -130,8 +237,108 @@ export default async function MyContentPage({
           name="info"
           className="mr-1 inline text-base text-primary-container"
         />
-        Source labels show where each post came from. Metrics left blank stay
-        unavailable — FormCraft never fabricates platform data.
+        Each item shows its data source (e.g. Instagram · Synced 18 minutes ago
+        or Manual). Missing metrics stay unavailable — never invented.
+      </div>
+
+      {connectedAccounts.length > 0 ? (
+        <Card className="mb-8 border-outline-variant/20 bg-surface-primary paper-shadow">
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle>Refresh connected posts & followers</CardTitle>
+              <CardDescription>
+                Pull the latest posts and follower counts from accounts you have
+                authorized. Only platforms that are connected and configured can
+                refresh.
+              </CardDescription>
+            </div>
+            <RefreshAllConnectedButton disabled={refreshableCount === 0} />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {connectedAccounts.map((connection) => {
+              const configured = getOwnedProvider(
+                connection.platform,
+              ).isConfigured();
+              const freshness = connectionFreshness({
+                status: connection.status,
+                lastSuccessfulSyncAt: connection.last_successful_sync_at,
+                lastError: connection.last_error,
+                staleAfterHours: connection.sync_frequency_hours * 2,
+              });
+              const followers = connectionFollowerCount(connection.metadata);
+              const label =
+                connection.display_name ??
+                connection.username ??
+                connection.platform;
+
+              return (
+                <div
+                  key={connection.id}
+                  className="flex flex-col gap-3 rounded-lg border border-outline-variant/15 bg-surface-container-lowest/70 p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="text-sm">
+                    <p className="font-medium capitalize text-on-background">
+                      {connection.platform.replace(/_/g, " ")} · {label}
+                    </p>
+                    <p className="mt-1 text-xs text-secondary">
+                      Last sync:{" "}
+                      {formatRelativeTime(connection.last_successful_sync_at) ??
+                        "Never"}{" "}
+                      · {freshness.label} · Followers:{" "}
+                      {formatFollowerCount(followers)}
+                    </p>
+                    {connection.last_error ? (
+                      <p className="mt-1 text-xs text-destructive">
+                        {connection.last_error}
+                      </p>
+                    ) : null}
+                    {!configured ? (
+                      <p className="mt-1 text-xs text-destructive">
+                        {getOwnedProvider(connection.platform).unconfiguredReason() ??
+                          "Platform not configured — refresh disabled."}
+                      </p>
+                    ) : null}
+                  </div>
+                  <SyncNowButton
+                    connectionId={connection.id}
+                    disabled={
+                      !configured || connection.status === "syncing"
+                    }
+                  />
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="mb-8 rounded-lg border border-outline-variant/15 bg-surface-container-lowest/60 p-4 text-sm text-secondary">
+          No connected accounts yet.{" "}
+          <Link href="/connections" className="text-primary underline">
+            Connect a platform
+          </Link>{" "}
+          to refresh posts and followers automatically.
+        </div>
+      )}
+
+      <div className="mb-6 flex flex-wrap gap-2">
+        {FILTERS.map((item) => {
+          const href =
+            item.id === "all" ? "/my-content" : `/my-content?filter=${item.id}`;
+          const active = activeFilter === item.id;
+          return (
+            <Link
+              key={item.id}
+              href={href}
+              className={
+                active
+                  ? "rounded-lg bg-primary-container px-3 py-1.5 text-xs font-semibold text-on-primary-container"
+                  : "rounded-lg border border-outline-variant/30 px-3 py-1.5 text-xs font-semibold text-secondary hover:bg-surface-container-low"
+              }
+            >
+              {item.label}
+            </Link>
+          );
+        })}
       </div>
 
       <Card className="mb-8 border-outline-variant/20 bg-surface-primary paper-shadow">

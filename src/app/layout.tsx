@@ -26,6 +26,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${hanken.variable} ${libre.variable} h-full antialiased`}
     >
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&display=block"
+        />
+      </head>
       <body className="min-h-full bg-surface font-sans text-on-surface">
         {children}
         <Toaster richColors position="top-right" />

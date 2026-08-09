@@ -24,7 +24,7 @@ export default async function AudiencePage() {
     <div>
       <PageHeader
         title="Audience"
-        description="Audience Miner foundation: capture real comments in your own words bank. Clustering and language extraction come later — no fake social APIs."
+        description="Audience Miner: paste comments manually, or import them when a connected provider exposes authorized comments. Unsupported endpoints are never faked."
       />
 
       <div className="grid gap-6 lg:grid-cols-2">

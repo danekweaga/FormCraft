@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <!-- FormCraft app icon for TikTok / Meta / Google developer portals -->
+  <rect width="1024" height="1024" rx="224" fill="#183fe6"/>
+  <!-- Bold geometric F -->
+  <path
+    fill="#F4F1EA"
+    d="M272 224h480v120H408v112h272v120H408v224H272V224z"
+  />
+  <!-- Ascending craft bars -->
+  <rect x="712" y="648" width="80" height="152" rx="14" fill="#F4F1EA" opacity="0.45"/>
+  <rect x="824" y="544" width="80" height="256" rx="14" fill="#F4F1EA" opacity="0.75"/>
+</svg>

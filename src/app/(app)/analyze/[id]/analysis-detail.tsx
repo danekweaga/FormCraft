@@ -15,7 +15,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { AnalysisResult } from "@/lib/analyze/schema";
-import { reanalyzeTranscript } from "../actions";
+import {
+  createExperimentFromInsight,
+  reanalyzeTranscript,
+} from "../actions";
 
 type AnalysisDetail = {
   id: string;
@@ -24,6 +27,7 @@ type AnalysisDetail = {
   subject_type: string;
   status: string;
   has_visual_evidence: boolean;
+  model_name: string | null;
   created_at: string;
   result: AnalysisResult | null;
 };
@@ -68,22 +72,37 @@ export function AnalysisDetailClient({ analysis }: { analysis: AnalysisDetail })
         title={analysis.title || "Transcript analysis"}
         description={result.overview}
         actions={
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={isPending}
-            onClick={() =>
-              startTransition(async () => {
-                const response = await reanalyzeTranscript(analysis.id);
-                if (response.analysisId) {
-                  router.push(`/analyze/${response.analysisId}`);
-                }
-              })
-            }
-          >
-            <MaterialIcon name="refresh" className="text-base" />
-            Reanalyze
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isPending}
+              onClick={() =>
+                startTransition(async () => {
+                  await createExperimentFromInsight(analysis.id);
+                })
+              }
+            >
+              <MaterialIcon name="science" className="text-base" />
+              Create experiment from insight
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isPending}
+              onClick={() =>
+                startTransition(async () => {
+                  const response = await reanalyzeTranscript(analysis.id);
+                  if (response.analysisId) {
+                    router.push(`/analyze/${response.analysisId}`);
+                  }
+                })
+              }
+            >
+              <MaterialIcon name="refresh" className="text-base" />
+              Reanalyze
+            </Button>
+          </div>
         }
       />
 
@@ -106,6 +125,9 @@ export function AnalysisDetailClient({ analysis }: { analysis: AnalysisDetail })
         <Badge variant={analysis.status === "ready" ? "success" : "warning"}>
           {analysis.status}
         </Badge>
+        {analysis.model_name ? (
+          <Badge variant="primary">{analysis.model_name}</Badge>
+        ) : null}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

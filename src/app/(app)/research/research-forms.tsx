@@ -1,0 +1,126 @@
+"use client";
+
+import { useActionState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  runResearchScanAction,
+  saveResearchReferenceAction,
+  type ResearchActionState,
+} from "./actions";
+
+const initialState: ResearchActionState = {};
+
+function ResultMessage({ state }: { state: ResearchActionState }) {
+  if (state.error) return <p className="text-sm text-error">{state.error}</p>;
+  if (state.success) {
+    return <p className="text-sm text-primary-container">{state.success}</p>;
+  }
+  return null;
+}
+
+export function ResearchScanForm({ configured }: { configured: boolean }) {
+  const [state, action, pending] = useActionState(
+    runResearchScanAction,
+    initialState,
+  );
+
+  return (
+    <form action={action} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="research-query">Niche or topic</Label>
+        <Input
+          id="research-query"
+          name="query"
+          placeholder="e.g. beginner web development career"
+          required
+          minLength={2}
+          maxLength={160}
+        />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="space-y-2">
+          <Label htmlFor="lookback-days">Published within</Label>
+          <select
+            id="lookback-days"
+            name="lookbackDays"
+            defaultValue="30"
+            className="h-10 w-full rounded-md border border-outline-variant/30 bg-surface-container-lowest px-3 text-sm"
+          >
+            <option value="7">7 days</option>
+            <option value="30">30 days</option>
+            <option value="90">90 days</option>
+            <option value="365">1 year</option>
+          </select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="min-views">Minimum views</Label>
+          <Input id="min-views" name="minViews" type="number" min="0" defaultValue="1000" />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="outlier-score">Minimum outlier</Label>
+          <Input
+            id="outlier-score"
+            name="minOutlierScore"
+            type="number"
+            min="0"
+            step="0.1"
+            defaultValue="1.5"
+          />
+        </div>
+      </div>
+      <Button type="submit" disabled={pending || !configured}>
+        {pending ? "Scanning…" : "Run niche discovery scan"}
+      </Button>
+      {!configured ? (
+        <p className="text-sm text-secondary">
+          Add YOUTUBE_DATA_API_KEY, or set RESEARCH_ENABLE_DEMO=1 for fixture
+          results (labelled demo, not live platform data).
+        </p>
+      ) : null}
+      <ResultMessage state={state} />
+    </form>
+  );
+}
+
+export function SaveResearchReferenceForm() {
+  const [state, action, pending] = useActionState(
+    saveResearchReferenceAction,
+    initialState,
+  );
+
+  return (
+    <form action={action} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="reference-url">Video URL</Label>
+        <Input
+          id="reference-url"
+          name="url"
+          type="url"
+          placeholder="https://…"
+          required
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="reference-title">Title or spoken hook</Label>
+        <Input id="reference-title" name="title" maxLength={300} />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="reference-notes">Caption, transcript, or notes</Label>
+        <textarea
+          id="reference-notes"
+          name="notes"
+          rows={4}
+          maxLength={5000}
+          className="w-full rounded-md border border-outline-variant/30 bg-surface-container-lowest px-3 py-2 text-sm"
+        />
+      </div>
+      <Button type="submit" variant="outline" disabled={pending}>
+        {pending ? "Saving…" : "Analyze and save reference"}
+      </Button>
+      <ResultMessage state={state} />
+    </form>
+  );
+}
+

@@ -30,7 +30,7 @@ export default async function PrePublishPage() {
     <div>
       <PageHeader
         title="Pre-Publish"
-        description="Stress-test a script before it ships. This foundation stores reviews with heuristic stubs — Teach FormCraft–aware LLM reviews are deferred."
+        description="Stress-test a script before it ships. OpenRouter uses your selected Pre-publish model and falls back to transparent baseline checks when AI is unavailable."
       />
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -39,7 +39,7 @@ export default async function PrePublishPage() {
         {(reviews?.length ?? 0) === 0 ? (
           <EmptyState
             title="No reviews yet"
-            description="Paste a draft script to persist a Pre-Publish review row. Results will clearly note when AI is deferred."
+            description="Paste a draft script for an AI-assisted review grounded in the text you provide."
           />
         ) : (
           <ul className="space-y-3">

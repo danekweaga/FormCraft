@@ -36,4 +36,15 @@ describe("decideAuthRedirect", () => {
     expect(decideAuthRedirect("/roadmap", true)).toEqual({ type: "none" });
     expect(decideAuthRedirect("/idea-gate", true)).toEqual({ type: "none" });
   });
+
+  it("allows anonymous visitors on the public home page", () => {
+    expect(decideAuthRedirect("/", false)).toEqual({ type: "none" });
+  });
+
+  it("sends authenticated users from home to Today", () => {
+    expect(decideAuthRedirect("/", true)).toEqual({
+      type: "redirect",
+      to: "/today",
+    });
+  });
 });

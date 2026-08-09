@@ -1,0 +1,185 @@
+import { describe, expect, it } from "vitest";
+import { classifyCheapRelevance } from "./cheap-relevance";
+import {
+  baselineConfidence,
+  calculateVelocityLabel,
+  outlierLabel,
+  scoreResearchOutliers,
+} from "./outliers";
+import { providerBudgetAllows } from "./provider-budget";
+import { scorePersonalRelevance } from "./relevance";
+import { normalizeSearchFilters } from "./search-filters";
+import type { ResearchVideoCandidate } from "./types";
+
+function video(id: string, creatorId: string, views: number): ResearchVideoCandidate {
+  return {
+    platform: "youtube",
+    externalId: id,
+    externalUrl: `https://youtube.test/${id}`,
+    creatorId,
+    creatorName: creatorId,
+    title: id,
+    description: null,
+    thumbnailUrl: null,
+    publishedAt: new Date().toISOString(),
+    durationSeconds: null,
+    views,
+    likes: null,
+    comments: null,
+    shares: null,
+  };
+}
+
+describe("scoreResearchOutliers", () => {
+  it("uses a creator median when at least three creator videos are present", () => {
+    const scored = scoreResearchOutliers([
+      video("a", "creator", 100),
+      video("b", "creator", 200),
+      video("c", "creator", 900),
+      video("d", "other", 50),
+    ]);
+    const outlier = scored.find((item) => item.externalId === "c");
+    expect(outlier?.scoreBasis).toBe("creator_median");
+    expect(outlier?.baselineViews).toBe(200);
+    expect(outlier?.outlierScore).toBe(4.5);
+    expect(outlier?.outlierLabel).toBe("strong_outlier");
+    expect(outlier?.baselineConfidence).toBe("low");
+  });
+
+  it("falls back to the disclosed niche cohort median", () => {
+    const scored = scoreResearchOutliers([
+      video("a", "one", 100),
+      video("b", "two", 200),
+      video("c", "three", 900),
+    ]);
+    const outlier = scored.find((item) => item.externalId === "c");
+    expect(outlier?.scoreBasis).toBe("niche_cohort_median");
+    expect(outlier?.outlierScore).toBe(4.5);
+  });
+});
+
+describe("baseline confidence and labels", () => {
+  it("maps sample sizes", () => {
+    expect(baselineConfidence(3)).toBe("low");
+    expect(baselineConfidence(8)).toBe("medium");
+    expect(baselineConfidence(20)).toBe("high");
+  });
+
+  it("labels multipliers", () => {
+    expect(outlierLabel(0.5)).toBe("below_baseline");
+    expect(outlierLabel(1.2)).toBe("typical");
+    expect(outlierLabel(2)).toBe("emerging");
+    expect(outlierLabel(3)).toBe("strong_outlier");
+    expect(outlierLabel(6)).toBe("exceptional");
+  });
+});
+
+describe("velocity", () => {
+  it("detects accelerating growth", () => {
+    expect(
+      calculateVelocityLabel([
+        { views: 1000, capturedAt: "2026-08-01T00:00:00.000Z" },
+        { views: 2000, capturedAt: "2026-08-02T00:00:00.000Z" },
+      ]),
+    ).toBe("accelerating");
+  });
+});
+
+describe("personal relevance", () => {
+  it("boosts topic overlap and outlier strength", () => {
+    const result = scorePersonalRelevance(
+      {
+        ...video("x", "c1", 900),
+        outlierScore: 4.7,
+        scoreBasis: "creator_median",
+        baselineViews: 200,
+        title: "AI is making CS students worse at interviews",
+        topic: "AI for CS students",
+      },
+      {
+        topics: ["AI for CS students"],
+        lessons: ["Contrarian hooks work"],
+        audienceSignals: ["AI dependency questions"],
+        roadmapGoal: "Find a repeatable AI format",
+        activeExperimentHypothesis: null,
+        dismissedCreators: [],
+      },
+    );
+    expect(result.score).toBeGreaterThan(40);
+    expect(result.personalFit === "strong" || result.personalFit === "medium").toBe(
+      true,
+    );
+  });
+});
+
+describe("provider budget", () => {
+  it("blocks when daily budget exceeded", () => {
+    const result = providerBudgetAllows({
+      callsToday: 50,
+      callsMonth: 10,
+      budgets: {
+        dailyCalls: 50,
+        monthlyCalls: 500,
+        maxResultsPerQuery: 25,
+        maxTrackedCreators: 50,
+        autoDeepAnalysis: false,
+      },
+    });
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("dedupe key", () => {
+  it("treats same platform+id as duplicate", () => {
+    const key = (p: string, id: string) => `${p}:${id}`;
+    const seen = new Set<string>();
+    const posts = [
+      { platform: "youtube", externalId: "a" },
+      { platform: "youtube", externalId: "a" },
+      { platform: "youtube", externalId: "b" },
+    ];
+    const unique = posts.filter((post) => {
+      const k = key(post.platform, post.externalId);
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    expect(unique).toHaveLength(2);
+  });
+});
+
+describe("normalizeSearchFilters", () => {
+  it("clamps and drops unsupported platforms", () => {
+    const normalized = normalizeSearchFilters({
+      query: "  AI for CS students  ",
+      platforms: ["youtube", "instagram", "myspace"],
+      lookbackDays: 999,
+      minViews: -5,
+      minOutlierScore: 2,
+      maxResults: 100,
+      allowedPlatforms: ["youtube"],
+    });
+    expect(normalized.query).toBe("AI for CS students");
+    expect(normalized.platforms).toEqual(["youtube"]);
+    expect(normalized.lookbackDays).toBe(90);
+    expect(normalized.minViews).toBe(0);
+    expect(normalized.maxResults).toBe(50);
+    expect(normalized.minOutlierScore).toBe(2);
+  });
+});
+
+describe("cheap relevance", () => {
+  it("flags lexical overlap", () => {
+    const result = classifyCheapRelevance(
+      {
+        ...video("x", "c", 1000),
+        title: "AI for CS students interview tips",
+        outlierScore: 2,
+        scoreBasis: "creator_median",
+        baselineViews: 500,
+      },
+      "AI for CS students",
+    );
+    expect(result.relevant).toBe(true);
+  });
+});

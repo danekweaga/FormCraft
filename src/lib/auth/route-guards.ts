@@ -23,6 +23,7 @@ export const PROTECTED_PREFIXES = [
   "/experiments",
   "/audience",
   "/pre-publish",
+  "/dev",
 ] as const;
 
 export function isAuthRoute(pathname: string): boolean {
@@ -55,8 +56,6 @@ export function decideAuthRedirect(
   if (isAuthenticated && pathname === "/") {
     return { type: "redirect", to: "/today" };
   }
-  if (!isAuthenticated && pathname === "/") {
-    return { type: "redirect", to: "/sign-in" };
-  }
+  // Public marketing home at `/` for anonymous visitors
   return { type: "none" };
 }

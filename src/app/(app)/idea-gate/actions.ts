@@ -1,7 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { evaluateIdeaHeuristic } from "@/lib/growth/heuristics";
+import { buildFormCraftContext } from "@/lib/ai/context/formcraft-context";
+import {
+  evaluateIdeaWithContext,
+  toDbRecommendation,
+} from "@/lib/growth/idea-gate-intelligence";
 import { ideaGateSchema } from "@/lib/growth/schemas";
 import { createClient } from "@/lib/supabase/server";
 
@@ -30,22 +34,56 @@ export async function evaluateIdea(
 
   if (!user) return { error: "You must be signed in." };
 
-  const heuristic = evaluateIdeaHeuristic(parsed.data.ideaText);
+  const context = await buildFormCraftContext(supabase, {
+    userId: user.id,
+    taskType: "idea_evaluation",
+    query: parsed.data.ideaText,
+  });
+
+  const [{ data: priorPosts }, { data: priorIdeas }] = await Promise.all([
+    supabase
+      .from("content_posts")
+      .select("title, caption")
+      .eq("user_id", user.id)
+      .limit(40),
+    supabase
+      .from("idea_gate_evaluations")
+      .select("idea_text")
+      .eq("user_id", user.id)
+      .limit(40),
+  ]);
+
+  const priorTexts = [
+    ...(priorPosts ?? []).map((p) => `${p.title ?? ""} ${p.caption ?? ""}`),
+    ...(priorIdeas ?? []).map((i) => i.idea_text),
+  ];
+
+  const decision = await evaluateIdeaWithContext({
+    idea: parsed.data.ideaText,
+    context,
+    priorTexts,
+    supabase,
+    userId: user.id,
+  });
 
   const { data, error } = await supabase
     .from("idea_gate_evaluations")
     .insert({
       user_id: user.id,
       idea_text: parsed.data.ideaText,
-      recommendation: heuristic.recommendation,
-      why: `${heuristic.why}\n\n${heuristic.confidenceNote}`,
-      evidence: heuristic.evidence,
-      risks: heuristic.risks,
-      missing_ingredient: heuristic.missingIngredient,
-      better_angle: heuristic.betterAngle,
-      best_format: heuristic.bestFormat,
+      recommendation: toDbRecommendation(decision.recommendation),
+      why: `${decision.summary}\n\nDecision: ${decision.recommendation}`,
+      evidence: decision.evidence.map((label) => ({ label })),
+      risks: decision.weaknesses.map((label) => ({ label })),
+      missing_ingredient: decision.requiredPersonalContext[0] ?? null,
+      better_angle: decision.suggestedAngle,
+      best_format: decision.suggestedFormat,
       status: "evaluated",
-      related_ids: { llm: "deferred" },
+      related_ids: {
+        decision,
+        sourcesUsed: decision.sourcesUsed,
+        contextDebug: context.debug,
+      },
     })
     .select("id")
     .single();

@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { resolveTaskModel } from "@/lib/ai/models/preferences";
 import { reviewScriptHeuristic } from "@/lib/growth/heuristics";
+import { reviewScriptWithAi } from "@/lib/growth/pre-publish-ai";
 import { prePublishSchema } from "@/lib/growth/schemas";
 import { createClient } from "@/lib/supabase/server";
 
@@ -31,7 +33,20 @@ export async function createPrePublishReview(
 
   if (!user) return { error: "You must be signed in." };
 
-  const result = reviewScriptHeuristic(parsed.data.inputText);
+  const heuristic = reviewScriptHeuristic(parsed.data.inputText);
+  const selection = await resolveTaskModel(supabase, {
+    userId: user.id,
+    taskType: "pre_publish_review",
+  });
+  const aiReview = await reviewScriptWithAi({
+    supabase,
+    userId: user.id,
+    inputText: parsed.data.inputText,
+    heuristic,
+    modelTier: selection.modelTier,
+    modelName: selection.modelName,
+  });
+  const result = aiReview?.result ?? heuristic;
 
   const { data, error } = await supabase
     .from("pre_publish_reviews")

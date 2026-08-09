@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&display=swap");
 
 :root {
   --background: #f8f9ff;
@@ -84,6 +83,7 @@ body {
   font-family: "Material Symbols Outlined", sans-serif;
   font-weight: normal;
   font-style: normal;
+  font-size: 24px;
   line-height: 1;
   letter-spacing: normal;
   text-transform: none;
@@ -91,6 +91,10 @@ body {
   white-space: nowrap;
   word-wrap: normal;
   direction: ltr;
+  /* Ligatures turn icon names (e.g. "movie") into glyphs */
+  font-feature-settings: "liga";
+  -webkit-font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
   font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
 }
 
@@ -117,4 +121,34 @@ body {
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: #c4c5d9;
   border-radius: 10px;
+}
+
+@keyframes fc-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fc-fade-slide {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-fc-rise {
+  animation: fc-rise 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-fc-fade-slide {
+  animation: fc-fade-slide 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }

@@ -56,12 +56,15 @@ Every step should eventually feed the context builder with provenance. This iter
 |------|--------|
 | Auth, shell, Today, Settings/Profile | Done |
 | Teach FormCraft (`/knowledge`) | Done (FTS; embeddings deferred) |
-| My Content manual posts + lessons tables | Done (social ingest deferred) |
+| My Content manual posts + lessons tables | Done (manual + connected sync coexist) |
 | Analyze transcript heuristics | Done (LLM/visual deferred) |
 | Creator growth schema (roadmaps, experiments expand, idea gate, pre-publish, audience, editing_plans) | Done (migration) |
 | Roadmap / Experiments / Audience / Pre-Publish / Idea Gate minimal CRUD UI | Scaffolded (manual + heuristic only) |
+| **Growth Phase F.5 — Social Connections & Content Sync** | Done |
+| **Growth Phase G — Unified Intelligence Layer** | Partial → core done (G1/G1.5 OpenRouter client, context builder, My Content classify, lessons, experiments, Idea Gate, Analyze personal context, Today backlog guard, weekly review). Heuristic fallbacks remain when AI unavailable. |
+| **Growth Phase H — Niche Intelligence + Outlier Idea Finder** | Partial → core done (Research modes, YouTube/demo discovery providers, watchlists/creators schema, outlier labels/confidence, For You ranking, on-demand analyze, ideas→Idea Gate, niche brief, multi-outlier synthesis). IG/TikTok niche search not available via official APIs (manual only). Canvas remains stub. |
 | Editing Copilot product UI | Deferred (table ready) |
-| LLM evaluations, social APIs, Canvas, Outliers, multiplayer | Deferred — do not fake |
+| Canvas / Outliers / multiplayer / new platforms | Deferred |
 
 ## Phases
 
@@ -115,7 +118,8 @@ These phases sequence the expansion. Only A–D foundations (schema + light UI) 
 | **D** | Pre-Publish Lab reviews | Schema + paste → stub review row |
 | **E** | Editing Copilot (`editing_plans`) | Schema only; UI deferred |
 | **F** | Audience Miner (comments, clusters, language) | Schema + manual comment paste/list |
-| **G** | Wire growth systems into Knowledge / My Content / Analyze / context builder | Planned |
+| **F.5** | Social Connections & Content Sync (owned accounts) | Schema + `/connections` + IG/YT/TT adapters + My Content sync |
+| **G** | Unified intelligence layer (context builder + wiring) | Done — heuristics always; OpenRouter when configured |
 | **H** | `@` references into context slots | Planned (no fake resolution) |
 | **I** | Multi-model workspace (Connections/Models) | Planned; no provider calls |
 | **J** | Automate learning loop (lesson → roadmap/experiment suggestions) | Planned; AI-suggested milestones stored as `ai_suggested` only when real |
