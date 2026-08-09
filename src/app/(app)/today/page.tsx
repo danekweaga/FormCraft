@@ -81,10 +81,22 @@ export default function TodayPage() {
         <EmptyState
           className="lg:col-span-2"
           title="Active Work"
-          description="Nothing in progress yet. Teach FormCraft your voice and add content to My Content — then your active pipeline will show up here."
+          description="Nothing in progress yet. Next priorities in the Creator Growth loop: set a Roadmap goal, then log an Experiment hypothesis — still no fake pipeline data."
           action={
             <div className="flex flex-wrap gap-3">
               <Button asChild variant="default">
+                <Link href="/roadmap">
+                  <MaterialIcon name="flag" className="text-base" />
+                  Roadmap
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/experiments">
+                  <MaterialIcon name="science" className="text-base" />
+                  Experiments
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
                 <Link href="/knowledge">
                   <MaterialIcon name="school" className="text-base" />
                   Teach FormCraft

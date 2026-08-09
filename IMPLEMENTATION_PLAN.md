@@ -2,12 +2,22 @@
 
 ## Current iteration scope
 
-This repository implements **Phase 0**, **Phase 1**, and **Phase 1B**, plus foundation scaffolding for:
+This repository implements **Phase 0**, **Phase 1**, and **Phase 1B**, plus foundations for:
 
 - **My Content** (`/my-content`) — personal content intelligence
 - **Video Breakdown Lab** (`/analyze`) — transcript-first analysis lab
+- **Creator Growth & Intelligence** — schema + minimal route scaffolding for Roadmap, Experiments, Audience, Pre-Publish, and Idea Gate (no fake social/LLM integrations)
 
-Deferred product areas (shell placeholders only): Research feed, Canvas, Create studio, Plan, Performance editorial, Library vault, Brand Brain training, Connections, Models, Usage, Templates, social monitoring APIs, embedding generation, LLM providers.
+Deferred product areas (shell placeholders or docs-only): Research feed, Canvas, Create studio, Plan, Performance editorial, Library vault, Brand Brain training, Connections, Models, Usage, Templates, Editing Copilot UI, social monitoring APIs, embedding generation, LLM providers, multi-model workspace, @ references UI, Outliers, multiplayer.
+
+## Personal-use scope (expansion §130)
+
+FormCraft is built **personal-user first**:
+
+- One owner per row (`user_id` + RLS)
+- No teams, agencies, shared workspaces, or multiplayer collaboration in this horizon
+- Growth systems optimize a single creator’s operating loop, not org reporting
+- Future multiplayer/agency features must not reshape the personal schema without an explicit migration plan
 
 ## Stack
 
@@ -17,6 +27,41 @@ Deferred product areas (shell placeholders only): Research feed, Canvas, Create 
 - Supabase PostgreSQL, Auth, Storage, pgvector-ready schema
 - Zod validation
 - Vitest
+
+## Unified operating loop
+
+Creator Growth turns FormCraft into a closed learning system:
+
+```
+Teach (Knowledge)
+  → Aim (Roadmap milestones)
+  → Gate ideas (Idea Gate)
+  → Draft (Create — future)
+  → Stress-test (Pre-Publish Lab)
+  → Edit plan (Editing Copilot — future)
+  → Publish (external / My Content ingest)
+  → Break down (Analyze)
+  → Measure & learn (My Content lessons)
+  → Run controlled tests (Experiment Lab)
+  → Mine audience language (Audience Miner)
+  → Update Roadmap + Knowledge
+  → repeat
+```
+
+Every step should eventually feed the context builder with provenance. This iteration only persists manual/heuristic foundations for the new surfaces.
+
+## What’s done vs next
+
+| Area | Status |
+|------|--------|
+| Auth, shell, Today, Settings/Profile | Done |
+| Teach FormCraft (`/knowledge`) | Done (FTS; embeddings deferred) |
+| My Content manual posts + lessons tables | Done (social ingest deferred) |
+| Analyze transcript heuristics | Done (LLM/visual deferred) |
+| Creator growth schema (roadmaps, experiments expand, idea gate, pre-publish, audience, editing_plans) | Done (migration) |
+| Roadmap / Experiments / Audience / Pre-Publish / Idea Gate minimal CRUD UI | Scaffolded (manual + heuristic only) |
+| Editing Copilot product UI | Deferred (table ready) |
+| LLM evaluations, social APIs, Canvas, Outliers, multiplayer | Deferred — do not fake |
 
 ## Phases
 
@@ -58,20 +103,54 @@ Deferred product areas (shell placeholders only): Research feed, Canvas, Create 
 - Honest confidence notes when visual evidence is absent
 - URL fetch, transcription, frame sampling, LLM critique **deferred**
 
+### Creator Growth expansion — phases A–K (§131)
+
+These phases sequence the expansion. Only A–D foundations (schema + light UI) are started; later phases remain planned.
+
+| Phase | Focus | This iteration |
+|-------|--------|----------------|
+| **A** | Roadmap & goals (`creator_roadmaps`, milestones, updates) | Schema + minimal create/list UI |
+| **B** | Experiment Lab (expand `content_experiments`) | Additive columns + hypothesis create/list |
+| **C** | Idea Gate evaluations | Schema + heuristic paste evaluate |
+| **D** | Pre-Publish Lab reviews | Schema + paste → stub review row |
+| **E** | Editing Copilot (`editing_plans`) | Schema only; UI deferred |
+| **F** | Audience Miner (comments, clusters, language) | Schema + manual comment paste/list |
+| **G** | Wire growth systems into Knowledge / My Content / Analyze / context builder | Planned |
+| **H** | `@` references into context slots | Planned (no fake resolution) |
+| **I** | Multi-model workspace (Connections/Models) | Planned; no provider calls |
+| **J** | Automate learning loop (lesson → roadmap/experiment suggestions) | Planned; AI-suggested milestones stored as `ai_suggested` only when real |
+| **K** | Today / operating cadence (priority from live roadmap + experiments) | Light Today copy only |
+
+## Roadmap product surfaces (planned)
+
+Include in the long-term roadmap (docs + nav foundations where noted):
+
+1. **Roadmap** — goal, phase, progress, milestones (`auto` / `manual` / `ai_suggested`)
+2. **Experiments** — hypothesis, variants, metrics, conclusions
+3. **Idea Gate** — pursue / reshape / park / kill with evidence
+4. **Pre-Publish** — script stress-test before posting
+5. **Editing Copilot** — structured edit plans from analyses/scripts
+6. **Audience Miner** — comment ingest → clusters → language bank
+
 ## Acceptance criteria (this iteration)
 
 1. User can register and sign in
-2. Protected shell routes work
+2. Protected shell routes work (including new growth routes)
 3. Teach FormCraft CRUD + search + AI toggle + delete
 4. Knowledge processing persists extracted text or fails loudly
 5. My Content manual posts persist with labelled sources
 6. Analyze accepts transcript and persists structured result
-7. Typecheck, lint, and unit tests pass
-8. No fabricated platform metrics or fake AI/social integrations
+7. Growth migration applies; RLS ownership on new tables
+8. Roadmap/Experiments/Audience/Pre-Publish/Idea Gate scaffolds persist manual or heuristic rows
+9. Typecheck, lint, and unit tests pass
+10. No fabricated platform metrics or fake AI/social integrations
 
 ## Next phases (not started)
 
-- Social account OAuth + CSV import for My Content
+- Social account OAuth + CSV import for My Content / Audience
 - Full insights engine, Ask My Content, remake finder, weekly report generation
 - Video/audio processing, deep LLM breakdown modes, compare mode
+- LLM-backed Idea Gate, Pre-Publish, Editing Copilot
 - Research outliers, Canvas, generation studio
+- Context builder slots for roadmap, experiments, audience language
+- Multi-model workspace + `@` references

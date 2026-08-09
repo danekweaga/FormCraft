@@ -20,4 +20,20 @@ describe("decideAuthRedirect", () => {
     expect(decideAuthRedirect("/my-content", true)).toEqual({ type: "none" });
     expect(decideAuthRedirect("/analyze", true)).toEqual({ type: "none" });
   });
+
+  it("protects creator growth routes for anonymous users", () => {
+    expect(decideAuthRedirect("/roadmap", false)).toEqual({
+      type: "redirect",
+      to: "/sign-in?next=%2Froadmap",
+    });
+    expect(decideAuthRedirect("/experiments", false).type).toBe("redirect");
+    expect(decideAuthRedirect("/audience", false).type).toBe("redirect");
+    expect(decideAuthRedirect("/pre-publish", false).type).toBe("redirect");
+    expect(decideAuthRedirect("/idea-gate", false).type).toBe("redirect");
+  });
+
+  it("allows authenticated access to creator growth routes", () => {
+    expect(decideAuthRedirect("/roadmap", true)).toEqual({ type: "none" });
+    expect(decideAuthRedirect("/idea-gate", true)).toEqual({ type: "none" });
+  });
 });

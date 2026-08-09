@@ -2,6 +2,7 @@ export const AUTH_ROUTES = ["/sign-in", "/sign-up"] as const;
 
 export const PROTECTED_PREFIXES = [
   "/today",
+  "/roadmap",
   "/research",
   "/canvas",
   "/create",
@@ -9,6 +10,7 @@ export const PROTECTED_PREFIXES = [
   "/performance",
   "/library",
   "/knowledge",
+  "/idea-gate",
   "/brand-brain",
   "/connections",
   "/models",
@@ -18,6 +20,9 @@ export const PROTECTED_PREFIXES = [
   "/profile",
   "/my-content",
   "/analyze",
+  "/experiments",
+  "/audience",
+  "/pre-publish",
 ] as const;
 
 export function isAuthRoute(pathname: string): boolean {

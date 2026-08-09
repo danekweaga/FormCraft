@@ -10,7 +10,12 @@ Browser
        │    ├─ Today, placeholders, Settings/Profile
        │    ├─ /knowledge Teach FormCraft
        │    ├─ /my-content personal intelligence
-       │    └─ /analyze Video Breakdown Lab
+       │    ├─ /analyze Video Breakdown Lab
+       │    ├─ /roadmap Creator Roadmap
+       │    ├─ /experiments Experiment Lab
+       │    ├─ /audience Audience Miner
+       │    ├─ /pre-publish Pre-Publish Lab
+       │    └─ /idea-gate Idea Gate
        ├─ src/proxy.ts auth refresh + route guards
        └─ Server Actions + Server Components
             └─ Supabase (Auth, Postgres, Storage)
@@ -24,11 +29,79 @@ Browser
 
 See [DATABASE.md](DATABASE.md).
 
-- One schema owner per user (`user_id` + RLS)
+- One schema owner per user (`user_id` + RLS) — personal-use first
 - Knowledge: collections → documents → chunks (+ tags)
 - My Content: posts, clusters, performance lessons, experiments, weekly reports
 - Analyze: video_analyses (versioned via `parent_analysis_id`), saved_patterns
+- Creator Growth: roadmaps/milestones/updates, idea_gate_evaluations, pre_publish_reviews, editing_plans, audience_* 
 - pgvector column on `knowledge_chunks.embedding` nullable until embedding pipeline ships
+
+## Unified learning loop
+
+```
+Knowledge + Brand context
+        ↓
+   Roadmap (aim)
+        ↓
+ Idea Gate → Create → Pre-Publish → Editing Copilot
+        ↓
+     Publish / ingest (My Content)
+        ↓
+ Analyze + performance lessons
+        ↓
+ Experiment Lab ↔ Audience Miner
+        ↓
+ Update Roadmap milestones + Teach FormCraft
+```
+
+**Implemented today:** Knowledge, My Content manual ingest, Analyze heuristics, and manual/heuristic scaffolds for Roadmap, Experiments, Idea Gate, Pre-Publish, Audience comments.
+
+**Deferred:** automated milestone suggestions, LLM critiques, social sync, cluster mining, edit-plan generation.
+
+## Creator Growth systems
+
+### Roadmap
+
+Tracks a creator goal, current phase, progress, and milestones. Milestone `source_kind` is `manual` | `auto` | `ai_suggested`. Auto/AI paths must only write when a real signal exists — never fabricate progress. `roadmap_updates` is an append-only journal for manual notes and future system events.
+
+### Experiment Lab
+
+Builds on `content_experiments` (My Content). Additive columns support hypothesis design: primary variable, variants, control variables, primary/secondary metrics, sample targets, observations, and structured `conclusion_state`. UI currently supports hypothesis create/list only.
+
+### Idea Gate
+
+Paste an idea → store `idea_gate_evaluations` with recommendation (`pursue|reshape|park|kill`). Current path uses local heuristics + explicit “full AI deferred” notes. Related Knowledge / My Content / Analyze ids go in `related_ids` jsonb when wiring ships.
+
+### Pre-Publish Lab
+
+Paste a script → store `pre_publish_reviews` with `result` jsonb. Stub result records heuristic flags and defers LLM stress-testing. Future: score against Teach FormCraft rules, confirmed lessons, and brand voice.
+
+### Editing Copilot
+
+`editing_plans` stores structured cut/reorder/caption plans. Schema only in this iteration; generation deferred (no fake editor AI).
+
+### Audience Miner
+
+Manual comment paste into `audience_comments`. Future clustering fills `audience_clusters` and phrase bank `audience_language`. Connected-account ingest deferred.
+
+### @ references (planned)
+
+Authors will `@` Knowledge docs, posts, analyses, experiments, and audience clusters into Create / Idea Gate / Pre-Publish. Resolver will return provenance-aware context slots — not implemented yet.
+
+### Multi-model workspace (planned)
+
+Connections + Models routes remain placeholders. Future: user-selected providers/models per task with usage metering. **No provider keys or stubbed completions in this iteration.**
+
+## How growth connects to existing systems
+
+| System | Consumes | Feeds |
+|--------|----------|-------|
+| Knowledge | User teaching | Idea Gate, Pre-Publish, context builder |
+| My Content | Published posts/metrics | Experiments, Audience (`post_id`), lessons → Roadmap |
+| Analyze | Transcripts / future media | Editing plans, Pre-Publish patterns, Knowledge examples |
+| Context builder | All of the above (mostly deferred slots) | Future generation surfaces |
+
+`src/lib/ai/context/context-builder.ts` today wires Teach FormCraft only. Growth slots (roadmap goal, confirmed lessons, audience language, experiment conclusions) are architectural — not fabricated.
 
 ## AI-service architecture
 
@@ -42,10 +115,13 @@ See [DATABASE.md](DATABASE.md).
 6. Selected research *(deferred)*
 7. Project memories *(deferred)*
 8. Recent performance / My Content lessons *(deferred wiring)*
+9. Roadmap goal / active milestones *(planned)*
+10. Audience language / clusters *(planned)*
+11. Experiment conclusions *(planned)*
 
 Every included item carries `ProvenanceEntry` (`sourceType`, `sourceId`, `sourceTitle`) so future UI can show “Used knowledge from: …”.
 
-**No LLM provider is called in this iteration.** Analyze uses heuristic transcript parsing only, with explicit confidence notes.
+**No LLM provider is called in this iteration.** Analyze, Idea Gate, and Pre-Publish use heuristics only, with explicit deferred notes in persisted JSON/text.
 
 ## File-processing architecture
 
@@ -73,19 +149,19 @@ Future: vector similarity and hybrid ranking without changing callers.
 Documented, not yet a worker fleet.
 
 - Current: Server Action triggers processing inline
-- Future: `processing_jobs` queue / Supabase Edge Functions / worker for PDF, transcription, embeddings, social sync
-- Analyze and My Content heavy jobs will share the same job abstraction when introduced
+- Future: `processing_jobs` queue / Supabase Edge Functions / worker for PDF, transcription, embeddings, social sync, audience clustering
+- Analyze, My Content, and Audience heavy jobs will share the same job abstraction when introduced
 
 ## Social-monitoring architecture
 
 **Deferred.** No Instagram/TikTok/YouTube/LinkedIn/X/Threads clients are implemented.
 
-My Content schema and UI accept:
+My Content and Audience schemas accept:
 
-- Manual entry (implemented)
+- Manual entry / paste (implemented)
 - Future: connected accounts, CSV, URL ingest, video/transcript upload, FormCraft drafts
 
-All rows store `source` + `source_label` so provenance stays honest.
+All rows store provenance fields (`source`, `source_label`, or `audience_comment_source`) so integrations stay honest.
 
 ## My Content intelligence architecture
 
@@ -98,9 +174,9 @@ Ingest posts → store metrics (nullable) → classify → baseline → relative
 
 `performance_lessons.status`: suggested | confirmed | rejected | expired.
 
-Only confirmed / high-confidence lessons should heavily influence future generation.
+Only confirmed / high-confidence lessons should heavily influence future generation and Roadmap auto-milestones.
 
-Opportunity engine (future) combines My Content + Research outliers + Brand Brain + Teach FormCraft + goals.
+Opportunity engine (future) combines My Content + Research outliers + Brand Brain + Teach FormCraft + goals + Audience clusters.
 
 ## Video Breakdown Lab architecture
 
@@ -118,6 +194,7 @@ Rules:
 - Transcript-only path must declare visual/editing unavailable
 - Reanalyze creates a new row linked by `parent_analysis_id`
 - Knowledge retrieval can inform critique via provenance list (`knowledge_sources`)
+- Future: analysis → Editing Copilot plan + Pre-Publish checklist
 
 ## Security approach
 
@@ -140,11 +217,19 @@ Rules:
 | Transcription (Whisper etc.) | Future |
 | Frame sampling / ffmpeg | Future |
 
-## Deferred functionality
+## Explicitly deferred (do not fake)
 
-- Social OAuth + CSV ingest
-- Full My Content insights / Ask My Content / remake finder / weekly report generation
-- LLM-powered Analyze modes, compare mode, rewrite studio
-- Research outliers, Canvas, Create/Plan/Performance product surfaces
+- Social OAuth, CSV sync, live comment pull
+- LLM-powered Idea Gate / Pre-Publish / Editing Copilot / Analyze deep mode
+- Canvas, Outliers research feed, multiplayer
+- Multi-model completions and usage billing
+- `@` reference resolver UI
+- Auto-generated roadmap progress from invented metrics
 - Embedding generation + hybrid retrieval
 - Async job workers
+
+## Deferred functionality (broader product)
+
+- Full My Content insights / Ask My Content / remake finder / weekly report generation
+- Research outliers, Canvas, Create/Plan/Performance product surfaces
+- Brand Brain training loops
