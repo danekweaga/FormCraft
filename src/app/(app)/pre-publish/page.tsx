@@ -17,9 +17,9 @@ type ReviewResult = {
 export default async function PrePublishPage({
   searchParams,
 }: {
-  searchParams: Promise<{ analysisId?: string }>;
+  searchParams: Promise<{ analysisId?: string; scriptNode?: string }>;
 }) {
-  const { analysisId: analysisIdParam } = await searchParams;
+  const { analysisId: analysisIdParam, scriptNode } = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -69,6 +69,19 @@ export default async function PrePublishPage({
       defaultTitle = analysis.title ?? "From Analyze";
     } else {
       defaultAnalysisId = undefined;
+    }
+  }
+  if (scriptNode) {
+    const { data: node } = await supabase
+      .from("canvas_nodes")
+      .select("title, body")
+      .eq("id", scriptNode)
+      .eq("user_id", user.id)
+      .eq("node_type", "script")
+      .maybeSingle();
+    if (node?.body) {
+      defaultTranscript = node.body;
+      defaultTitle = node.title || "From Build";
     }
   }
 

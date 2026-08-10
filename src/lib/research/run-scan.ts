@@ -13,6 +13,7 @@ import {
   inferPlatformFromHandle,
   resolvePlatformCreatorId,
 } from "./resolve-creator";
+import { filterRecentShortForm } from "./recent-short-form";
 
 type ResearchScanRow = {
   id: string;
@@ -220,10 +221,13 @@ export async function runResearchScan(params: {
       }
     }
 
+    const eligible = filterRecentShortForm(discovered, {
+      lookbackDays: scan.lookback_days,
+    });
     const ingested = await ingestScoredPosts({
       supabase: params.supabase,
       userId: params.userId,
-      posts: discovered,
+      posts: eligible,
       query: scan.query,
       researchScanId: scan.id,
       minViews: scan.min_views,

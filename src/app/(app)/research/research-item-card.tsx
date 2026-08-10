@@ -308,8 +308,12 @@ export function ResearchItemCard({
               Save editing pattern
             </Button>
           </form>
+          <Button asChild size="sm">
+            <Link href={`/create?researchItem=${item.id}`}>Create my version</Link>
+          </Button>
           <Button
             size="sm"
+            variant="outline"
             disabled={pending}
             onClick={() =>
               start(async () => {

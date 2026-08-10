@@ -39,10 +39,20 @@ export function PrimaryNavLinks({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 export function SecondaryNavLinks({ onNavigate }: { onNavigate?: () => void }) {
+  const groups = ["Intelligence", "Workspace", "Configure"] as const;
   return (
-    <nav className="mt-4 flex flex-col gap-1 border-t border-outline-variant/15 pt-4">
-      {SECONDARY_NAV.map((item) => (
-        <NavLink key={item.href} item={item} onNavigate={onNavigate} />
+    <nav className="mt-5 border-t border-outline-variant/15 pt-4">
+      {groups.map((group) => (
+        <div key={group} className="mb-5">
+          <p className="mb-2 px-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-secondary/80">
+            {group}
+          </p>
+          <div className="flex flex-col gap-1">
+            {SECONDARY_NAV.filter((item) => item.group === group).map((item) => (
+              <NavLink key={item.href} item={item} onNavigate={onNavigate} />
+            ))}
+          </div>
+        </div>
       ))}
     </nav>
   );

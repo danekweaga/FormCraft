@@ -2,15 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Search } from "lucide-react";
 import { MobileNav } from "./mobile-nav";
 import { UserMenu } from "./user-menu";
 import { MaterialIcon } from "./material-icon";
+import { GlobalCommandPalette } from "./global-command-palette";
 import { cn } from "@/lib/utils";
 
 const CONTENT_TABS = [
-  { href: "/my-content", label: "My Content", icon: "movie" },
-  { href: "/performance", label: "Performance", icon: "analytics" },
+  { href: "/today", label: "Today", icon: "today" },
+  { href: "/research", label: "Discover", icon: "explore" },
+  { href: "/create", label: "Build", icon: "edit_note" },
 ] as const;
 
 export function AppTopBar({
@@ -52,25 +53,7 @@ export function AppTopBar({
             );
           })}
         </nav>
-        <form
-          action="/research"
-          method="get"
-          aria-label="Find public videos"
-          className="relative hidden w-full max-w-xl sm:block"
-        >
-          <input type="hidden" name="mode" value="discover" />
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-secondary" />
-          <input
-            type="search"
-            name="q"
-            placeholder="Find public videos by topic..."
-            className="w-full rounded-full border-none bg-surface-container-low py-2 pl-10 pr-4 text-sm outline-none focus:ring-1 focus:ring-primary-container"
-            aria-label="Find public videos by topic"
-            minLength={2}
-            maxLength={160}
-            required
-          />
-        </form>
+        <GlobalCommandPalette />
       </div>
       <div className="flex items-center gap-2 md:gap-4">
         <button
@@ -81,14 +64,13 @@ export function AppTopBar({
         >
           <MaterialIcon name="smart_toy" />
         </button>
-        <button
-          type="button"
+        <Link
+          href="/usage#notifications"
           className="flex h-10 w-10 items-center justify-center rounded-full text-secondary hover:bg-surface-container-low"
           aria-label="Notifications"
-          disabled
         >
           <MaterialIcon name="notifications" />
-        </button>
+        </Link>
         <UserMenu email={email} displayName={displayName} />
       </div>
     </header>

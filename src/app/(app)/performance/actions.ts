@@ -15,6 +15,7 @@ export async function generateWeeklyReviewAction(): Promise<{
 
   try {
     await generateWeeklyReview({ supabase, userId: user.id });
+    revalidatePath("/dashboard");
     revalidatePath("/performance");
     revalidatePath("/today");
     return {};

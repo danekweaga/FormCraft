@@ -1,10 +1,5 @@
-import { ComingSoonPage } from "@/components/layout/coming-soon";
+import { redirect } from "next/navigation";
 
 export default function BrandBrainPage() {
-  return (
-    <ComingSoonPage
-      title="Brand Brain"
-      description="Your distilled brand identity — positioning, voice, and the rules FormCraft uses when it writes for you."
-    />
-  );
+  redirect("/persona");
 }

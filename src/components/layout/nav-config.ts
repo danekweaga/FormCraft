@@ -2,31 +2,36 @@ export type NavItem = {
   href: string;
   label: string;
   icon: string;
+  group?: "Intelligence" | "Workspace" | "Configure";
 };
 
 export const PRIMARY_NAV: NavItem[] = [
   { href: "/today", label: "Today", icon: "today" },
-  { href: "/roadmap", label: "Roadmap", icon: "flag" },
-  { href: "/research", label: "Research", icon: "explore" },
-  { href: "/canvas", label: "Canvas", icon: "dashboard" },
-  { href: "/create", label: "Create", icon: "edit_note" },
-  { href: "/plan", label: "Plan", icon: "calendar_today" },
-  { href: "/my-content", label: "My Content", icon: "movie" },
+  { href: "/research", label: "Discover", icon: "explore" },
+  { href: "/create", label: "Build", icon: "edit_note" },
   { href: "/analyze", label: "Analyze", icon: "troubleshoot" },
-  { href: "/experiments", label: "Experiments", icon: "science" },
-  { href: "/audience", label: "Audience", icon: "groups" },
-  { href: "/pre-publish", label: "Pre-Publish", icon: "fact_check" },
-  { href: "/performance", label: "Performance", icon: "analytics" },
+  { href: "/my-content", label: "My Content", icon: "movie" },
   { href: "/library", label: "Library", icon: "auto_stories" },
 ];
 
 export const SECONDARY_NAV: NavItem[] = [
-  { href: "/knowledge", label: "Teach FormCraft", icon: "school" },
-  { href: "/idea-gate", label: "Idea Gate", icon: "lightbulb" },
-  { href: "/brand-brain", label: "Brand Brain", icon: "psychology" },
-  { href: "/connections", label: "Connections", icon: "link" },
-  { href: "/models", label: "Models", icon: "smart_toy" },
-  { href: "/usage", label: "Usage", icon: "data_usage" },
-  { href: "/templates", label: "Templates", icon: "content_copy" },
-  { href: "/settings", label: "Settings", icon: "settings" },
+  { href: "/dashboard", label: "Dashboard", icon: "home", group: "Intelligence" },
+  { href: "/performance", label: "Performance", icon: "analytics", group: "Intelligence" },
+  { href: "/roadmap", label: "Roadmap", icon: "flag", group: "Intelligence" },
+  { href: "/experiments", label: "Experiments", icon: "science", group: "Intelligence" },
+  { href: "/audience", label: "Audience", icon: "groups", group: "Intelligence" },
+  { href: "/creators", label: "Creators", icon: "person_search", group: "Workspace" },
+  { href: "/hooks", label: "Hooks", icon: "key", group: "Workspace" },
+  { href: "/collections", label: "Formats", icon: "collections_bookmark", group: "Workspace" },
+  { href: "/canvas", label: "Canvas", icon: "dashboard", group: "Workspace" },
+  { href: "/series", label: "Repurpose + Series", icon: "conversion_path", group: "Workspace" },
+  { href: "/idea-gate", label: "Idea Gate", icon: "lightbulb", group: "Workspace" },
+  { href: "/pre-publish", label: "Pre-Publish", icon: "fact_check", group: "Workspace" },
+  { href: "/persona", label: "Creator Profile", icon: "person", group: "Configure" },
+  { href: "/knowledge", label: "Teach FormCraft", icon: "school", group: "Configure" },
+  { href: "/psychology", label: "Psychology", icon: "psychology", group: "Configure" },
+  { href: "/connections", label: "Connections", icon: "link", group: "Configure" },
+  { href: "/models", label: "Models", icon: "smart_toy", group: "Configure" },
+  { href: "/usage", label: "Usage", icon: "data_usage", group: "Configure" },
+  { href: "/settings", label: "Settings", icon: "settings", group: "Configure" },
 ];

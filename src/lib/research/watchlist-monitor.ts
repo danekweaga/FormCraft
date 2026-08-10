@@ -5,6 +5,7 @@ import {
   getDiscoveryBudgets,
   providerBudgetAllows,
 } from "./provider-budget";
+import { filterRecentShortForm } from "./recent-short-form";
 
 /**
  * Pull latest posts for tracked watchlist creators and ingest outliers.
@@ -82,7 +83,7 @@ export async function runWatchlistMonitor(params: {
           .map((m) => m.external_creator_id)
           .filter((id): id is string => Boolean(id)),
       ),
-    ).slice(0, maxCreators);
+    );
   }
 
   if (creatorIds.length === 0) {
@@ -94,7 +95,9 @@ export async function runWatchlistMonitor(params: {
     .select("id, platform, platform_creator_id, handle, display_name, tracking_paused")
     .eq("user_id", params.userId)
     .in("id", creatorIds)
-    .eq("tracking_paused", false);
+    .eq("tracking_paused", false)
+    .order("data_freshness_at", { ascending: true, nullsFirst: true })
+    .limit(maxCreators);
 
   const retrievedAt = new Date().toISOString();
   const allPosts = [];
@@ -108,19 +111,22 @@ export async function runWatchlistMonitor(params: {
     const posts = await provider.getCreatorPosts({
       platform: creator.platform as "youtube" | "tiktok" | "instagram" | "other",
       platformCreatorId: creator.platform_creator_id,
-      maxResults: params.postsPerCreator ?? 10,
+      maxResults: params.postsPerCreator ?? 30,
     });
     usedProviders.add(provider.providerName);
-    allPosts.push(...posts);
+    const recentShorts = filterRecentShortForm(posts, { lookbackDays: 30 });
+    allPosts.push(...recentShorts);
 
     await params.supabase.from("provider_usage_events").insert({
       user_id: params.userId,
       provider: provider.providerName,
       operation: "get_creator_posts",
-      result_count: posts.length,
+      result_count: recentShorts.length,
       metadata: {
         externalCreatorId: creator.id,
         platformCreatorId: creator.platform_creator_id,
+        lookbackDays: 30,
+        shortFormMaxSeconds: 180,
       },
     });
 
@@ -200,18 +206,21 @@ export async function refreshSingleCreatorPosts(params: {
   const posts = await provider.getCreatorPosts({
     platform: creator.platform as "youtube" | "tiktok" | "instagram" | "other",
     platformCreatorId: creator.platform_creator_id,
-    maxResults: params.maxResults ?? 12,
+    maxResults: params.maxResults ?? 30,
   });
+  const recentShorts = filterRecentShortForm(posts, { lookbackDays: 30 });
 
   await params.supabase.from("provider_usage_events").insert({
     user_id: params.userId,
     provider: provider.providerName,
     operation: "get_creator_posts",
-    result_count: posts.length,
+    result_count: recentShorts.length,
     metadata: {
       externalCreatorId: creator.id,
       platformCreatorId: creator.platform_creator_id,
       single: true,
+      lookbackDays: 30,
+      shortFormMaxSeconds: 180,
     },
   });
 
@@ -230,7 +239,7 @@ export async function refreshSingleCreatorPosts(params: {
   const ingested = await ingestScoredPosts({
     supabase: params.supabase,
     userId: params.userId,
-    posts,
+    posts: recentShorts,
     query: niche.data?.main_niche || creator.handle || creator.display_name || "creator",
     minViews: 0,
     minOutlierScore: 0,

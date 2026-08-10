@@ -18,6 +18,7 @@ async function requireUser() {
 
 function revalidateAfterSync() {
   revalidatePath("/connections");
+  revalidatePath("/dashboard");
   revalidatePath("/my-content");
   revalidatePath("/performance");
   revalidatePath("/today");
@@ -85,6 +86,8 @@ export async function refreshAllConnectedAccounts(
   _prev: ConnectionActionState,
   _formData: FormData,
 ): Promise<ConnectionActionState> {
+  void _prev;
+  void _formData;
   try {
     const { supabase, user } = await requireUser();
     const { data: connections, error } = await supabase

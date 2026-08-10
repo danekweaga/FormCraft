@@ -49,9 +49,11 @@ export function SyncNowButton({
 export function RefreshAllConnectedButton({
   disabled,
   size = "sm",
+  label = "Refresh posts & followers",
 }: {
   disabled?: boolean;
   size?: "sm" | "default";
+  label?: string;
 }) {
   const [state, action, pending] = useActionState(
     refreshAllConnectedAccounts,
@@ -65,7 +67,7 @@ export function RefreshAllConnectedButton({
         variant="outline"
         disabled={pending || disabled}
       >
-        {pending ? "Refreshing…" : "Refresh posts & followers"}
+        {pending ? "Refreshing…" : label}
       </Button>
       <ActionFeedback state={state} />
     </form>
