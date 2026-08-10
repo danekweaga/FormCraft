@@ -32,4 +32,37 @@ describe("fetchYouTubeTranscript", () => {
     );
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("falls back to the free transcript endpoint and strips generator metadata", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("captions unavailable", { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          [
+            "# Transcript: Example title",
+            "Source video: https://www.youtube.com/watch?v=abc12345678",
+            "Language: en",
+            "Interactive version: https://example.test",
+            "",
+            "## Transcript",
+            "[0:00] Stop scrolling. This is the actual spoken opening from the generated transcript.",
+            "[0:04] Here is the second sentence with enough evidence for analysis.",
+          ].join("\n"),
+          { status: 200, headers: { "Content-Type": "text/plain" } },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const transcript = await fetchYouTubeTranscript("abc12345678");
+
+    expect(transcript).toBe(
+      "Stop scrolling. This is the actual spoken opening from the generated transcript. Here is the second sentence with enough evidence for analysis.",
+    );
+    expect(transcript).not.toContain("Example title");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain(
+      "youtube-transcript.ai/transcript/abc12345678.txt",
+    );
+  });
 });

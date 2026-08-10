@@ -267,6 +267,17 @@ export function ResearchItemCard({
               Open original
             </a>
           </Button>
+          {item.platform === "youtube" ? (
+            <Button asChild variant="outline" size="sm">
+              <a
+                href={`https://youtube-transcript.ai/transcript?v=${encodeURIComponent(item.external_id)}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open free transcript
+              </a>
+            </Button>
+          ) : null}
           {item.external_creator_id ? (
             <Button asChild variant="outline" size="sm">
               <Link href={`/research/creators/${item.external_creator_id}`}>

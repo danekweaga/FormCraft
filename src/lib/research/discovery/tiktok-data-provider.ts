@@ -51,11 +51,16 @@ async function tiktokGet(path: string, params: Record<string, string>) {
     unknown
   >;
   if (!response.ok) {
-    throw new Error(
+    const message =
       asString(body.message) ??
-        asString(body.error) ??
-        `TikTokAPI.store failed (${response.status})`,
-    );
+      asString(body.error) ??
+      `TikTokAPI.store failed (${response.status})`;
+    console.error("[tiktokapi_store] request failed", {
+      path,
+      status: response.status,
+      message,
+    });
+    throw new Error(message);
   }
   return body;
 }
@@ -207,25 +212,19 @@ export const tiktokDataDiscoveryProvider: ContentDiscoveryProvider = {
     const retrievedAt = new Date().toISOString();
     const count = String(Math.min(30, Math.max(1, input.maxResults ?? 20)));
 
-    // Try keyword search first; fall back to regional trending for empty queries.
+    // TikTokAPI.store calls this parameter `search_term` (not `keyword`).
+    // Fall back to the documented regional feed if search is unavailable.
     let body: Record<string, unknown>;
     try {
       body = await tiktokGet("/search/video", {
-        keyword: input.query,
+        search_term: input.query,
         count,
       });
     } catch {
-      try {
-        body = await tiktokGet("/video/search", {
-          keyword: input.query,
-          count,
-        });
-      } catch {
-        body = await tiktokGet("/feed/trending", {
-          region: "US",
-          count,
-        });
-      }
+      body = await tiktokGet("/feed", {
+        region: "US",
+        count,
+      });
     }
 
     const lookbackMs = (input.lookbackDays ?? 30) * 86_400_000;
@@ -255,18 +254,13 @@ export const tiktokDataDiscoveryProvider: ContentDiscoveryProvider = {
     const count = String(Math.min(30, Math.max(1, input.maxResults ?? 10)));
     const handle = input.platformCreatorId.replace(/^@/, "");
 
-    let body: Record<string, unknown>;
-    try {
-      body = await tiktokGet("/user/posts", {
-        unique_id: handle,
-        count,
-      });
-    } catch {
-      body = await tiktokGet("/user/videos", {
-        unique_id: handle,
-        count,
-      });
-    }
+    const identifier: Record<string, string> = /^\d+$/.test(handle)
+      ? { user_id: handle }
+      : { unique_id: handle };
+    const body = await tiktokGet("/user/posts", {
+      ...identifier,
+      count,
+    });
 
     return extractList(body)
       .map((raw) => normalizeTiktokVideo(raw, retrievedAt))

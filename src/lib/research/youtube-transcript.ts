@@ -1,7 +1,7 @@
 /**
  * Fetch a public YouTube caption track as plain text when available.
- * Uses the watch-page captionTracks metadata (no Data API captions.list OAuth).
- * Returns null when captions are disabled, missing, or the page shape changes.
+ * Uses the watch-page captionTracks metadata first, then a documented no-key
+ * transcript endpoint as a fallback when YouTube blocks the server request.
  */
 
 type CaptionTrack = {
@@ -76,12 +76,29 @@ function extractCaptionTracks(html: string): CaptionTrack[] {
   }
 }
 
-export async function fetchYouTubeTranscript(
-  videoId: string,
-): Promise<string | null> {
-  const id = videoId.trim();
-  if (!/^[a-zA-Z0-9_-]{6,20}$/.test(id)) return null;
+function freeTranscriptMarkdownToPlain(markdown: string): string {
+  const marker = "## Transcript";
+  const markerIndex = markdown.indexOf(marker);
+  const transcript = markerIndex >= 0
+    ? markdown.slice(markerIndex + marker.length)
+    : markdown;
 
+  return transcript
+    .replace(/^#{1,6}\s+.*$/gm, " ")
+    .replace(/^Source video:.*$/gim, " ")
+    .replace(/^Language:.*$/gim, " ")
+    .replace(/^Other available languages:.*$/gim, " ")
+    .replace(/^To request a specific language:.*$/gim, " ")
+    .replace(/^Interactive version.*$/gim, " ")
+    .replace(/^\s*\[\d{1,2}:\d{2}(?::\d{2})?\]\s*/gm, " ")
+    .replace(/\[(?:music|applause|laughter|♪+)\]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function fetchDirectYouTubeCaptionTrack(
+  id: string,
+): Promise<string | null> {
   try {
     const watchRes = await fetch(`https://www.youtube.com/watch?v=${id}`, {
       headers: {
@@ -90,6 +107,7 @@ export async function fetchYouTubeTranscript(
           "Mozilla/5.0 (compatible; FormCraftResearch/1.0; +https://formcraft.app)",
       },
       next: { revalidate: 0 },
+      signal: AbortSignal.timeout(12_000),
     });
     if (!watchRes.ok) return null;
     const html = await watchRes.text();
@@ -108,13 +126,49 @@ export async function fetchYouTubeTranscript(
           "Mozilla/5.0 (compatible; FormCraftResearch/1.0; +https://formcraft.app)",
       },
       next: { revalidate: 0 },
+      signal: AbortSignal.timeout(12_000),
     });
     if (!captionRes.ok) return null;
-    const body = await captionRes.text();
-    const plain = timedTextXmlToPlain(body);
-    if (plain.length < 40) return null;
-    return plain.slice(0, 40_000);
+    const plain = timedTextXmlToPlain(await captionRes.text());
+    return plain.length >= 40 ? plain.slice(0, 40_000) : null;
   } catch {
     return null;
   }
+}
+
+async function fetchFreeTranscriptFallback(
+  id: string,
+): Promise<string | null> {
+  try {
+    const response = await fetch(
+      `https://youtube-transcript.ai/transcript/${encodeURIComponent(id)}.txt?lang=en`,
+      {
+        headers: {
+          Accept: "text/plain",
+          "User-Agent":
+            "Mozilla/5.0 (compatible; FormCraftResearch/1.0; +https://form-craft-phi.vercel.app)",
+        },
+        next: { revalidate: 86_400 },
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    if (!response.ok) return null;
+    const body = await response.text();
+    if (/<!doctype html|<html\b/i.test(body)) return null;
+    const plain = freeTranscriptMarkdownToPlain(body);
+    return plain.length >= 40 ? plain.slice(0, 40_000) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchYouTubeTranscript(
+  videoId: string,
+): Promise<string | null> {
+  const id = videoId.trim();
+  if (!/^[a-zA-Z0-9_-]{6,20}$/.test(id)) return null;
+  return (
+    (await fetchDirectYouTubeCaptionTrack(id)) ??
+    (await fetchFreeTranscriptFallback(id))
+  );
 }
