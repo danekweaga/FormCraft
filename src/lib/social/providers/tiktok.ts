@@ -147,7 +147,7 @@ export const tiktokOwnedProvider: OwnedSocialProvider = {
 
   async getProfile(tokens: TokenBundle): Promise<OwnedProfile> {
     const res = await fetch(
-      "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name,username,follower_count,following_count,likes_count,video_count",
+      "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name,follower_count,following_count,likes_count,video_count",
       {
         headers: { Authorization: `Bearer ${tokens.accessToken}` },
       },
@@ -158,7 +158,6 @@ export const tiktokOwnedProvider: OwnedSocialProvider = {
           open_id?: string;
           avatar_url?: string;
           display_name?: string;
-          username?: string;
           follower_count?: number;
           following_count?: number;
           likes_count?: number;
@@ -180,7 +179,7 @@ export const tiktokOwnedProvider: OwnedSocialProvider = {
 
     return {
       platformAccountId: user.open_id,
-      username: user.username ?? null,
+      username: null,
       displayName: user.display_name ?? null,
       avatarUrl: user.avatar_url ?? null,
       followerCount:
