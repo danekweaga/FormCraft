@@ -2,7 +2,6 @@
 
 import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { CREATOR_CATALOG } from "@/data/creator-catalog";
 import { analyzeResearchBatch } from "@/lib/research/analyze";
 import { searchablePlatforms } from "@/lib/research/discovery/registry";
 import { runResearchScan } from "@/lib/research/run-scan";
@@ -823,28 +822,13 @@ export async function refreshWatchlistMonitoringAction(
     "@/lib/research/watchlist-monitor"
   );
   try {
-    const { data: catalogWatchlist } = await supabase
-      .from("research_watchlists")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("name", "Niche creator scan")
-      .maybeSingle();
-    const { count: catalogMemberCount } = catalogWatchlist
-      ? await supabase
-          .from("research_watchlist_members")
-          .select("external_creator_id", { count: "exact", head: true })
-          .eq("watchlist_id", catalogWatchlist.id)
-      : { count: 0 };
-    let imported = 0;
-    let trackable = 0;
-    if (!catalogWatchlist || (catalogMemberCount ?? 0) < CREATOR_CATALOG.length) {
-      const catalog = await importCreatorCatalog({
-        supabase,
-        userId: user.id,
-      });
-      imported = catalog.imported;
-      trackable = catalog.trackable;
-    }
+    // Re-sync the catalog on every manual refresh. Provider credentials may be
+    // added after the initial import; without this upsert, creators that were
+    // previously marked tracking_paused (notably TikTok) never become active.
+    const catalog = await importCreatorCatalog({
+      supabase,
+      userId: user.id,
+    });
     const result = await runWatchlistMonitor({ supabase, userId: user.id });
     revalidatePath("/research");
     if (result.creatorsChecked === 0) {
@@ -854,11 +838,7 @@ export async function refreshWatchlistMonitoringAction(
       };
     }
     return {
-      success: `${
-        imported
-          ? `Imported ${imported} creator sources (${trackable} currently API-trackable). `
-          : ""
-      }Checked ${result.creatorsChecked} supported creator channels, found ${result.discovered} recent short-form posts, and kept ${result.retained}.`,
+      success: `Synced ${catalog.imported} creator sources (${catalog.trackable} currently API-trackable). Checked ${result.creatorsChecked} supported creator channels, found ${result.discovered} recent short-form posts, and kept ${result.retained}.`,
     };
   } catch (error) {
     return {
