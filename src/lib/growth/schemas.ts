@@ -50,6 +50,24 @@ export const prePublishSchema = z.object({
     .min(20, "Script must be at least 20 characters.")
     .max(50_000),
   sourceRef: z.string().trim().max(200).optional().nullable(),
+  analysisId: z.string().uuid().optional().nullable(),
+  contentPostId: z.string().uuid().optional().nullable(),
+  creativeDirection: z
+    .enum([
+      "minimal_yap",
+      "clean_explainer",
+      "high_energy",
+      "storytelling",
+      "meme_heavy",
+      "my_style",
+      "reference",
+      "custom",
+    ])
+    .optional()
+    .nullable(),
+  customDirectionBrief: z.string().trim().max(2000).optional().nullable(),
+  styleProfileId: z.string().uuid().optional().nullable(),
+  runEditingCopilot: z.boolean().optional().default(false),
 });
 
 export const ideaGateSchema = z.object({

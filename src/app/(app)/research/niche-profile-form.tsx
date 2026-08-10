@@ -10,18 +10,27 @@ const initial: ResearchActionState = {};
 
 export function NicheProfileForm({
   initial: values,
+  searchablePlatforms,
 }: {
   initial: {
     mainNiche: string;
     topics: string;
     keywords: string;
     targetAudience: string;
+    platforms: string[];
   };
+  searchablePlatforms: Array<{ platform: string; providerName: string }>;
 }) {
   const [state, action, pending] = useActionState(
     saveNicheProfileAction,
     initial,
   );
+
+  const hasNonYoutube = searchablePlatforms.some((p) => p.platform !== "youtube");
+  const youtubeOnly =
+    searchablePlatforms.length > 0 &&
+    searchablePlatforms.every((p) => p.platform === "youtube");
+
   return (
     <form action={action} className="grid gap-3 md:grid-cols-2">
       <div className="space-y-2">
@@ -60,6 +69,49 @@ export function NicheProfileForm({
           placeholder="leetcode, openai, hackathon"
         />
       </div>
+
+      <fieldset className="space-y-2 md:col-span-2">
+        <legend className="text-sm font-medium text-on-background">
+          Auto-scan platforms
+        </legend>
+        <p className="text-xs text-secondary">
+          Saved to your niche profile and used by Auto: scans. YouTube stays off
+          unless you check it (or it is the only configured provider).
+        </p>
+        <div className="flex flex-wrap gap-4">
+          {searchablePlatforms.map((p) => {
+            const isYoutube = p.platform === "youtube";
+            const saved = values.platforms.includes(p.platform);
+            const defaultChecked =
+              saved ||
+              (!values.platforms.length &&
+                (isYoutube ? youtubeOnly && !hasNonYoutube : true));
+            return (
+              <label
+                key={p.platform}
+                className="flex items-center gap-2 text-sm"
+              >
+                <input
+                  type="checkbox"
+                  name="platforms"
+                  value={p.platform}
+                  defaultChecked={defaultChecked}
+                  className="size-4 rounded border-outline-variant"
+                />
+                {isYoutube
+                  ? "Include YouTube search"
+                  : `${p.platform} (${p.providerName})`}
+              </label>
+            );
+          })}
+          {searchablePlatforms.length === 0 ? (
+            <p className="text-sm text-secondary">
+              Configure TIKTOK_DATA_API_KEY or YOUTUBE_DATA_API_KEY first.
+            </p>
+          ) : null}
+        </div>
+      </fieldset>
+
       <div className="md:col-span-2">
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : "Save niche profile"}

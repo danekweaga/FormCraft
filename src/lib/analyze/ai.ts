@@ -1,10 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { hashAiInput, tryStructuredAI } from "@/lib/ai/client";
 import type { ModelTier } from "@/lib/ai/models/types";
-import { analysisResultSchema, type AnalysisResult } from "./schema";
+import {
+  analysisResultSchema,
+  normalizeAnalysisResult,
+  type AnalysisResult,
+} from "./schema";
 
-const PROMPT_VERSION = "openrouter-transcript-v2";
+const PROMPT_VERSION = "openrouter-transcript-v3";
 
+/** Legacy single-shot AI path — prefer runStagedAnalysis for Growth I. */
 export async function analyzeTranscriptWithAi(params: {
   supabase: SupabaseClient;
   userId: string;
@@ -14,7 +19,6 @@ export async function analyzeTranscriptWithAi(params: {
   heuristic: AnalysisResult;
   modelTier: ModelTier;
   modelName: string;
-  /** Personal FormCraft context for owned posts only */
   personalContext?: string | null;
 }): Promise<{
   result: AnalysisResult;
@@ -54,7 +58,7 @@ export async function analyzeTranscriptWithAi(params: {
       cacheKey,
       modelName: params.modelName,
       maxOutputTokens:
-        params.mode === "quick" ? 1_600 : params.mode === "deep" ? 3_200 : 4_800,
+        params.mode === "quick" ? 2_000 : params.mode === "deep" ? 3_600 : 5_000,
       temperature: 0.2,
       schema: analysisResultSchema,
       messages: [
@@ -64,14 +68,9 @@ export async function analyzeTranscriptWithAi(params: {
             "You are FormCraft's transcript analyst.",
             "Use only evidence in the supplied transcript, baseline heuristic, and personal context (if any).",
             "Do not claim to see visuals, hear audio, know retention curves, or prove causation.",
-            "If personal context is provided, ground comparisons in that data only — never invent private analytics.",
-            "If content is external, do not imply the creator's private metrics are available.",
-            "Return ONLY valid JSON with exactly these top-level keys:",
-            "overview, timeline, hooks, openLoops, psychology, retentionDevices, potentialRetentionRisks, claims, strengths, improvements, improvedHooks, recommendedStructure, scorecard, confidenceNotes.",
-            "Timeline entries: startLabel, optional endLabel, segment, purpose, optional notes.",
-            "Hook effectiveness: strong|moderate|weak. Retention risk severity: low|medium|high.",
-            "Improvement priority: low|medium|high. Scorecard scores must be 0-10.",
-            "Every claim must say whether transcript evidence supports it. Keep arrays concise.",
+            "Scorecard ratings must be Excellent|Strong|Good|Needs Work|Weak|Unable to Evaluate.",
+            "Improvements use priority high|medium|optional with issue, whyItMatters, recommendation, example.",
+            "Return ONLY valid JSON matching the schema.",
           ].join(" "),
         },
         {
@@ -90,25 +89,26 @@ export async function analyzeTranscriptWithAi(params: {
   });
 
   if (!result.usedLlm && result.validationState === "fallback") {
-    // Distinguish budget/config failure from "use heuristic silently"
     return null;
   }
 
+  const normalized = normalizeAnalysisResult({
+    ...result.data,
+    confidenceNotes: [
+      ...result.data.confidenceNotes,
+      `AI transcript analysis by ${result.model}; no visual or audio evidence was supplied.`,
+      ...(truncated
+        ? ["The transcript was truncated to the selected mode's context limit."]
+        : []),
+      ...(personal
+        ? ["Personal FormCraft context (My Content / lessons / experiments) was included."]
+        : []),
+      ...(result.cached ? ["Result served from AI cache (same inputs)."] : []),
+    ],
+  });
+
   return {
-    result: {
-      ...result.data,
-      confidenceNotes: [
-        ...result.data.confidenceNotes,
-        `AI transcript analysis by ${result.model}; no visual or audio evidence was supplied.`,
-        ...(truncated
-          ? ["The transcript was truncated to the selected mode's context limit."]
-          : []),
-        ...(personal
-          ? ["Personal FormCraft context (My Content / lessons / experiments) was included."]
-          : []),
-        ...(result.cached ? ["Result served from AI cache (same inputs)."] : []),
-      ],
-    },
+    result: normalized,
     modelName: result.model,
     modelTier: params.modelTier,
     inputTokens: result.inputTokens,

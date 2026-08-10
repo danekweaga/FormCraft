@@ -32,20 +32,28 @@ export async function runResearchScanAction(
   const allowed = searchablePlatforms().map(
     (p) => p.platform as ResearchPlatform,
   );
+  const selectedPlatforms = formData.getAll("platforms");
   const filters = normalizeSearchFilters({
     query: formData.get("query"),
-    platforms: formData.getAll("platforms").length
-      ? formData.getAll("platforms")
-      : ["youtube"],
+    platforms: selectedPlatforms.length ? selectedPlatforms : undefined,
     lookbackDays: formData.get("lookbackDays"),
     minViews: formData.get("minViews"),
     minOutlierScore: formData.get("minOutlierScore"),
     maxResults: formData.get("maxResults") ?? 25,
     allowedPlatforms: allowed.length ? allowed : ["youtube"],
+    creatorIds: formData.getAll("creatorIds"),
+    channelHandles: formData.get("channelHandles"),
+    preferNonYoutubeDefault: true,
   });
 
   if (filters.query.length < 2 || filters.query.length > 160) {
     return { error: "Enter a niche query between 2 and 160 characters." };
+  }
+  if (filters.platforms.length === 0) {
+    return {
+      error:
+        "Select at least one searchable platform (TikTok when configured, or Include YouTube search).",
+    };
   }
 
   const { data: existing } = await supabase
@@ -67,6 +75,10 @@ export async function runResearchScanAction(
     max_results: filters.maxResults,
     auto_scan_enabled: true,
     status: "active",
+    parameters: {
+      creatorIds: filters.creatorIds,
+      channelHandles: filters.channelHandles,
+    },
   };
 
   const write = existing
@@ -267,11 +279,21 @@ export async function analyzeResearchItemAction(
     scoreBasis: (item.score_basis as ScoredResearchVideo["scoreBasis"]) ?? "unavailable",
   };
 
+  const transcriptsByExternalId = new Map<string, string>();
+  if (item.platform === "youtube" && item.external_id) {
+    const { fetchYouTubeTranscript } = await import(
+      "@/lib/research/youtube-transcript"
+    );
+    const transcript = await fetchYouTubeTranscript(item.external_id);
+    if (transcript) transcriptsByExternalId.set(item.external_id, transcript);
+  }
+
   const analyzed = await analyzeResearchBatch({
     supabase,
     userId: user.id,
     query: item.topic || "outlier analysis",
     videos: [video],
+    transcriptsByExternalId,
   });
   const result = analyzed.get(video.externalId);
   if (!result) {
@@ -293,7 +315,16 @@ export async function analyzeResearchItemAction(
     .eq("user_id", user.id);
 
   revalidatePath("/research");
-  return { success: "Deep analysis complete (metadata-only evidence)." };
+  revalidatePath("/canvas");
+  if (item.external_creator_id) {
+    revalidatePath(`/research/creators/${item.external_creator_id}`);
+  }
+
+  const basis =
+    result.analysis.evidenceBasis === "metadata_and_transcript"
+      ? "metadata + public captions/transcript"
+      : "metadata-only evidence";
+  return { success: `Deep analysis complete (${basis}).` };
 }
 
 export async function createWatchlistAction(
@@ -316,6 +347,153 @@ export async function createWatchlistAction(
   if (error) return { error: error.message };
   revalidatePath("/research");
   return { success: `Watchlist “${name}” created.` };
+}
+
+/**
+ * Sandcastle-style: add a creator by handle to a watchlist, then pull their posts.
+ */
+export async function addCreatorToWatchlistAction(
+  _prev: ResearchActionState,
+  formData: FormData,
+): Promise<ResearchActionState> {
+  const watchlistId = String(formData.get("watchlistId") ?? "");
+  const platform = String(formData.get("platform") ?? "tiktok")
+    .trim()
+    .toLowerCase();
+  const handleRaw = String(formData.get("handle") ?? "").trim();
+  if (!watchlistId) return { error: "Pick a watchlist." };
+  if (handleRaw.length < 2) return { error: "Enter a creator handle." };
+  if (platform === "instagram") {
+    return {
+      error:
+        "Instagram creator auto-pull is not available. Paste Reel URLs under Discover → Manual reference, or track TikTok/YouTube creators.",
+    };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+
+  const { data: list } = await supabase
+    .from("research_watchlists")
+    .select("id")
+    .eq("id", watchlistId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!list) return { error: "Watchlist not found." };
+
+  const { resolvePlatformCreatorId, cleanCreatorHandle } = await import(
+    "@/lib/research/resolve-creator"
+  );
+  const { getProviderForPlatform } = await import(
+    "@/lib/research/discovery/registry"
+  );
+  const { ingestScoredPosts } = await import("@/lib/research/ingest-posts");
+
+  const platformCreatorId = await resolvePlatformCreatorId({
+    platform,
+    handle: handleRaw,
+  });
+  if (!platformCreatorId) {
+    return {
+      error:
+        platform === "youtube"
+          ? "Could not resolve that YouTube handle. Check YOUTUBE_DATA_API_KEY or paste a channel ID (UC…)."
+          : "Could not resolve that handle.",
+    };
+  }
+
+  const handle = cleanCreatorHandle(handleRaw);
+  const retrievedAt = new Date().toISOString();
+  const { data: creator, error: creatorError } = await supabase
+    .from("external_creators")
+    .upsert(
+      {
+        user_id: user.id,
+        platform,
+        platform_creator_id: platformCreatorId,
+        handle,
+        display_name: handle,
+        data_source:
+          platform === "youtube" ? "official_api" : "third_party_api",
+        data_freshness_at: retrievedAt,
+        tracking_paused: false,
+      },
+      { onConflict: "user_id,platform,platform_creator_id" },
+    )
+    .select("id")
+    .single();
+  if (creatorError || !creator) {
+    return { error: creatorError?.message ?? "Could not save creator." };
+  }
+
+  const { error: memberError } = await supabase
+    .from("research_watchlist_members")
+    .upsert(
+      {
+        watchlist_id: watchlistId,
+        external_creator_id: creator.id,
+        priority: 0,
+      },
+      { onConflict: "watchlist_id,external_creator_id" },
+    );
+  if (memberError) return { error: memberError.message };
+
+  const provider = getProviderForPlatform(platform);
+  let pulled = 0;
+  if (provider?.getCreatorPosts && provider.capabilities().getCreatorPosts) {
+    try {
+      const posts = await provider.getCreatorPosts({
+        platform: platform as "youtube" | "tiktok",
+        platformCreatorId,
+        maxResults: 12,
+      });
+      const { data: niche } = await supabase
+        .from("niche_profiles")
+        .select("main_niche")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      const ingested = await ingestScoredPosts({
+        supabase,
+        userId: user.id,
+        posts,
+        query: niche?.main_niche || handle,
+        minViews: 0,
+        minOutlierScore: 0,
+        retrievedAt,
+      });
+      pulled = ingested.retained;
+      await supabase.from("provider_usage_events").insert({
+        user_id: user.id,
+        provider: provider.providerName,
+        operation: "get_creator_posts",
+        result_count: posts.length,
+        metadata: { watchlistId, externalCreatorId: creator.id },
+      });
+      await supabase
+        .from("external_creators")
+        .update({ data_freshness_at: retrievedAt })
+        .eq("id", creator.id);
+    } catch (error) {
+      revalidatePath("/research");
+      return {
+        success: `Added @${handle} to the watchlist, but the first pull failed: ${
+          error instanceof Error ? error.message : "provider error"
+        }. Try Refresh now later.`,
+      };
+    }
+  }
+
+  revalidatePath("/research");
+  revalidatePath(`/research/creators/${creator.id}`);
+  return {
+    success:
+      pulled > 0
+        ? `Added @${handle} and pulled ${pulled} recent posts (creator-relative outliers scored).`
+        : `Added @${handle}. Configure TIKTOK_DATA_API_KEY (or YouTube) then Refresh now to pull posts.`,
+  };
 }
 
 export async function trackCreatorFromItemAction(formData: FormData) {
@@ -497,6 +675,20 @@ export async function saveNicheProfileAction(
       .filter(Boolean)
       .slice(0, 40);
 
+  const allowed = searchablePlatforms().map((p) => p.platform);
+  const selectedPlatforms = formData
+    .getAll("platforms")
+    .map(String)
+    .filter((p) => allowed.includes(p));
+  // Default: non-YouTube configured platforms when nothing checked
+  const { defaultDiscoveryPlatforms } = await import(
+    "@/lib/research/search-filters"
+  );
+  const platforms =
+    selectedPlatforms.length > 0
+      ? selectedPlatforms
+      : defaultDiscoveryPlatforms(allowed as ResearchPlatform[]);
+
   const { error } = await supabase.from("niche_profiles").upsert(
     {
       user_id: user.id,
@@ -505,12 +697,22 @@ export async function saveNicheProfileAction(
       keywords: split(formData.get("keywords")),
       target_audience:
         String(formData.get("targetAudience") ?? "").trim().slice(0, 500) || null,
+      platforms,
     },
     { onConflict: "user_id" },
   );
   if (error) return { error: error.message };
+
+  const { ensureNicheAutoScan } = await import(
+    "@/lib/research/ensure-niche-auto-scan"
+  );
+  const auto = await ensureNicheAutoScan({ supabase, userId: user.id });
   revalidatePath("/research");
-  return { success: "Niche profile saved." };
+  return {
+    success: auto
+      ? `Niche profile saved. Auto-scan “${auto.created ? "created" : "updated"}” will refresh discovery on schedule.`
+      : "Niche profile saved.",
+  };
 }
 
 export async function synthesizeMultiOutliersAction(
@@ -576,7 +778,140 @@ export async function generateNicheBriefAction(formData: FormData) {
   });
 
   revalidatePath("/research");
-  void itemCount;
-  void usedLlm;
 }
+
+export async function refreshWatchlistMonitoringAction() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { runWatchlistMonitor } = await import(
+    "@/lib/research/watchlist-monitor"
+  );
+  await runWatchlistMonitor({ supabase, userId: user.id });
+  revalidatePath("/research");
+}
+
+/** Pull posts for a single tracked creator (profile / watchlist “Pull posts now”). */
+export async function refreshCreatorPostsAction(
+  formData: FormData,
+): Promise<ResearchActionState> {
+  const creatorId = String(formData.get("creatorId") ?? "");
+  if (!creatorId) return { error: "Creator id required." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+
+  try {
+    const { refreshSingleCreatorPosts } = await import(
+      "@/lib/research/watchlist-monitor"
+    );
+    const result = await refreshSingleCreatorPosts({
+      supabase,
+      userId: user.id,
+      externalCreatorId: creatorId,
+      maxResults: 15,
+    });
+    revalidatePath("/research");
+    revalidatePath(`/research/creators/${creatorId}`);
+    return {
+      success: `Pulled posts — kept ${result.retained} (discovered ${result.discovered}).`,
+    };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Pull failed.",
+    };
+  }
+}
+
+/** Form-action compatible wrapper (must return void). */
+export async function pullCreatorPostsFormAction(formData: FormData) {
+  await refreshCreatorPostsAction(formData);
+}
+
+export async function toggleWatchlistPausedAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const paused = String(formData.get("paused") ?? "") === "true";
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user || !id) return;
+  await supabase
+    .from("research_watchlists")
+    .update({ paused })
+    .eq("id", id)
+    .eq("user_id", user.id);
+  revalidatePath("/research");
+}
+
+export async function saveResearchFilterAction(
+  _prev: ResearchActionState,
+  formData: FormData,
+): Promise<ResearchActionState> {
+  const name = String(formData.get("name") ?? "").trim() || "Saved filter";
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+
+  const filters = {
+    keywords: String(formData.get("keywords") ?? ""),
+    minOutlier: Number(formData.get("minOutlier") ?? 0),
+    maxOutlier: Number(formData.get("maxOutlier") ?? 100),
+    minViews: Number(formData.get("minViews") ?? 0),
+    maxViews: Number(formData.get("maxViews") ?? 10_000_000),
+    minEngagement: Number(formData.get("minEngagement") ?? 0),
+    maxEngagement: Number(formData.get("maxEngagement") ?? 100),
+    postedWithinValue: Number(formData.get("postedWithinValue") ?? 30),
+    postedWithinUnit: String(formData.get("postedWithinUnit") ?? "days"),
+    platform: String(formData.get("platform") ?? "all"),
+    creator: String(formData.get("creator") ?? "all"),
+  };
+
+  const { error } = await supabase.from("research_scans").insert({
+    user_id: user.id,
+    name: `Filter: ${name.slice(0, 60)}`,
+    query: filters.keywords || name,
+    platforms:
+      filters.platform === "all" ? ["youtube", "tiktok"] : [filters.platform],
+    lookback_days: 30,
+    min_views: Number.isFinite(filters.minViews) ? filters.minViews : 0,
+    min_outlier_score: Number.isFinite(filters.minOutlier)
+      ? filters.minOutlier
+      : 0,
+    max_results: 25,
+    auto_scan_enabled: false,
+    status: "paused",
+    parameters: { savedFilter: filters },
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/research");
+  return { success: `Saved filter “${name}”.` };
+}
+
+export async function addResearchItemToCanvasAction(formData: FormData) {
+  const itemId = String(formData.get("id") ?? "");
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user || !itemId) return;
+
+  const { addResearchItemToCanvas } = await import("@/lib/canvas/add-from-research");
+  await addResearchItemToCanvas({
+    supabase,
+    userId: user.id,
+    researchItemId: itemId,
+  });
+  revalidatePath("/canvas");
+  revalidatePath("/research");
+}
+
 

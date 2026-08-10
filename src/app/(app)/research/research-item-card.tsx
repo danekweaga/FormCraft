@@ -15,11 +15,14 @@ import { outlierLabelDisplay } from "@/lib/research/outliers";
 import type { OutlierLabel } from "@/lib/research/outliers";
 import {
   analyzeResearchItemAction,
+  addResearchItemToCanvasAction,
   generateIdeasFromResearchAction,
   submitResearchFeedbackAction,
   toggleResearchSavedAction,
   trackCreatorFromItemAction,
 } from "./actions";
+import { breakDownResearchItemAction } from "@/app/(app)/analyze/actions";
+import { saveEditingPatternFromAnalysisAction } from "@/app/(app)/pre-publish/actions";
 
 export type ResearchCardItem = {
   id: string;
@@ -120,9 +123,31 @@ export function ResearchItemCard({
           ) : (
             <Badge variant="warning">Unscored</Badge>
           )}
+          {item.baseline_confidence ? (
+            <Badge
+              variant={
+                item.baseline_confidence === "high"
+                  ? "success"
+                  : item.baseline_confidence === "medium"
+                    ? "primary"
+                    : "warning"
+              }
+            >
+              Baseline {item.baseline_confidence}
+              {item.baseline_sample_size != null
+                ? ` · n=${item.baseline_sample_size}`
+                : ""}
+            </Badge>
+          ) : null}
           {item.saved ? <Badge variant="primary">Saved</Badge> : null}
           {item.analysis_model ? (
-            <Badge variant="default">Analyzed</Badge>
+            <Badge variant="default">
+              Analyzed
+              {typeof analysis.evidenceBasis === "string" &&
+              analysis.evidenceBasis === "metadata_and_transcript"
+                ? " + captions"
+                : ""}
+            </Badge>
           ) : (
             <Badge variant="warning">Not analyzed</Badge>
           )}
@@ -215,6 +240,20 @@ export function ResearchItemCard({
           </div>
         ) : null}
 
+        {Array.isArray(analysis.structureBeats) &&
+        (analysis.structureBeats as string[]).length > 0 ? (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-primary-container">
+              Structure (from captions/transcript)
+            </p>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-secondary">
+              {(analysis.structureBeats as string[]).slice(0, 5).map((beat) => (
+                <li key={beat}>{beat}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm">
             <a href={item.external_url} target="_blank" rel="noreferrer">
@@ -246,6 +285,29 @@ export function ResearchItemCard({
           >
             Analyze
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending}
+            onClick={() =>
+              start(async () => {
+                await breakDownResearchItemAction(item.id);
+              })
+            }
+          >
+            Break Down
+          </Button>
+          <form action={saveEditingPatternFromAnalysisAction}>
+            <input type="hidden" name="researchItemId" value={item.id} />
+            <input
+              type="hidden"
+              name="name"
+              value={`Editing · ${item.title || item.creator_name || "research"}`}
+            />
+            <Button type="submit" size="sm" variant="outline">
+              Save editing pattern
+            </Button>
+          </form>
           <Button
             size="sm"
             disabled={pending}
@@ -313,9 +375,12 @@ export function ResearchItemCard({
           >
             Hide creator
           </Button>
-          <Button asChild size="sm" variant="ghost">
-            <Link href="/canvas">Add to Canvas (stub)</Link>
-          </Button>
+          <form action={addResearchItemToCanvasAction}>
+            <input type="hidden" name="id" value={item.id} />
+            <Button type="submit" size="sm" variant="ghost" disabled={pending}>
+              Add to Canvas
+            </Button>
+          </form>
         </div>
       </CardContent>
     </Card>

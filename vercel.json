@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/research-scan",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/watchlist-scan",
+      "schedule": "0 6,18 * * *"
     }
   ]
 }

@@ -1,6 +1,7 @@
-import { searchYoutubeResearch } from "../youtube";
+import { getYoutubeChannelPosts, searchYoutubeResearch } from "../youtube";
 import type {
   ContentDiscoveryProvider,
+  CreatorPostsInput,
   DiscoveryCapabilities,
   SearchPostResult,
   SearchPostsInput,
@@ -14,10 +15,11 @@ export const youtubeDiscoveryProvider: ContentDiscoveryProvider = {
   providerName: "youtube_data_api",
 
   capabilities(): DiscoveryCapabilities {
+    const configured = isYoutubeDiscoveryConfigured();
     return {
-      searchPosts: isYoutubeDiscoveryConfigured(),
+      searchPosts: configured,
       searchCreators: false,
-      getCreatorPosts: false,
+      getCreatorPosts: configured,
       refreshMetrics: false,
       getCreatorBaseline: false,
       platforms: ["youtube"],
@@ -27,6 +29,7 @@ export const youtubeDiscoveryProvider: ContentDiscoveryProvider = {
 
   async searchPosts(input: SearchPostsInput): Promise<SearchPostResult[]> {
     if (!isYoutubeDiscoveryConfigured()) return [];
+    if (input.platforms && !input.platforms.includes("youtube")) return [];
     const retrievedAt = new Date().toISOString();
     const posts = await searchYoutubeResearch({
       query: input.query,
@@ -41,5 +44,21 @@ export const youtubeDiscoveryProvider: ContentDiscoveryProvider = {
         collectionMethod: "official_search",
         retrievedAt,
       }));
+  },
+
+  async getCreatorPosts(input: CreatorPostsInput): Promise<SearchPostResult[]> {
+    if (!isYoutubeDiscoveryConfigured()) return [];
+    if (input.platform !== "youtube") return [];
+    const retrievedAt = new Date().toISOString();
+    const posts = await getYoutubeChannelPosts({
+      channelId: input.platformCreatorId,
+      maxResults: input.maxResults ?? 10,
+    });
+    return posts.map((post) => ({
+      ...post,
+      providerName: "youtube_data_api",
+      collectionMethod: "official_creator_uploads",
+      retrievedAt,
+    }));
   },
 };

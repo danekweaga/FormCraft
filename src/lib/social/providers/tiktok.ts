@@ -197,6 +197,7 @@ export const tiktokOwnedProvider: OwnedSocialProvider = {
   },
 
   async getPosts(tokens, options) {
+    const maxCount = Math.min(Math.max(options?.limit ?? 20, 1), 20);
     const res = await fetch(
       "https://open.tiktokapis.com/v2/video/list/?fields=id,create_time,cover_image_url,share_url,title,video_description,duration,view_count,like_count,comment_count,share_count",
       {
@@ -206,7 +207,7 @@ export const tiktokOwnedProvider: OwnedSocialProvider = {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          max_count: options?.limit ?? 20,
+          max_count: maxCount,
           cursor: options?.cursor ? Number(options.cursor) : undefined,
         }),
       },

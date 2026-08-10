@@ -20,11 +20,36 @@ function ResultMessage({ state }: { state: ResearchActionState }) {
   return null;
 }
 
-export function ResearchScanForm({ configured }: { configured: boolean }) {
+export type ScanPlatformOption = {
+  platform: string;
+  providerName: string;
+  providerType: string;
+};
+
+export type ScanCreatorOption = {
+  id: string;
+  label: string;
+  platform: string;
+};
+
+export function ResearchScanForm({
+  configured,
+  platforms,
+  creators = [],
+}: {
+  configured: boolean;
+  platforms: ScanPlatformOption[];
+  creators?: ScanCreatorOption[];
+}) {
   const [state, action, pending] = useActionState(
     runResearchScanAction,
     initialState,
   );
+
+  const hasNonYoutube = platforms.some((p) => p.platform !== "youtube");
+  const youtubeOnly =
+    platforms.length > 0 && platforms.every((p) => p.platform === "youtube");
+  const youtubeDefaultOn = youtubeOnly && !hasNonYoutube;
 
   return (
     <form action={action} className="space-y-4">
@@ -39,6 +64,94 @@ export function ResearchScanForm({ configured }: { configured: boolean }) {
           maxLength={160}
         />
       </div>
+
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium text-on-background">
+          Platforms
+        </legend>
+        <p className="text-xs text-secondary">
+          YouTube niche search is off by default when TikTok (or demo) is
+          available — turn it on only if you want to spend YouTube quota.
+          Instagram niche search is not available via official APIs; use Manual
+          reference.
+        </p>
+        <div className="flex flex-wrap gap-4">
+          {platforms.map((p) => {
+            const isYoutube = p.platform === "youtube";
+            const defaultChecked = isYoutube
+              ? youtubeDefaultOn
+              : true;
+            return (
+              <label
+                key={p.platform}
+                className="flex items-center gap-2 text-sm text-on-background"
+              >
+                <input
+                  type="checkbox"
+                  name="platforms"
+                  value={p.platform}
+                  defaultChecked={defaultChecked}
+                  className="size-4 rounded border-outline-variant"
+                />
+                <span>
+                  {isYoutube
+                    ? "Include YouTube search"
+                    : p.platform === "tiktok"
+                      ? "TikTok (TikTokAPI.store)"
+                      : `${p.platform} (${p.providerName})`}
+                </span>
+              </label>
+            );
+          })}
+          {platforms.length === 0 ? (
+            <p className="text-sm text-secondary">No searchable platforms configured.</p>
+          ) : null}
+        </div>
+      </fieldset>
+
+      {(creators.length > 0 || configured) && (
+        <div className="space-y-3 rounded-lg border border-outline-variant/20 p-3">
+          <p className="text-sm font-medium text-on-background">
+            Channel targeting (optional)
+          </p>
+          <p className="text-xs text-secondary">
+            When you select tracked creators or paste handles, FormCraft pulls
+            those channels&apos; posts via getCreatorPosts instead of a broad
+            niche search — fewer irrelevant results, lower API spend.
+          </p>
+          {creators.length > 0 ? (
+            <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto">
+              {creators.map((c) => (
+                <label
+                  key={c.id}
+                  className="flex items-center gap-2 rounded-full border border-outline-variant/30 px-3 py-1 text-xs"
+                >
+                  <input
+                    type="checkbox"
+                    name="creatorIds"
+                    value={c.id}
+                    className="size-3.5"
+                  />
+                  {c.label} · {c.platform}
+                </label>
+              ))}
+            </div>
+          ) : null}
+          <div className="space-y-2">
+            <Label htmlFor="channel-handles">
+              Or paste handles / channel IDs
+            </Label>
+            <textarea
+              id="channel-handles"
+              name="channelHandles"
+              rows={2}
+              placeholder={"@creator (TikTok)\nUCxxxx… or @handle (YouTube, only if Include YouTube is on)"}
+              className="w-full rounded-md border border-outline-variant/30 bg-surface-container-lowest px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="space-y-2">
           <Label htmlFor="lookback-days">Published within</Label>
@@ -75,8 +188,9 @@ export function ResearchScanForm({ configured }: { configured: boolean }) {
       </Button>
       {!configured ? (
         <p className="text-sm text-secondary">
-          Add YOUTUBE_DATA_API_KEY, or set RESEARCH_ENABLE_DEMO=1 for fixture
-          results (labelled demo, not live platform data).
+          Add TIKTOK_DATA_API_KEY and/or YOUTUBE_DATA_API_KEY, or set
+          RESEARCH_ENABLE_DEMO=1 for fixture results (labelled demo, not live
+          platform data).
         </p>
       ) : null}
       <ResultMessage state={state} />
@@ -98,7 +212,7 @@ export function SaveResearchReferenceForm() {
           id="reference-url"
           name="url"
           type="url"
-          placeholder="https://…"
+          placeholder="https://… (Instagram, TikTok, YouTube, etc.)"
           required
         />
       </div>
@@ -119,8 +233,11 @@ export function SaveResearchReferenceForm() {
       <Button type="submit" variant="outline" disabled={pending}>
         {pending ? "Saving…" : "Analyze and save reference"}
       </Button>
+      <p className="text-xs text-secondary">
+        Instagram has no official niche search — paste a public post/Reel URL
+        here.
+      </p>
       <ResultMessage state={state} />
     </form>
   );
 }
-

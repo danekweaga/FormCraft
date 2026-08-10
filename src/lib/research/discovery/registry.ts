@@ -1,13 +1,31 @@
 import { demoDiscoveryProvider } from "./demo-provider";
+import { tiktokDataDiscoveryProvider } from "./tiktok-data-provider";
 import { youtubeDiscoveryProvider } from "./youtube-provider";
 import type { ContentDiscoveryProvider, DiscoveryCapabilities } from "./types";
 
 export function listDiscoveryProviders(): ContentDiscoveryProvider[] {
-  return [youtubeDiscoveryProvider, demoDiscoveryProvider];
+  return [
+    youtubeDiscoveryProvider,
+    tiktokDataDiscoveryProvider,
+    demoDiscoveryProvider,
+  ];
 }
 
 export function getConfiguredDiscoveryProviders(): ContentDiscoveryProvider[] {
-  return listDiscoveryProviders().filter((p) => p.capabilities().searchPosts);
+  return listDiscoveryProviders().filter(
+    (p) =>
+      p.capabilities().searchPosts || p.capabilities().getCreatorPosts,
+  );
+}
+
+export function getProviderForPlatform(
+  platform: string,
+): ContentDiscoveryProvider | null {
+  return (
+    getConfiguredDiscoveryProviders().find((p) =>
+      p.capabilities().platforms.includes(platform as never),
+    ) ?? null
+  );
 }
 
 export function searchablePlatforms(): Array<{
@@ -22,6 +40,7 @@ export function searchablePlatforms(): Array<{
   }> = [];
   for (const provider of getConfiguredDiscoveryProviders()) {
     const caps = provider.capabilities();
+    if (!caps.searchPosts) continue;
     for (const platform of caps.platforms) {
       out.push({
         platform,

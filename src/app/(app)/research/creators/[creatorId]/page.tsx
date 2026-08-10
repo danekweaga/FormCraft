@@ -3,14 +3,11 @@ import { notFound, redirect } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
-import {
-  baselineConfidence,
-  outlierLabelDisplay,
-  type OutlierLabel,
-} from "@/lib/research/outliers";
+import { baselineConfidence } from "@/lib/research/outliers";
+import { getProviderForPlatform } from "@/lib/research/discovery/registry";
 import { createClient } from "@/lib/supabase/server";
-import { ResearchItemCard } from "../../research-item-card";
+import { CreatorPostsWorkspace } from "../../creator-posts-workspace";
+import type { ResearchCardItem } from "../../research-item-card";
 
 export default async function ResearchCreatorPage({
   params,
@@ -42,7 +39,7 @@ export default async function ResearchCreatorPage({
         .eq("user_id", user.id)
         .eq("external_creator_id", creatorId)
         .order("outlier_score", { ascending: false, nullsFirst: false })
-        .limit(40),
+        .limit(60),
       supabase
         .from("research_watchlist_members")
         .select("watchlist_id, priority, notes")
@@ -74,6 +71,21 @@ export default async function ResearchCreatorPage({
     .map((m) => watchlists?.find((w) => w.id === m.watchlist_id)?.name)
     .filter(Boolean);
 
+  const provider = getProviderForPlatform(creator.platform);
+  const canAutoPull = Boolean(
+    provider?.getCreatorPosts && provider.capabilities().getCreatorPosts,
+  );
+
+  const cardPosts = (posts ?? []).map(
+    (item) =>
+      ({
+        ...item,
+        analysis: (item.analysis ?? {}) as Record<string, unknown>,
+      }) as ResearchCardItem,
+  );
+
+  const handle = creator.handle || creator.display_name || "creator";
+
   return (
     <div>
       <Button asChild variant="ghost" size="sm" className="mb-4">
@@ -81,10 +93,13 @@ export default async function ResearchCreatorPage({
       </Button>
       <PageHeader
         title={creator.display_name || creator.handle || "Creator"}
-        description="Public/tracked data only — FormCraft does not have private analytics for this creator."
+        description={`@${handle} · Profile + outlier workspace (public/tracked data only).`}
       />
       <div className="mb-6 flex flex-wrap gap-2">
         <Badge variant="default">{creator.platform}</Badge>
+        {creator.handle ? (
+          <Badge variant="primary">@{creator.handle}</Badge>
+        ) : null}
         {creator.tracking_paused ? (
           <Badge variant="warning">Paused</Badge>
         ) : (
@@ -96,7 +111,7 @@ export default async function ResearchCreatorPage({
           </Badge>
         ))}
       </div>
-      <div className="mb-8 grid gap-4 md:grid-cols-3">
+      <div className="mb-8 grid gap-4 md:grid-cols-4">
         <div className="rounded-xl border border-outline-variant/20 bg-surface-primary p-4">
           <p className="text-xs uppercase tracking-widest text-secondary">
             Followers
@@ -121,6 +136,15 @@ export default async function ResearchCreatorPage({
         </div>
         <div className="rounded-xl border border-outline-variant/20 bg-surface-primary p-4">
           <p className="text-xs uppercase tracking-widest text-secondary">
+            Posts tracked
+          </p>
+          <p className="mt-2 text-xl font-semibold">{posts?.length ?? 0}</p>
+          <p className="text-xs text-secondary">
+            Outlier = views ÷ this creator&apos;s median
+          </p>
+        </div>
+        <div className="rounded-xl border border-outline-variant/20 bg-surface-primary p-4">
+          <p className="text-xs uppercase tracking-widest text-secondary">
             Data freshness
           </p>
           <p className="mt-2 text-sm">
@@ -141,50 +165,25 @@ export default async function ResearchCreatorPage({
         <div className="rounded-xl border border-outline-variant/20 p-4">
           <p className="font-semibold">Hook previews</p>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-secondary">
-            {hooks.map((h) => (
-              <li key={h}>{h}</li>
-            ))}
+            {hooks.length === 0 ? (
+              <li>Run Analyze on posts to surface hooks</li>
+            ) : (
+              hooks.map((h) => <li key={h}>{h}</li>)
+            )}
           </ul>
         </div>
       </div>
 
-      {(posts?.length ?? 0) === 0 ? (
-        <EmptyState
-          title="No posts linked yet"
-          description="Run Discover and track this creator from outlier cards."
-        />
-      ) : (
-        <div className="grid gap-6 xl:grid-cols-2">
-          {posts!.map((item) => (
-            <ResearchItemCard
-              key={item.id}
-              item={{
-                ...item,
-                outlier_label: item.outlier_label,
-              }}
-              watchlists={(watchlists ?? []).map((w) => ({
-                id: w.id,
-                name: w.name,
-              }))}
-            />
-          ))}
-        </div>
-      )}
-
-      {(posts ?? []).some((p) => p.outlier_label) ? (
-        <p className="mt-6 text-xs text-secondary">
-          Strongest labels:{" "}
-          {Array.from(
-            new Set(
-              (posts ?? [])
-                .map((p) =>
-                  outlierLabelDisplay(p.outlier_label as OutlierLabel | null),
-                )
-                .filter((l) => l !== "Unscored"),
-            ),
-          ).join(" · ")}
-        </p>
-      ) : null}
+      <CreatorPostsWorkspace
+        creatorId={creatorId}
+        platform={creator.platform}
+        posts={cardPosts}
+        watchlists={(watchlists ?? []).map((w) => ({
+          id: w.id,
+          name: w.name,
+        }))}
+        canAutoPull={canAutoPull}
+      />
     </div>
   );
 }

@@ -40,5 +40,8 @@ export type ResearchAnalysis = {
   reusablePattern: string | null;
   caution: string;
   evidenceBasis: "metadata_only" | "metadata_and_transcript";
+  /** Present when captions/transcript were available (YouTube). */
+  structureBeats?: string[];
+  transcriptHook?: string | null;
 };
 

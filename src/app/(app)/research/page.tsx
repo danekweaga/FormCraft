@@ -14,19 +14,25 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { searchablePlatforms } from "@/lib/research/discovery/registry";
 import { scorePersonalRelevance } from "@/lib/research/relevance";
+import type { NicheBrief } from "@/lib/research/niche-brief";
 import { createClient } from "@/lib/supabase/server";
-import { generateNicheBriefAction } from "./actions";
+import {
+  generateNicheBriefAction,
+  pullCreatorPostsFormAction,
+  refreshWatchlistMonitoringAction,
+  toggleWatchlistPausedAction,
+} from "./actions";
+import { ContentGapsPanel } from "./content-gaps-panel";
+import { CreatorComparePanel } from "./creator-compare-panel";
 import { MultiOutlierForm } from "./multi-outlier-form";
 import { NicheProfileForm } from "./niche-profile-form";
+import { ResearchFeedWithFilters } from "./research-feed-filters";
 import {
   ResearchScanForm,
   SaveResearchReferenceForm,
 } from "./research-forms";
-import {
-  ResearchItemCard,
-  type ResearchCardItem,
-} from "./research-item-card";
-import { WatchlistCreateForm } from "./watchlist-form";
+import type { ResearchCardItem } from "./research-item-card";
+import { WatchlistCreateForm, AddCreatorToWatchlistForm } from "./watchlist-form";
 
 const MODES = [
   { id: "for-you", label: "For You" },
@@ -34,10 +40,27 @@ const MODES = [
   { id: "watchlists", label: "Watchlists" },
   { id: "discover", label: "Discover" },
   { id: "creators", label: "Creators" },
+  { id: "gaps", label: "Gaps" },
+  { id: "compare", label: "Compare" },
   { id: "saved", label: "Saved" },
 ] as const;
 
 type Mode = (typeof MODES)[number]["id"];
+
+function platformLine(platforms: ReturnType<typeof searchablePlatforms>) {
+  const parts: string[] = [];
+  const yt = platforms.find((p) => p.platform === "youtube");
+  const tt = platforms.find((p) => p.platform === "tiktok");
+  const demo = platforms.find((p) => p.providerType === "demo");
+  if (yt) parts.push("YouTube official (opt-in for niche search)");
+  if (tt) parts.push("TikTok via TIKTOK_DATA_API_KEY (third-party)");
+  if (demo && !yt && !tt) parts.push("Demo fixtures (RESEARCH_ENABLE_DEMO)");
+  else if (demo) parts.push("Demo available");
+  if (parts.length === 0) {
+    return "none configured — set TIKTOK_DATA_API_KEY and/or YOUTUBE_DATA_API_KEY (YouTube opt-in), or RESEARCH_ENABLE_DEMO=1";
+  }
+  return parts.join(" · ");
+}
 
 export default async function ResearchPage({
   searchParams,
@@ -56,9 +79,9 @@ export default async function ResearchPage({
   if (!user) redirect("/sign-in");
 
   const platforms = searchablePlatforms();
-  const youtubeConfigured = Boolean(
-    process.env.YOUTUBE_DATA_API_KEY?.trim(),
-  );
+  const discoveryConfigured = platforms.length > 0;
+  const tiktokConfigured = platforms.some((p) => p.platform === "tiktok");
+  const youtubeConfigured = platforms.some((p) => p.platform === "youtube");
 
   const [
     { data: rawItems },
@@ -72,6 +95,7 @@ export default async function ResearchPage({
     { data: experiments },
     { data: myPosts },
     { data: feedback },
+    { data: watchlistMembers },
   ] = await Promise.all([
     supabase
       .from("research_items")
@@ -84,7 +108,9 @@ export default async function ResearchPage({
       .limit(80),
     supabase
       .from("research_scans")
-      .select("id, query, status, last_run_at, next_run_at, last_error, parameters")
+      .select(
+        "id, name, query, status, last_run_at, next_run_at, last_error, parameters, auto_scan_enabled, platforms",
+      )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(12),
@@ -144,6 +170,9 @@ export default async function ResearchPage({
       .eq("user_id", user.id)
       .eq("feedback_type", "hide_creator")
       .limit(100),
+    supabase
+      .from("research_watchlist_members")
+      .select("watchlist_id, external_creator_id"),
   ]);
 
   const topics = Array.from(
@@ -224,7 +253,26 @@ export default async function ResearchPage({
     (a, b) => (b.personalScore ?? 0) - (a.personalScore ?? 0),
   );
   const outliers = enriched.filter((i) => (i.outlier_score ?? 0) >= 1.5);
+  const watchlistCreatorIds = new Set(
+    (watchlistMembers ?? [])
+      .map((m) => m.external_creator_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const watchlistOutliers = enriched.filter(
+    (i) =>
+      i.external_creator_id &&
+      watchlistCreatorIds.has(i.external_creator_id) &&
+      (i.outlier_score ?? 0) >= 1.5,
+  );
   const saved = enriched.filter((i) => i.saved);
+
+  const autoScans = (scans ?? []).filter(
+    (s) =>
+      s.auto_scan_enabled &&
+      typeof s.name === "string" &&
+      s.name.startsWith("Auto:"),
+  );
+  const primaryAuto = autoScans[0] ?? (scans ?? []).find((s) => s.auto_scan_enabled);
 
   const latestBrief = (scans ?? []).find(
     (s) =>
@@ -236,12 +284,25 @@ export default async function ResearchPage({
     latestBrief?.parameters &&
     typeof latestBrief.parameters === "object" &&
     "nicheBrief" in (latestBrief.parameters as object)
-      ? (
-          latestBrief.parameters as {
-            nicheBrief: Record<string, unknown>;
-          }
-        ).nicheBrief
+      ? ((latestBrief.parameters as { nicheBrief: NicheBrief }).nicheBrief ??
+        null)
       : null;
+
+  const watchlistOptions = (watchlists ?? []).map((w) => ({
+    id: w.id,
+    name: w.name,
+  }));
+
+  const creatorOptions = (creators ?? []).map((c) => ({
+    id: c.id,
+    label: c.display_name || c.handle || "Creator",
+    platform: c.platform,
+  }));
+
+  const feedList =
+    mode === "saved" ? saved : mode === "outliers" ? outliers : forYou;
+  const isFeedMode =
+    mode === "for-you" || mode === "outliers" || mode === "saved";
 
   return (
     <div>
@@ -249,9 +310,14 @@ export default async function ResearchPage({
         title="Research"
         description="Niche discovery and watchlists. Outlier scores are creator-relative when possible — never fake viral trends."
         actions={
-          <Button asChild variant="outline">
-            <Link href="/models">Models</Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link href="/canvas">Canvas</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/models">Models</Link>
+            </Button>
+          </div>
         }
       />
 
@@ -269,14 +335,12 @@ export default async function ResearchPage({
       </div>
 
       <p className="mb-6 text-xs text-secondary">
-        Searchable now:{" "}
-        {platforms.length
-          ? platforms
-              .map((p) => `${p.platform} (${p.providerName})`)
-              .join(", ")
-          : "none configured — set YOUTUBE_DATA_API_KEY"}
-        . Instagram/TikTok niche search is not available via official APIs —
-        use manual save.
+        Searchable now: {platformLine(platforms)}. Official TikTok Login Kit
+        cannot niche-search
+        {tiktokConfigured
+          ? "; TikTok results use TikTokAPI.store (third-party)."
+          : "; add TIKTOK_DATA_API_KEY for TikTok discovery."}{" "}
+        Instagram niche search remains manual URL save.
       </p>
 
       {mode === "discover" ? (
@@ -286,11 +350,33 @@ export default async function ResearchPage({
               <CardTitle>Discover niche outliers</CardTitle>
               <CardDescription>
                 Metadata → local baselines → outliers. Deep AI only when you
-                click Analyze.
+                click Analyze. YouTube niche search is opt-in to protect quota.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ResearchScanForm configured={youtubeConfigured || platforms.some((p) => p.providerName === "demo")} />
+              <ResearchScanForm
+                configured={discoveryConfigured}
+                platforms={platforms}
+                creators={creatorOptions}
+              />
+              {primaryAuto ? (
+                <p className="mt-3 text-xs text-secondary">
+                  Auto-scan “{primaryAuto.name}” is on
+                  {primaryAuto.platforms?.length
+                    ? ` · platforms: ${primaryAuto.platforms.join(", ")}`
+                    : ""}
+                  . Last run:{" "}
+                  {primaryAuto.last_run_at
+                    ? new Date(primaryAuto.last_run_at).toLocaleString()
+                    : "not yet"}
+                  .
+                </p>
+              ) : (
+                <p className="mt-3 text-xs text-secondary">
+                  Save a niche profile below to create an auto-scan that refreshes
+                  on schedule without searching every time.
+                </p>
+              )}
             </CardContent>
           </Card>
           <Card className="border-outline-variant/20 bg-surface-primary paper-shadow">
@@ -298,7 +384,7 @@ export default async function ResearchPage({
               <CardTitle>Manual reference</CardTitle>
               <CardDescription>
                 Paste a public URL when discovery providers cannot search that
-                platform.
+                platform (especially Instagram).
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -316,7 +402,9 @@ export default async function ResearchPage({
                   topics: (nicheProfile?.topics ?? []).join(", "),
                   keywords: (nicheProfile?.keywords ?? []).join(", "),
                   targetAudience: nicheProfile?.target_audience ?? "",
+                  platforms: nicheProfile?.platforms ?? [],
                 }}
+                searchablePlatforms={platforms}
               />
             </CardContent>
           </Card>
@@ -341,7 +429,9 @@ export default async function ResearchPage({
               </form>
               {briefPayload ? (
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  {Object.entries(briefPayload).map(([key, value]) => (
+                  {(
+                    Object.entries(briefPayload) as Array<[string, unknown]>
+                  ).map(([key, value]) => (
                     <div
                       key={key}
                       className="rounded-lg border border-outline-variant/15 p-3 text-sm"
@@ -367,7 +457,8 @@ export default async function ResearchPage({
               </span>
               {scans!.map((scan) => (
                 <Badge key={scan.id} variant="default">
-                  {scan.query} · {scan.status}
+                  {scan.name || scan.query} · {scan.status}
+                  {scan.auto_scan_enabled ? " · auto" : ""}
                 </Badge>
               ))}
             </div>
@@ -376,41 +467,155 @@ export default async function ResearchPage({
       ) : null}
 
       {mode === "watchlists" ? (
-        <div className="mb-8 grid gap-6 lg:grid-cols-2">
-          <Card className="border-outline-variant/20 bg-surface-primary paper-shadow">
-            <CardHeader>
-              <CardTitle>Create watchlist</CardTitle>
-              <CardDescription>
-                Track selected creators separately from niche discovery.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <WatchlistCreateForm />
-            </CardContent>
-          </Card>
+        <div className="mb-8 space-y-6">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card className="border-outline-variant/20 bg-surface-primary paper-shadow">
+              <CardHeader>
+                <CardTitle>Create watchlist</CardTitle>
+                <CardDescription>
+                  Niche creator lists — FormCraft pulls their posts and scores
+                  outliers vs each creator&apos;s baseline (Sandcastle-style).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <WatchlistCreateForm />
+                <div className="rounded-lg border border-outline-variant/20 bg-surface-container-lowest p-3">
+                  <p className="text-sm font-medium text-on-background">
+                    Refresh all watchlist channels
+                  </p>
+                  <p className="mt-1 text-xs text-secondary">
+                    Pulls latest posts for creators on active watchlists only —
+                    not a broad niche search.
+                  </p>
+                  <form action={refreshWatchlistMonitoringAction} className="mt-3">
+                    <Button type="submit" variant="outline" size="sm">
+                      Refresh now
+                    </Button>
+                  </form>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-outline-variant/20 bg-surface-primary paper-shadow">
+              <CardHeader>
+                <CardTitle>Add creator by handle</CardTitle>
+                <CardDescription>
+                  Add TikTok or YouTube creators you already know are in your
+                  niche, then pull their recent outliers.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AddCreatorToWatchlistForm
+                  watchlists={watchlistOptions}
+                  tiktokConfigured={tiktokConfigured}
+                  youtubeConfigured={youtubeConfigured}
+                />
+              </CardContent>
+            </Card>
+          </div>
           <div className="space-y-3">
             {(watchlists?.length ?? 0) === 0 ? (
               <EmptyState
                 title="No watchlists yet"
-                description="Create a list like “CS creators”, then Track Creator from an outlier card."
+                description="Create a list like “CS creators”, then add 5+ TikTok/YouTube handles. Refresh — outliers appear when a post beats that creator’s median."
               />
             ) : (
-              watchlists!.map((w) => (
-                <div
-                  key={w.id}
-                  className="rounded-xl border border-outline-variant/20 bg-surface-primary p-4"
-                >
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="primary">{w.name}</Badge>
-                    {w.paused ? <Badge variant="warning">Paused</Badge> : null}
+              watchlists!.map((w) => {
+                const memberIds = (watchlistMembers ?? [])
+                  .filter((m) => m.watchlist_id === w.id)
+                  .map((m) => m.external_creator_id);
+                const members = (creators ?? []).filter((c) =>
+                  memberIds.includes(c.id),
+                );
+                return (
+                  <div
+                    key={w.id}
+                    className="rounded-xl border border-outline-variant/20 bg-surface-primary p-4"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="primary">{w.name}</Badge>
+                      {w.paused ? <Badge variant="warning">Paused</Badge> : null}
+                      <Badge variant="default">
+                        {members.length} creator{members.length === 1 ? "" : "s"}
+                      </Badge>
+                      <form
+                        action={toggleWatchlistPausedAction}
+                        className="ml-auto"
+                      >
+                        <input type="hidden" name="id" value={w.id} />
+                        <input
+                          type="hidden"
+                          name="paused"
+                          value={w.paused ? "false" : "true"}
+                        />
+                        <Button type="submit" size="sm" variant="ghost">
+                          {w.paused ? "Resume" : "Pause"}
+                        </Button>
+                      </form>
+                    </div>
+                    <p className="mt-2 text-sm text-secondary">
+                      {w.description || "No description"}
+                    </p>
+                    {members.length > 0 ? (
+                      <ul className="mt-3 flex flex-wrap gap-2">
+                        {members.map((c) => (
+                          <li
+                            key={c.id}
+                            className="flex items-center gap-1 rounded-full border border-outline-variant/25 pl-2.5 pr-1 py-0.5"
+                          >
+                            <Link
+                              href={`/research/creators/${c.id}`}
+                              className="text-xs text-secondary hover:text-on-background"
+                            >
+                              @{c.handle || c.display_name} · {c.platform}
+                            </Link>
+                            {c.platform === "tiktok" ||
+                            c.platform === "youtube" ? (
+                              <form action={pullCreatorPostsFormAction}>
+                                <input
+                                  type="hidden"
+                                  name="creatorId"
+                                  value={c.id}
+                                />
+                                <Button
+                                  type="submit"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 px-1.5 text-[10px]"
+                                >
+                                  Pull
+                                </Button>
+                              </form>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-xs text-secondary">
+                        Add 5+ creators by handle above, then Refresh — outliers
+                        appear when a post beats that creator&apos;s median.
+                      </p>
+                    )}
                   </div>
-                  <p className="mt-2 text-sm text-secondary">
-                    {w.description || "No description"}
-                  </p>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
+          {watchlistOutliers.length > 0 ? (
+            <div>
+              <h3 className="mb-3 font-headline text-lg font-semibold text-on-background">
+                Watchlist outliers
+              </h3>
+              <ResearchFeedWithFilters
+                items={watchlistOutliers}
+                watchlists={watchlistOptions}
+              />
+            </div>
+          ) : (watchlists?.length ?? 0) > 0 ? (
+            <EmptyState
+              title="No watchlist outliers yet"
+              description="Add 5+ creators, then Refresh (or Pull on a creator). Outliers appear when a post is ≥1.5× that creator’s median views."
+            />
+          ) : null}
         </div>
       ) : null}
 
@@ -419,7 +624,7 @@ export default async function ResearchPage({
           {(creators?.length ?? 0) === 0 ? (
             <EmptyState
               title="No tracked creators"
-              description="Track a creator from an outlier card after a Discover scan."
+              description="Add TikTok/YouTube handles under Watchlists, or Track creator from an outlier card. Open a profile to filter outliers and pull posts."
             />
           ) : (
             <ul className="grid gap-3 md:grid-cols-2">
@@ -453,16 +658,21 @@ export default async function ResearchPage({
         </div>
       ) : null}
 
-      {mode === "outliers" || mode === "for-you" || mode === "saved" ? (
+      {mode === "gaps" ? (
+        <div className="mb-8">
+          <ContentGapsPanel initial={null} />
+        </div>
+      ) : null}
+
+      {mode === "compare" ? (
+        <div className="mb-8">
+          <CreatorComparePanel creators={creatorOptions} />
+        </div>
+      ) : null}
+
+      {isFeedMode ? (
         <div className="mb-6">
-          <MultiOutlierForm
-            items={(mode === "saved"
-              ? saved
-              : mode === "outliers"
-                ? outliers
-                : forYou
-            ).slice(0, 20)}
-          />
+          <MultiOutlierForm items={feedList.slice(0, 20)} />
         </div>
       ) : null}
 
@@ -479,45 +689,23 @@ export default async function ResearchPage({
         />
       ) : null}
 
-      {mode !== "discover" &&
-      mode !== "watchlists" &&
-      mode !== "creators" ? (
-        (() => {
-          const list =
-            mode === "saved"
-              ? saved
-              : mode === "outliers"
-                ? outliers
-                : forYou;
-          if (list.length === 0) {
-            return (
-              <EmptyState
-                title={
-                  mode === "saved"
-                    ? "Nothing saved yet"
-                    : "No research items yet"
-                }
-                description="Run Discover → niche scan (YouTube when configured). FormCraft will not invent results."
-              />
-            );
-          }
-          return (
-            <div className="mt-6 grid gap-6 xl:grid-cols-2">
-              {list.map((item) => (
-                <ResearchItemCard
-                  key={item.id}
-                  item={item}
-                  watchlists={(watchlists ?? []).map((w) => ({
-                    id: w.id,
-                    name: w.name,
-                  }))}
-                />
-              ))}
-            </div>
-          );
-        })()
+      {isFeedMode ? (
+        feedList.length === 0 ? (
+          <EmptyState
+            title={
+              mode === "saved" ? "Nothing saved yet" : "No research items yet"
+            }
+            description="Run Discover with TikTok (and optionally YouTube), or refresh watchlist channels. FormCraft will not invent results."
+          />
+        ) : (
+          <div className="mt-6">
+            <ResearchFeedWithFilters
+              items={feedList}
+              watchlists={watchlistOptions}
+            />
+          </div>
+        )
       ) : null}
-
     </div>
   );
 }

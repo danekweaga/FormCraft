@@ -1,11 +1,18 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getConfiguredDiscoveryProviders } from "./discovery/registry";
-import { scoreResearchOutliers } from "./outliers";
-import { classifyCheapRelevance } from "./cheap-relevance";
+import {
+  getConfiguredDiscoveryProviders,
+  getProviderForPlatform,
+} from "./discovery/registry";
+import type { SearchPostResult } from "./discovery/types";
+import { ingestScoredPosts } from "./ingest-posts";
 import {
   getDiscoveryBudgets,
   providerBudgetAllows,
 } from "./provider-budget";
+import {
+  inferPlatformFromHandle,
+  resolvePlatformCreatorId,
+} from "./resolve-creator";
 
 type ResearchScanRow = {
   id: string;
@@ -16,45 +23,20 @@ type ResearchScanRow = {
   min_views: number;
   min_outlier_score: number;
   max_results: number;
+  parameters: Record<string, unknown> | null;
 };
 
-async function upsertCreator(
-  supabase: SupabaseClient,
-  userId: string,
-  video: {
-    platform: string;
-    creatorId: string | null;
-    creatorName: string | null;
-    creatorFollowerCount?: number | null;
-    providerName: string;
-    retrievedAt: string;
-  },
-): Promise<string | null> {
-  if (!video.creatorId) return null;
-  const { data, error } = await supabase
-    .from("external_creators")
-    .upsert(
-      {
-        user_id: userId,
-        platform: video.platform,
-        platform_creator_id: video.creatorId,
-        display_name: video.creatorName,
-        handle: video.creatorName,
-        follower_count: video.creatorFollowerCount ?? null,
-        data_source: video.providerName,
-        data_freshness_at: video.retrievedAt,
-      },
-      { onConflict: "user_id,platform,platform_creator_id" },
-    )
-    .select("id")
-    .single();
-  if (error) return null;
-  return data?.id ?? null;
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(String).filter(Boolean);
 }
 
 /**
  * Niche discovery scan. Calculates outliers locally.
- * Does NOT run deep AI analysis automatically (Growth H cost control).
+ * Does NOT run deep AI analysis automatically.
+ *
+ * When creatorIds / channelHandles are set on scan.parameters, prefers
+ * getCreatorPosts for those channels and skips broad searchPosts.
  */
 export async function runResearchScan(params: {
   supabase: SupabaseClient;
@@ -64,7 +46,7 @@ export async function runResearchScan(params: {
   const { data, error } = await params.supabase
     .from("research_scans")
     .select(
-      "id, user_id, query, platforms, lookback_days, min_views, min_outlier_score, max_results",
+      "id, user_id, query, platforms, lookback_days, min_views, min_outlier_score, max_results, parameters",
     )
     .eq("id", params.scanId)
     .eq("user_id", params.userId)
@@ -72,13 +54,23 @@ export async function runResearchScan(params: {
   if (error || !data) throw new Error(error?.message ?? "Research scan not found");
 
   const scan = data as ResearchScanRow;
-  const providers = getConfiguredDiscoveryProviders().filter((p) =>
-    p.capabilities().platforms.some((plat) => scan.platforms.includes(plat)),
+  const parameters =
+    scan.parameters && typeof scan.parameters === "object"
+      ? scan.parameters
+      : {};
+  const creatorIds = asStringArray(parameters.creatorIds);
+  const channelHandles = asStringArray(parameters.channelHandles);
+  const targetCreators = creatorIds.length > 0 || channelHandles.length > 0;
+
+  const searchProviders = getConfiguredDiscoveryProviders().filter(
+    (p) =>
+      p.capabilities().searchPosts &&
+      p.capabilities().platforms.some((plat) => scan.platforms.includes(plat)),
   );
 
-  if (providers.length === 0) {
+  if (!targetCreators && searchProviders.length === 0) {
     throw new Error(
-      "No configured discovery provider supports the selected platforms. Set YOUTUBE_DATA_API_KEY or use demo in development.",
+      "No configured discovery provider supports the selected platforms. Set TIKTOK_DATA_API_KEY and/or opt into YouTube with YOUTUBE_DATA_API_KEY, or enable RESEARCH_ENABLE_DEMO.",
     );
   }
 
@@ -110,127 +102,134 @@ export async function runResearchScan(params: {
   try {
     const retrievedAt = new Date().toISOString();
     const maxResults = Math.min(scan.max_results, budgets.maxResultsPerQuery);
-    const discoveredBatches = await Promise.all(
-      providers.map((provider) =>
-        provider.searchPosts({
-          query: scan.query,
-          platforms: scan.platforms as Array<"youtube" | "instagram" | "tiktok">,
-          lookbackDays: scan.lookback_days,
-          maxResults,
-          minViews: scan.min_views,
-        }),
-      ),
-    );
-    const discovered = discoveredBatches.flat();
+    const usedProviders = new Set<string>();
+    let discovered: SearchPostResult[] = [];
 
-    // Deduplicate by platform+externalId
-    const seen = new Set<string>();
-    const unique = discovered.filter((post) => {
-      const key = `${post.platform}:${post.externalId}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    if (targetCreators) {
+      const { data: tracked } = creatorIds.length
+        ? await params.supabase
+            .from("external_creators")
+            .select("id, platform, platform_creator_id, handle")
+            .eq("user_id", params.userId)
+            .in("id", creatorIds)
+        : { data: [] as Array<{
+            id: string;
+            platform: string;
+            platform_creator_id: string;
+            handle: string | null;
+          }> };
 
-    const scored = scoreResearchOutliers(unique).filter(
-      (video) =>
-        (video.views ?? 0) >= scan.min_views &&
-        (video.outlierScore ?? 0) >= Number(scan.min_outlier_score),
-    );
-    const withRelevance = scored.map((video) => ({
-      video,
-      relevance: classifyCheapRelevance(video, scan.query),
-    }));
-    const relevantCount = withRelevance.filter((r) => r.relevance.relevant).length;
-    // Prefer relevant posts; only hard-drop weak matches when enough remain.
-    const retained =
-      relevantCount >= 3
-        ? withRelevance.filter((r) => r.relevance.relevant)
-        : withRelevance;
+      const targets: Array<{
+        platform: string;
+        platformCreatorId: string;
+      }> = (tracked ?? []).map((c) => ({
+        platform: c.platform,
+        platformCreatorId: c.platform_creator_id,
+      }));
 
-    for (const { video, relevance } of retained) {
-      const providerMeta = unique.find((u) => u.externalId === video.externalId);
-      const creatorId = await upsertCreator(params.supabase, params.userId, {
-        platform: video.platform,
-        creatorId: video.creatorId,
-        creatorName: video.creatorName,
-        creatorFollowerCount: providerMeta?.creatorFollowerCount,
-        providerName: providerMeta?.providerName ?? "unknown",
-        retrievedAt: providerMeta?.retrievedAt ?? retrievedAt,
-      });
+      for (const handle of channelHandles) {
+        const platform = inferPlatformFromHandle(handle, scan.platforms);
+        if (!platform) continue;
+        const platformCreatorId = await resolvePlatformCreatorId({
+          platform,
+          handle,
+        });
+        if (!platformCreatorId) continue;
+        targets.push({ platform, platformCreatorId });
 
-      const { data: upserted, error: upsertError } = await params.supabase
-        .from("research_items")
-        .upsert(
+        await params.supabase.from("external_creators").upsert(
           {
             user_id: params.userId,
-            research_scan_id: scan.id,
-            platform: video.platform,
-            external_id: video.externalId,
-            external_url: video.externalUrl,
-            creator_id: video.creatorId,
-            creator_name: video.creatorName,
-            external_creator_id: creatorId,
-            title: video.title,
-            description: video.description,
-            thumbnail_url: video.thumbnailUrl,
-            published_at: video.publishedAt,
-            duration_seconds: video.durationSeconds,
-            views: video.views,
-            likes: video.likes,
-            comments: video.comments,
-            shares: video.shares,
-            creator_followers: providerMeta?.creatorFollowerCount ?? null,
-            baseline_views: video.baselineViews,
-            outlier_score: video.outlierScore,
-            score_basis: video.scoreBasis,
-            outlier_label: video.outlierLabel ?? null,
-            baseline_confidence: video.baselineConfidence ?? null,
-            baseline_sample_size: video.baselineSampleSize ?? null,
-            data_freshness_at: providerMeta?.retrievedAt ?? retrievedAt,
-            hook_text: video.title,
-            topic: relevance.topic || scan.query,
-            personal_relevance_score: relevance.relevant ? 1 : 0,
-            source:
-              providerMeta?.providerName === "demo"
-                ? "manual_reference"
-                : "official_api",
-            collection_method: providerMeta?.collectionMethod ?? "search",
-            discovered_at: retrievedAt,
+            platform,
+            platform_creator_id: platformCreatorId,
+            handle: handle.replace(/^@/, ""),
+            display_name: handle.replace(/^@/, ""),
+            data_source:
+              platform === "youtube" ? "official_api" : "third_party_api",
+            data_freshness_at: retrievedAt,
           },
-          { onConflict: "user_id,platform,external_id" },
-        )
-        .select("id")
-        .single();
+          { onConflict: "user_id,platform,platform_creator_id" },
+        );
+      }
 
-      if (upsertError) throw new Error(upsertError.message);
+      const uniqueTargets = Array.from(
+        new Map(
+          targets.map((t) => [`${t.platform}:${t.platformCreatorId}`, t]),
+        ).values(),
+      ).slice(0, budgets.maxTrackedCreators);
 
-      if (upserted?.id) {
-        await params.supabase.from("external_metric_snapshots").insert({
+      for (const target of uniqueTargets) {
+        // Honor opted-in platforms (esp. YouTube — skip unless included)
+        if (
+          scan.platforms.length > 0 &&
+          !scan.platforms.includes(target.platform)
+        ) {
+          continue;
+        }
+        const provider = getProviderForPlatform(target.platform);
+        if (
+          !provider?.getCreatorPosts ||
+          !provider.capabilities().getCreatorPosts
+        ) {
+          continue;
+        }
+        const posts = await provider.getCreatorPosts({
+          platform: target.platform as "youtube" | "tiktok" | "instagram" | "other",
+          platformCreatorId: target.platformCreatorId,
+          maxResults: Math.min(15, maxResults),
+        });
+        usedProviders.add(provider.providerName);
+        discovered.push(...posts);
+        await params.supabase.from("provider_usage_events").insert({
           user_id: params.userId,
-          research_item_id: upserted.id,
-          captured_at: retrievedAt,
-          views: video.views,
-          likes: video.likes,
-          comments: video.comments,
-          shares: video.shares,
-          follower_count: providerMeta?.creatorFollowerCount ?? null,
-          data_source: providerMeta?.providerName ?? "unknown",
+          provider: provider.providerName,
+          operation: "get_creator_posts",
+          result_count: posts.length,
+          metadata: {
+            scanId: scan.id,
+            platformCreatorId: target.platformCreatorId,
+          },
+        });
+      }
+    } else {
+      const discoveredBatches = await Promise.all(
+        searchProviders.map((provider) =>
+          provider.searchPosts({
+            query: scan.query,
+            platforms: scan.platforms as Array<
+              "youtube" | "instagram" | "tiktok"
+            >,
+            lookbackDays: scan.lookback_days,
+            maxResults,
+            minViews: scan.min_views,
+          }),
+        ),
+      );
+      discovered = discoveredBatches.flat();
+      for (const provider of searchProviders) {
+        usedProviders.add(provider.providerName);
+        await params.supabase.from("provider_usage_events").insert({
+          user_id: params.userId,
+          provider: provider.providerName,
+          operation: "search_posts",
+          result_count: discovered.filter(
+            (d) => d.providerName === provider.providerName,
+          ).length,
+          metadata: { scanId: scan.id, query: scan.query },
         });
       }
     }
 
-    for (const provider of providers) {
-      await params.supabase.from("provider_usage_events").insert({
-        user_id: params.userId,
-        provider: provider.providerName,
-        operation: "search_posts",
-        result_count: discovered.filter(
-          (d) => d.providerName === provider.providerName,
-        ).length,
-        metadata: { scanId: scan.id, query: scan.query },
-      });
-    }
+    const ingested = await ingestScoredPosts({
+      supabase: params.supabase,
+      userId: params.userId,
+      posts: discovered,
+      query: scan.query,
+      researchScanId: scan.id,
+      minViews: scan.min_views,
+      minOutlierScore: Number(scan.min_outlier_score),
+      retrievedAt,
+    });
 
     const now = new Date();
     const nextRun = new Date(now.getTime() + 86_400_000);
@@ -246,9 +245,9 @@ export async function runResearchScan(params: {
       .eq("user_id", params.userId);
 
     return {
-      discovered: unique.length,
-      retained: retained.length,
-      providers: providers.map((p) => p.providerName),
+      discovered: ingested.discovered,
+      retained: ingested.retained,
+      providers: [...usedProviders],
     };
   } catch (error) {
     const message =
