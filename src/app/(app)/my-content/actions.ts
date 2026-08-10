@@ -237,7 +237,6 @@ export async function runContentIntelligenceJob(): Promise<{
           topic: classification.topic,
           content_pillar: classification.content_pillar,
           format: classification.format ?? post.format,
-          hook_text: classification.hook_type,
           classification_confidence: classification.confidence,
           classification_model: model,
           classified_at: new Date().toISOString(),

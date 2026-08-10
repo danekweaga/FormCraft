@@ -43,7 +43,12 @@ export async function runResearchScan(params: {
   supabase: SupabaseClient;
   userId: string;
   scanId: string;
-}): Promise<{ discovered: number; retained: number; providers: string[] }> {
+}): Promise<{
+  discovered: number;
+  eligible: number;
+  retained: number;
+  providers: string[];
+}> {
   const { data, error } = await params.supabase
     .from("research_scans")
     .select(
@@ -249,7 +254,8 @@ export async function runResearchScan(params: {
       .eq("user_id", params.userId);
 
     return {
-      discovered: ingested.discovered,
+      discovered: discovered.length,
+      eligible: ingested.discovered,
       retained: ingested.retained,
       providers: [...usedProviders],
     };

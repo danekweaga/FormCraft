@@ -57,9 +57,7 @@ export function postHook(post: ContentPostRow): string | null {
   if (post.hook_text?.trim()) return post.hook_text.trim();
   const classified = classificationString(post, "hook_text");
   if (classified) return classified;
-  if (post.title?.trim()) return post.title.trim();
-  const firstLine = post.caption?.split(/[\n.!?]/)[0]?.trim();
-  return firstLine || null;
+  return null;
 }
 
 export function filterPostsByPerformanceRange(
@@ -133,4 +131,3 @@ export function buildRemixIngredients(posts: ContentPostRow[]): {
   }
   return { topics, hooks };
 }
-

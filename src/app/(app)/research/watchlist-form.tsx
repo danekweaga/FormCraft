@@ -7,10 +7,29 @@ import { Label } from "@/components/ui/label";
 import {
   addCreatorToWatchlistAction,
   createWatchlistAction,
+  refreshWatchlistMonitoringAction,
   type ResearchActionState,
 } from "./actions";
 
 const initial: ResearchActionState = {};
+
+export function WatchlistRefreshForm() {
+  const [state, action, pending] = useActionState(
+    refreshWatchlistMonitoringAction,
+    initial,
+  );
+  return (
+    <form action={action} className="mt-3 space-y-2">
+      <Button type="submit" variant="outline" size="sm" disabled={pending}>
+        {pending ? "Checking channels…" : "Refresh now"}
+      </Button>
+      {state.error ? <p className="text-sm text-error">{state.error}</p> : null}
+      {state.success ? (
+        <p className="text-sm text-primary-container">{state.success}</p>
+      ) : null}
+    </form>
+  );
+}
 
 export function WatchlistCreateForm() {
   const [state, action, pending] = useActionState(createWatchlistAction, initial);

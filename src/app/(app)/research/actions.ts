@@ -2,9 +2,11 @@
 
 import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { CREATOR_CATALOG } from "@/data/creator-catalog";
 import { analyzeResearchBatch } from "@/lib/research/analyze";
 import { searchablePlatforms } from "@/lib/research/discovery/registry";
 import { runResearchScan } from "@/lib/research/run-scan";
+import { importCreatorCatalog } from "@/lib/research/import-creator-catalog";
 import { normalizeSearchFilters } from "@/lib/research/search-filters";
 import type { ResearchPlatform, ScoredResearchVideo } from "@/lib/research/types";
 import { createClient } from "@/lib/supabase/server";
@@ -103,7 +105,7 @@ export async function runResearchScanAction(
     });
     revalidatePath("/research");
     return {
-      success: `Scanned ${result.discovered} posts via ${result.providers.join(", ")} and kept ${result.retained} outliers. Deep AI analysis runs only when you click Analyze.`,
+      success: `Found ${result.discovered} provider results via ${result.providers.join(", ")}, ${result.eligible} were short-form posts from the selected time window, and ${result.retained} passed your filters. Deep AI analysis runs only when you click Analyze.`,
     };
   } catch (error) {
     revalidatePath("/research");
@@ -157,6 +159,9 @@ export async function saveResearchReferenceAction(
   const rawUrl = String(formData.get("url") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim().slice(0, 300);
   const notes = String(formData.get("notes") ?? "").trim().slice(0, 5000);
+  const suppliedTranscript = String(formData.get("transcript") ?? "")
+    .trim()
+    .slice(0, 40_000);
   let reference: ReturnType<typeof identifyReference>;
   try {
     reference = identifyReference(rawUrl);
@@ -189,13 +194,29 @@ export async function saveResearchReferenceAction(
     outlierScore: null,
     scoreBasis: "unavailable",
   };
+  const transcriptsByExternalId = new Map<string, string>();
+  if (suppliedTranscript.length >= 20) {
+    transcriptsByExternalId.set(video.externalId, suppliedTranscript);
+  } else if (reference.platform === "youtube") {
+    const { fetchYouTubeTranscript } = await import(
+      "@/lib/research/youtube-transcript"
+    );
+    const publicCaptions = await fetchYouTubeTranscript(video.externalId);
+    if (publicCaptions) {
+      transcriptsByExternalId.set(video.externalId, publicCaptions);
+    }
+  }
+
   const analyzed = await analyzeResearchBatch({
     supabase,
     userId: user.id,
     query: title || "manual reference",
     videos: [video],
+    transcriptsByExternalId,
   });
   const result = analyzed.get(video.externalId);
+  const transcriptGrounded =
+    result?.analysis.evidenceBasis === "metadata_and_transcript";
 
   const { error } = await supabase.from("research_items").upsert(
     {
@@ -205,7 +226,7 @@ export async function saveResearchReferenceAction(
       external_url: reference.normalizedUrl,
       title: title || null,
       description: notes || null,
-      hook_text: result?.analysis.hookText ?? title ?? null,
+      hook_text: transcriptGrounded ? result?.analysis.hookText ?? null : null,
       topic: result?.analysis.topic ?? null,
       analysis: result?.analysis ?? {},
       analysis_model: result?.model ?? null,
@@ -218,10 +239,9 @@ export async function saveResearchReferenceAction(
 
   revalidatePath("/research");
   return {
-    success:
-      reference.platform === "youtube"
-        ? "YouTube reference saved and analyzed from the metadata you supplied."
-        : `${reference.platform} reference saved. Analysis uses only the title/notes you supplied.`,
+    success: transcriptGrounded
+      ? "Reference saved. The spoken hook was derived from captions/transcript."
+      : "Reference saved with metadata only. Add a transcript or use a YouTube video with public captions before analyzing its spoken hook.",
   };
 }
 
@@ -303,12 +323,15 @@ export async function analyzeResearchItemAction(
     };
   }
 
+  const transcriptGrounded =
+    result.analysis.evidenceBasis === "metadata_and_transcript";
+
   await supabase
     .from("research_items")
     .update({
       analysis: result.analysis,
       analysis_model: result.model,
-      hook_text: result.analysis.hookText ?? item.hook_text,
+      hook_text: transcriptGrounded ? result.analysis.hookText : null,
       topic: result.analysis.topic ?? item.topic,
     })
     .eq("id", id)
@@ -321,10 +344,14 @@ export async function analyzeResearchItemAction(
   }
 
   const basis =
-    result.analysis.evidenceBasis === "metadata_and_transcript"
+    transcriptGrounded
       ? "metadata + public captions/transcript"
       : "metadata-only evidence";
-  return { success: `Deep analysis complete (${basis}).` };
+  return {
+    success: transcriptGrounded
+      ? `Deep analysis complete (${basis}). The hook is transcript-derived.`
+      : `Metadata analysis complete (${basis}). Spoken hook analysis was skipped because no transcript was available. Paste or upload a transcript in Analyze.`,
+  };
 }
 
 export async function createWatchlistAction(
@@ -780,18 +807,65 @@ export async function generateNicheBriefAction(formData: FormData) {
   revalidatePath("/research");
 }
 
-export async function refreshWatchlistMonitoringAction() {
+export async function refreshWatchlistMonitoringAction(
+  _previous: ResearchActionState,
+  _formData: FormData,
+): Promise<ResearchActionState> {
+  void _previous;
+  void _formData;
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return;
+  if (!user) return { error: "You must be signed in." };
 
   const { runWatchlistMonitor } = await import(
     "@/lib/research/watchlist-monitor"
   );
-  await runWatchlistMonitor({ supabase, userId: user.id });
-  revalidatePath("/research");
+  try {
+    const { data: catalogWatchlist } = await supabase
+      .from("research_watchlists")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("name", "Niche creator scan")
+      .maybeSingle();
+    const { count: catalogMemberCount } = catalogWatchlist
+      ? await supabase
+          .from("research_watchlist_members")
+          .select("external_creator_id", { count: "exact", head: true })
+          .eq("watchlist_id", catalogWatchlist.id)
+      : { count: 0 };
+    let imported = 0;
+    let trackable = 0;
+    if (!catalogWatchlist || (catalogMemberCount ?? 0) < CREATOR_CATALOG.length) {
+      const catalog = await importCreatorCatalog({
+        supabase,
+        userId: user.id,
+      });
+      imported = catalog.imported;
+      trackable = catalog.trackable;
+    }
+    const result = await runWatchlistMonitor({ supabase, userId: user.id });
+    revalidatePath("/research");
+    if (result.creatorsChecked === 0) {
+      return {
+        error:
+          "No active, supported creator channels were found. Import the creator list and configure a provider for the platform you want to scan.",
+      };
+    }
+    return {
+      success: `${
+        imported
+          ? `Imported ${imported} creator sources (${trackable} currently API-trackable). `
+          : ""
+      }Checked ${result.creatorsChecked} supported creator channels, found ${result.discovered} recent short-form posts, and kept ${result.retained}.`,
+    };
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error ? error.message : "Watchlist refresh failed.",
+    };
+  }
 }
 
 /** Pull posts for a single tracked creator (profile / watchlist “Pull posts now”). */
@@ -914,5 +988,3 @@ export async function addResearchItemToCanvasAction(formData: FormData) {
   revalidatePath(`/canvas/${boardId}`);
   revalidatePath("/research");
 }
-
-

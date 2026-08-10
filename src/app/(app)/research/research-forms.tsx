@@ -225,12 +225,23 @@ export function SaveResearchReferenceForm() {
         <Input id="reference-title" name="title" maxLength={300} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="reference-notes">Caption, transcript, or notes</Label>
+        <Label htmlFor="reference-notes">Caption or notes</Label>
         <textarea
           id="reference-notes"
           name="notes"
           rows={4}
           maxLength={5000}
+          className="w-full rounded-md border border-outline-variant/30 bg-surface-container-lowest px-3 py-2 text-sm"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="reference-transcript">Transcript (for spoken-hook analysis)</Label>
+        <textarea
+          id="reference-transcript"
+          name="transcript"
+          rows={6}
+          maxLength={40000}
+          placeholder="Paste the actual spoken transcript here. FormCraft will try public YouTube captions, but paste/upload the transcript if YouTube does not expose them."
           className="w-full rounded-md border border-outline-variant/30 bg-surface-container-lowest px-3 py-2 text-sm"
         />
       </div>

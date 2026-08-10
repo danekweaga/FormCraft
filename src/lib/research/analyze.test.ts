@@ -47,4 +47,43 @@ describe("analyzeResearchBatch transcript enrichment", () => {
     expect(analysis?.structureBeats?.length).toBeGreaterThan(0);
     expect(analysis?.caution.toLowerCase()).toContain("transcript");
   });
+
+  it("never presents a title as a spoken hook without transcript evidence", async () => {
+    const supabase = {
+      from: () => ({ insert: async () => ({ error: null }) }),
+    } as never;
+
+    const result = await analyzeResearchBatch({
+      supabase,
+      userId: "user-1",
+      query: "computer science",
+      videos: [
+        {
+          platform: "youtube",
+          externalId: "abc12345678",
+          externalUrl: "https://youtube.com/watch?v=abc12345678",
+          creatorId: null,
+          creatorName: "Test",
+          title: "This is metadata, not a spoken hook",
+          description: "A caption supplied by the platform",
+          thumbnailUrl: null,
+          publishedAt: null,
+          durationSeconds: 60,
+          views: 1000,
+          likes: 10,
+          comments: 1,
+          shares: null,
+          baselineViews: 500,
+          outlierScore: 2,
+          scoreBasis: "creator_median",
+        },
+      ],
+    });
+
+    const analysis = result.get("abc12345678")?.analysis;
+    expect(analysis?.evidenceBasis).toBe("metadata_only");
+    expect(analysis?.hookText).toBeNull();
+    expect(analysis?.hookType).toBeNull();
+    expect(analysis?.structureBeats).toBeUndefined();
+  });
 });

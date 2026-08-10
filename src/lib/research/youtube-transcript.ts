@@ -52,7 +52,8 @@ function extractCaptionTracks(html: string): CaptionTrack[] {
   const marker = '"captionTracks":';
   const start = html.indexOf(marker);
   if (start < 0) return [];
-  const fromArray = start + marker.length - 1;
+  const fromArray = html.indexOf("[", start + marker.length);
+  if (fromArray < 0) return [];
   let depth = 0;
   let end = -1;
   for (let i = fromArray; i < html.length; i++) {

@@ -135,7 +135,6 @@ export async function ingestScoredPosts(params: {
           baseline_confidence: video.baselineConfidence ?? null,
           baseline_sample_size: video.baselineSampleSize ?? null,
           data_freshness_at: providerMeta?.retrievedAt ?? retrievedAt,
-          hook_text: video.title,
           topic: relevance.topic || params.query,
           personal_relevance_score: relevance.relevant ? 1 : 0,
           source: sourceLabel(providerMeta?.providerName ?? "unknown"),

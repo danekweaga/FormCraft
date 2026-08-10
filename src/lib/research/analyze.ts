@@ -61,8 +61,8 @@ function fallbackAnalysis(
   }
 
   return {
-    hookText: video.title,
-    hookType: video.title?.trim().endsWith("?") ? "question" : "title_claim",
+    hookText: null,
+    hookType: null,
     topic: query,
     whyItMayWork:
       video.outlierScore !== null
@@ -152,8 +152,8 @@ export async function analyzeResearchBatch(params: {
         item.externalId,
         {
           analysis: {
-            hookText: item.hookText,
-            hookType: item.hookType,
+            hookText: hadTranscript ? item.hookText : null,
+            hookType: hadTranscript ? item.hookType : null,
             topic: item.topic,
             whyItMayWork: item.whyItMayWork,
             reusablePattern: item.reusablePattern,
@@ -161,8 +161,9 @@ export async function analyzeResearchBatch(params: {
             evidenceBasis: hadTranscript
               ? "metadata_and_transcript"
               : "metadata_only",
-            structureBeats:
-              item.structureBeats ?? fallbackItem?.structureBeats,
+            structureBeats: hadTranscript
+              ? item.structureBeats ?? fallbackItem?.structureBeats
+              : undefined,
           },
           model: result.usedLlm
             ? result.model

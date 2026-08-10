@@ -238,6 +238,22 @@ export async function createTranscriptAnalysis(input: {
       })
       .eq("id", row.id)
       .eq("user_id", auth.user.id);
+
+    const transcriptHook = staged.result.hooks[0]?.text?.trim() || null;
+    if (transcriptHook && contentPostId) {
+      await auth.supabase
+        .from("content_posts")
+        .update({ hook_text: transcriptHook.slice(0, 500) })
+        .eq("id", contentPostId)
+        .eq("user_id", auth.user.id);
+    }
+    if (transcriptHook && researchItemId) {
+      await auth.supabase
+        .from("research_items")
+        .update({ hook_text: transcriptHook.slice(0, 500) })
+        .eq("id", researchItemId)
+        .eq("user_id", auth.user.id);
+    }
   } catch (error) {
     await auth.supabase
       .from("video_analyses")
@@ -560,15 +576,22 @@ export async function breakDownResearchItemAction(
     .maybeSingle();
   if (!item) return { error: "Research item not found." };
 
-  let transcript = [item.title, item.hook_text, item.description]
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
-  let provider = "research_metadata";
-  let inputType: "youtube_url" | "social_url" | "formcraft_source" =
-    "formcraft_source";
+  const { data: previous } = await auth.supabase
+    .from("video_analyses")
+    .select("transcript, transcript_provider, input_type")
+    .eq("research_item_id", item.id)
+    .eq("user_id", auth.user.id)
+    .eq("status", "ready")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  if (item.platform === "youtube" && item.external_id) {
+  let transcript = previous?.transcript?.trim() ?? "";
+  let provider = previous?.transcript_provider ?? "unavailable";
+  let inputType: "youtube_url" | "social_url" | "formcraft_source" =
+    previous?.input_type === "youtube_url" ? "youtube_url" : "formcraft_source";
+
+  if (!transcript && item.platform === "youtube" && item.external_id) {
     const { fetchYouTubeTranscript } = await import(
       "@/lib/research/youtube-transcript"
     );
@@ -583,7 +606,9 @@ export async function breakDownResearchItemAction(
   if (transcript.length < 20) {
     return {
       error:
-        "Not enough text to break down. Paste a transcript or upload the video.",
+        item.platform === "youtube"
+          ? "Public captions were unavailable for this YouTube video. Open Analyze and paste the transcript or upload the video; FormCraft will not use the title/caption as the spoken hook."
+          : "This platform does not provide a public transcript. Open Analyze and paste the transcript or upload the video; FormCraft will not use the caption as the spoken hook.",
     };
   }
 

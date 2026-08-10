@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { CREATOR_CATALOG, parseCatalogCount } from "@/data/creator-catalog";
+import { importCreatorCatalog } from "@/lib/research/import-creator-catalog";
 import { resolvePlatformCreatorId } from "@/lib/research/resolve-creator";
 import { createClient } from "@/lib/supabase/server";
 
@@ -102,66 +103,17 @@ export async function importCreatorCatalogAction() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/sign-in");
 
-  const { data: watchlist, error: watchlistError } = await supabase
-    .from("research_watchlists")
-    .upsert(
-      {
-        user_id: user.id,
-        name: "Niche creator scan",
-        description: "User-supplied channels scanned for recent short-form outliers from the last 30 days.",
-        paused: false,
-      },
-      { onConflict: "user_id,name" },
-    )
-    .select("id")
-    .single();
-  if (watchlistError || !watchlist) redirect(`/creators?error=${encodeURIComponent(watchlistError?.message ?? "Could not create watchlist")}`);
-
-  const youtubeEntries = CREATOR_CATALOG.filter((entry) => entry.platform === "youtube");
-  const youtubeIds = new Map<string, string | null>(
-    await Promise.all(
-      youtubeEntries.map(async (entry) => [
-        entry.username,
-        await resolvePlatformCreatorId({ platform: "youtube", handle: entry.username }),
-      ] as const),
-    ),
-  );
-
-  const rows = CREATOR_CATALOG.map((entry) => {
-    const resolvedId = entry.platform === "youtube" ? youtubeIds.get(entry.username) : entry.username;
-    const trackable = canPullPlatform(entry.platform) && Boolean(resolvedId);
-    return {
-      user_id: user.id,
-      platform: entry.platform,
-      platform_creator_id: resolvedId || entry.username,
-      handle: entry.username,
-      display_name: entry.username,
-      profile_url: creatorProfileUrl(entry.platform, entry.username),
-      follower_count: parseCatalogCount(entry.followers),
-      data_source: "user_import",
-      tracking_paused: !trackable,
-      notes: `Workbook snapshot: ${entry.followers} followers/subscribers; ${entry.views} views. ${trackable ? "Rolling 30-day short-form scan enabled." : entry.platform === "instagram" ? "Manual public Reel references only; competitor-feed access is not provided by Instagram's official API." : "Provider access is not configured."}`,
-    };
-  });
-
-  const { data: creators, error: creatorError } = await supabase
-    .from("external_creators")
-    .upsert(rows, { onConflict: "user_id,platform,platform_creator_id" })
-    .select("id, tracking_paused");
-  if (creatorError) redirect(`/creators?error=${encodeURIComponent(creatorError.message)}`);
-
-  const memberships = (creators ?? []).map((creator) => ({
-    watchlist_id: watchlist.id,
-    external_creator_id: creator.id,
-    notes: "Imported from creator_accounts_list.xlsx for the rolling 30-day niche scan.",
-  }));
-  if (memberships.length) {
-    const { error } = await supabase.from("research_watchlist_members").upsert(memberships, { onConflict: "watchlist_id,external_creator_id" });
-    if (error) redirect(`/creators?error=${encodeURIComponent(error.message)}`);
+  let result: Awaited<ReturnType<typeof importCreatorCatalog>>;
+  try {
+    result = await importCreatorCatalog({ supabase, userId: user.id });
+  } catch (error) {
+    redirect(
+      `/creators?error=${encodeURIComponent(
+        error instanceof Error ? error.message : "Creator import failed.",
+      )}`,
+    );
   }
-
-  const trackable = (creators ?? []).filter((creator) => !creator.tracking_paused).length;
   revalidatePath("/creators");
   revalidatePath("/research");
-  redirect(`/creators?imported=${creators?.length ?? 0}&trackable=${trackable}`);
+  redirect(`/creators?imported=${result.imported}&trackable=${result.trackable}`);
 }

@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { CREATOR_CATALOG } from "@/data/creator-catalog";
 import { searchablePlatforms } from "@/lib/research/discovery/registry";
 import { scorePersonalRelevance } from "@/lib/research/relevance";
 import type { NicheBrief } from "@/lib/research/niche-brief";
@@ -19,7 +20,6 @@ import { createClient } from "@/lib/supabase/server";
 import {
   generateNicheBriefAction,
   pullCreatorPostsFormAction,
-  refreshWatchlistMonitoringAction,
   toggleWatchlistPausedAction,
 } from "./actions";
 import { ContentGapsPanel } from "./content-gaps-panel";
@@ -32,7 +32,11 @@ import {
   SaveResearchReferenceForm,
 } from "./research-forms";
 import type { ResearchCardItem } from "./research-item-card";
-import { WatchlistCreateForm, AddCreatorToWatchlistForm } from "./watchlist-form";
+import {
+  WatchlistCreateForm,
+  WatchlistRefreshForm,
+  AddCreatorToWatchlistForm,
+} from "./watchlist-form";
 
 const MODES = [
   { id: "for-you", label: "For You" },
@@ -126,7 +130,7 @@ export default async function ResearchPage({
       )
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false })
-      .limit(50),
+      .limit(250),
     supabase
       .from("niche_profiles")
       .select("*")
@@ -343,6 +347,24 @@ export default async function ResearchPage({
         Instagram niche search remains manual URL save.
       </p>
 
+      {(mode === "discover" || mode === "watchlists") &&
+      (creators?.length ?? 0) < CREATOR_CATALOG.length ? (
+        <div className="mb-6 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm">
+          <p className="font-semibold text-on-background">
+            Only {creators?.length ?? 0} of {CREATOR_CATALOG.length} supplied creator
+            sources are imported.
+          </p>
+          <p className="mt-1 text-secondary">
+            Import the list first, then refresh the supported YouTube/TikTok
+            channels to populate Discover with their last 30 days of short-form
+            videos.
+          </p>
+          <Button asChild size="sm" className="mt-3">
+            <Link href="/creators">Import creator list</Link>
+          </Button>
+        </div>
+      ) : null}
+
       {mode === "discover" ? (
         <div className="mb-8 grid gap-6 xl:grid-cols-2">
           <Card className="border-outline-variant/20 bg-surface-primary paper-shadow">
@@ -488,11 +510,7 @@ export default async function ResearchPage({
                     Pulls latest posts for creators on active watchlists only —
                     not a broad niche search.
                   </p>
-                  <form action={refreshWatchlistMonitoringAction} className="mt-3">
-                    <Button type="submit" variant="outline" size="sm">
-                      Refresh now
-                    </Button>
-                  </form>
+                  <WatchlistRefreshForm />
                 </div>
               </CardContent>
             </Card>

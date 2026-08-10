@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,6 +76,10 @@ export function ResearchItemCard({
   watchlists?: Array<{ id: string; name: string }>;
 }) {
   const [pending, start] = useTransition();
+  const [actionMessage, setActionMessage] = useState<{
+    kind: "success" | "error";
+    text: string;
+  } | null>(null);
   const analysis = item.analysis ?? {};
   const reasons = Array.isArray(analysis.whyItMayWork)
     ? (analysis.whyItMayWork as string[])
@@ -190,9 +194,12 @@ export function ResearchItemCard({
               ? ` · ${item.collection_method}`
               : ""}
           </p>
-          <p className="mt-3 font-semibold text-on-background">Hook preview</p>
+          <p className="mt-3 font-semibold text-on-background">
+            Transcript-derived hook
+          </p>
           <p className="mt-1 text-secondary">
-            {item.hook_text ?? "Not enough evidence"}
+            {item.hook_text ??
+              "Unavailable until public captions, a pasted transcript, or an uploaded video is analyzed."}
           </p>
           <p className="mt-3 font-semibold text-on-background">Topic</p>
           <p className="mt-1 text-secondary">{item.topic ?? "Unclassified"}</p>
@@ -273,13 +280,19 @@ export function ResearchItemCard({
             disabled={pending}
             onClick={() =>
               start(async () => {
-                await analyzeResearchItemAction(
+                setActionMessage(null);
+                const result = await analyzeResearchItemAction(
                   (() => {
                     const fd = new FormData();
                     fd.set("id", item.id);
                     return fd;
                   })(),
                 );
+                setActionMessage({
+                  kind: result.error ? "error" : "success",
+                  text:
+                    result.error ?? result.success ?? "Analysis complete.",
+                });
               })
             }
           >
@@ -291,7 +304,11 @@ export function ResearchItemCard({
             disabled={pending}
             onClick={() =>
               start(async () => {
-                await breakDownResearchItemAction(item.id);
+                setActionMessage(null);
+                const result = await breakDownResearchItemAction(item.id);
+                if (result?.error) {
+                  setActionMessage({ kind: "error", text: result.error });
+                }
               })
             }
           >
@@ -386,6 +403,18 @@ export function ResearchItemCard({
             </Button>
           </form>
         </div>
+        {actionMessage ? (
+          <p
+            role="status"
+            className={
+              actionMessage.kind === "error"
+                ? "rounded-lg border border-error/25 bg-error/10 p-3 text-sm text-error"
+                : "rounded-lg border border-primary/25 bg-primary/10 p-3 text-sm text-primary-container"
+            }
+          >
+            {actionMessage.text}
+          </p>
+        ) : null}
       </CardContent>
     </Card>
   );
