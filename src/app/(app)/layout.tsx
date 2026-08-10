@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { AppTopBar } from "@/components/layout/app-top-bar";
+import { GlobalQuickCapture } from "@/components/canvas/global-quick-capture";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function AppLayout({
@@ -35,6 +36,7 @@ export default async function AppLayout({
           <div className="mx-auto w-full max-w-7xl">{children}</div>
         </main>
       </div>
+      <GlobalQuickCapture />
     </div>
   );
 }

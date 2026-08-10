@@ -3,6 +3,7 @@ import { IntelligenceExplanation } from "@/components/intelligence/intelligence-
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { AddToCanvasButton } from "@/components/canvas/add-to-canvas-button";
 import { interpretExperimentAggregate } from "@/lib/intelligence/experiment-interpret";
 import { computeExperimentAggregate } from "@/lib/intelligence/experiment-stats";
 import { createClient } from "@/lib/supabase/server";
@@ -99,6 +100,14 @@ export default async function ExperimentsPage() {
                     <p className="mt-3 text-sm leading-relaxed text-on-background">
                       {experiment.hypothesis}
                     </p>
+                    <div className="mt-3">
+                      <AddToCanvasButton
+                        nodeType="experiment"
+                        title={experiment.hypothesis.slice(0, 80)}
+                        body={experiment.primary_variable}
+                        entityId={experiment.id}
+                      />
+                    </div>
                     <AttachPostForm
                       experimentId={experiment.id}
                       posts={postOptions}

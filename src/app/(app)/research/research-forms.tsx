@@ -36,10 +36,12 @@ export function ResearchScanForm({
   configured,
   platforms,
   creators = [],
+  initialQuery = "",
 }: {
   configured: boolean;
   platforms: ScanPlatformOption[];
   creators?: ScanCreatorOption[];
+  initialQuery?: string;
 }) {
   const [state, action, pending] = useActionState(
     runResearchScanAction,
@@ -57,8 +59,10 @@ export function ResearchScanForm({
         <Label htmlFor="research-query">Niche or topic</Label>
         <Input
           id="research-query"
+          key={initialQuery}
           name="query"
           placeholder="e.g. beginner web development career"
+          defaultValue={initialQuery}
           required
           minLength={2}
           maxLength={160}
@@ -70,10 +74,10 @@ export function ResearchScanForm({
           Platforms
         </legend>
         <p className="text-xs text-secondary">
-          YouTube niche search is off by default when TikTok (or demo) is
-          available — turn it on only if you want to spend YouTube quota.
-          Instagram niche search is not available via official APIs; use Manual
-          reference.
+          Select a live discovery source. TikTok Login only syncs your own
+          account; public TikTok niche search needs TIKTOK_DATA_API_KEY.
+          Instagram public search is not available via its official API, so use
+          Manual reference for Instagram links.
         </p>
         <div className="flex flex-wrap gap-4">
           {platforms.map((p) => {
@@ -95,7 +99,7 @@ export function ResearchScanForm({
                 />
                 <span>
                   {isYoutube
-                    ? "Include YouTube search"
+                    ? "YouTube (live public search)"
                     : p.platform === "tiktok"
                       ? "TikTok (TikTokAPI.store)"
                       : `${p.platform} (${p.providerName})`}
@@ -184,7 +188,7 @@ export function ResearchScanForm({
         </div>
       </div>
       <Button type="submit" disabled={pending || !configured}>
-        {pending ? "Scanning…" : "Run niche discovery scan"}
+        {pending ? "Searching public videos…" : "Search public videos"}
       </Button>
       {!configured ? (
         <p className="text-sm text-secondary">

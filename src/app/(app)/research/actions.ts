@@ -905,12 +905,13 @@ export async function addResearchItemToCanvasAction(formData: FormData) {
   if (!user || !itemId) return;
 
   const { addResearchItemToCanvas } = await import("@/lib/canvas/add-from-research");
-  await addResearchItemToCanvas({
+  const { boardId } = await addResearchItemToCanvas({
     supabase,
     userId: user.id,
     researchItemId: itemId,
   });
   revalidatePath("/canvas");
+  revalidatePath(`/canvas/${boardId}`);
   revalidatePath("/research");
 }
 

@@ -14,7 +14,6 @@ import {
   createAnalysisInputSchema,
   normalizeAnalysisResult,
   subjectToSourceType,
-  type AnalysisResult,
   type AnalysisSourceType,
 } from "@/lib/analyze/schema";
 import { normalizeTranscriptText } from "@/lib/analyze/transcription/types";
@@ -913,32 +912,30 @@ export async function addAnalysisToCanvasAction(formData: FormData) {
     const { addResearchItemToCanvas } = await import(
       "@/lib/canvas/add-from-research"
     );
-    await addResearchItemToCanvas({
+    const { boardId } = await addResearchItemToCanvas({
       supabase: auth.supabase,
       userId: auth.user.id,
       researchItemId: analysis.research_item_id,
     });
-  } else {
-    const { getOrCreateDefaultBoard } = await import(
-      "@/lib/canvas/add-from-research"
-    );
-    const boardId = await getOrCreateDefaultBoard({
-      supabase: auth.supabase,
-      userId: auth.user.id,
-    });
-    const result = normalizeAnalysisResult(analysis.result);
-    await auth.supabase.from("canvas_nodes").insert({
-      board_id: boardId,
-      user_id: auth.user.id,
-      node_type: "analysis",
-      title: analysis.title || "Breakdown",
-      body: result.overview.coreMessage.slice(0, 400),
-      payload: { analysisId, overview: result.overview },
-      position_x: 80,
-      position_y: 80,
-    });
+    revalidatePath("/canvas");
+    revalidatePath(`/canvas/${boardId}`);
+    revalidatePath(`/analyze/${analysisId}`);
+    return;
   }
 
+  const { addEntityToCanvas } = await import("@/lib/canvas/add-entity");
+  const result = normalizeAnalysisResult(analysis.result);
+  const { boardId } = await addEntityToCanvas({
+    supabase: auth.supabase,
+    userId: auth.user.id,
+    nodeType: "analysis",
+    title: analysis.title || "Breakdown",
+    body: result.overview.coreMessage.slice(0, 400),
+    analysisId,
+    payload: { analysisId, overview: result.overview },
+  });
+
   revalidatePath("/canvas");
+  revalidatePath(`/canvas/${boardId}`);
   revalidatePath(`/analyze/${analysisId}`);
 }

@@ -18,14 +18,14 @@ export function MobileNav() {
           <span className="sr-only">Open navigation</span>
         </Button>
       </SheetTrigger>
-      <SheetContent side="left">
-        <SheetHeader>
+      <SheetContent side="left" className="flex h-dvh flex-col overflow-hidden">
+        <SheetHeader className="shrink-0">
           <SheetTitle className="flex items-center gap-2">
             <MaterialIcon name="workspace_premium" className="text-primary" />
             FormCraft
           </SheetTitle>
         </SheetHeader>
-        <div className="flex h-full flex-col gap-6 overflow-y-auto pb-10">
+        <div className="custom-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto pb-8">
           <PrimaryNavLinks onNavigate={() => setOpen(false)} />
           <SecondaryNavLinks onNavigate={() => setOpen(false)} />
         </div>

@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { createClient } from "@/lib/supabase/server";
 import { PasteCommentsForm } from "./audience-form";
+import { AddToCanvasButton } from "@/components/canvas/add-to-canvas-button";
 
 export default async function AudiencePage() {
   const supabase = await createClient();
@@ -46,6 +47,14 @@ export default async function AudiencePage() {
                 <p className="mt-2 text-sm leading-relaxed text-on-background">
                   {comment.body}
                 </p>
+                <div className="mt-3">
+                  <AddToCanvasButton
+                    nodeType="audience_insight"
+                    title={comment.body.slice(0, 80)}
+                    body={comment.body}
+                    entityId={comment.id}
+                  />
+                </div>
               </li>
             ))}
           </ul>

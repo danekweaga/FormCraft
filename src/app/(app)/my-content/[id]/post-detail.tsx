@@ -21,6 +21,7 @@ import {
 } from "@/lib/my-content/performance";
 import type { ContentPostRow } from "@/lib/my-content/schemas";
 import { analyzeMyContentPost } from "@/app/(app)/analyze/actions";
+import { AddToCanvasButton } from "@/components/canvas/add-to-canvas-button";
 import { deletePost } from "../actions";
 import { sourceLabelForSynced } from "@/lib/social/freshness";
 
@@ -150,6 +151,12 @@ export function PostDetailClient({
             <Button asChild variant="outline">
               <Link href={`/experiments`}>Attach to experiment</Link>
             </Button>
+            <AddToCanvasButton
+              nodeType="my_content"
+              title={post.title || "Untitled post"}
+              body={post.caption}
+              entityId={post.id}
+            />
             {post.external_url ? (
               <Button asChild variant="outline">
                 <a href={post.external_url} target="_blank" rel="noreferrer">

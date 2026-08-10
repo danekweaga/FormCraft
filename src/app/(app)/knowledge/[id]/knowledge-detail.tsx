@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { MaterialIcon } from "@/components/layout/material-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AddToCanvasButton } from "@/components/canvas/add-to-canvas-button";
 import {
   Card,
   CardContent,
@@ -309,6 +310,12 @@ export function KnowledgeDetailClient({
           <ProcessingStatusBadge status={document.processing_status} />
           <AiInclusionBadge included={document.include_in_ai} />
           {document.is_demo ? <Badge variant="demo">Demo</Badge> : null}
+          <AddToCanvasButton
+            nodeType="knowledge"
+            title={document.title}
+            body={document.description}
+            entityId={document.id}
+          />
         </div>
       </div>
 

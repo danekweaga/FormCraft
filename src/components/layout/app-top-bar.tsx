@@ -52,16 +52,25 @@ export function AppTopBar({
             );
           })}
         </nav>
-        <div className="relative hidden w-full max-w-xl sm:block">
+        <form
+          action="/research"
+          method="get"
+          aria-label="Find public videos"
+          className="relative hidden w-full max-w-xl sm:block"
+        >
+          <input type="hidden" name="mode" value="discover" />
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-secondary" />
           <input
             type="search"
-            placeholder="Search insights, drafts, or patterns..."
+            name="q"
+            placeholder="Find public videos by topic..."
             className="w-full rounded-full border-none bg-surface-container-low py-2 pl-10 pr-4 text-sm outline-none focus:ring-1 focus:ring-primary-container"
-            disabled
-            aria-label="Search (coming soon)"
+            aria-label="Find public videos by topic"
+            minLength={2}
+            maxLength={160}
+            required
           />
-        </div>
+        </form>
       </div>
       <div className="flex items-center gap-2 md:gap-4">
         <button

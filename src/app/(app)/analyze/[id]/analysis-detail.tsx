@@ -176,11 +176,7 @@ export function AnalysisDetailClient({ analysis }: { analysis: AnalysisDetail })
     );
   }
 
-  const labeledTranscript = useMemo(() => {
-    const text = analysis.transcript ?? "";
-    if (!transcriptQuery) return text;
-    return text;
-  }, [analysis.transcript, transcriptQuery]);
+  const labeledTranscript = analysis.transcript ?? "";
 
   const hookLabels = new Map<number, string>();
   result.hooks.forEach((h) => hookLabels.set(Math.floor(h.timestamp), "HOOK"));

@@ -52,7 +52,7 @@ function platformLine(platforms: ReturnType<typeof searchablePlatforms>) {
   const yt = platforms.find((p) => p.platform === "youtube");
   const tt = platforms.find((p) => p.platform === "tiktok");
   const demo = platforms.find((p) => p.providerType === "demo");
-  if (yt) parts.push("YouTube official (opt-in for niche search)");
+  if (yt) parts.push("YouTube official public search");
   if (tt) parts.push("TikTok via TIKTOK_DATA_API_KEY (third-party)");
   if (demo && !yt && !tt) parts.push("Demo fixtures (RESEARCH_ENABLE_DEMO)");
   else if (demo) parts.push("Demo available");
@@ -65,7 +65,7 @@ function platformLine(platforms: ReturnType<typeof searchablePlatforms>) {
 export default async function ResearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mode?: string }>;
+  searchParams: Promise<{ mode?: string; q?: string }>;
 }) {
   const params = await searchParams;
   const mode = (MODES.some((m) => m.id === params.mode)
@@ -350,7 +350,7 @@ export default async function ResearchPage({
               <CardTitle>Discover niche outliers</CardTitle>
               <CardDescription>
                 Metadata → local baselines → outliers. Deep AI only when you
-                click Analyze. YouTube niche search is opt-in to protect quota.
+                click Analyze. Only the selected live sources are searched.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -358,6 +358,7 @@ export default async function ResearchPage({
                 configured={discoveryConfigured}
                 platforms={platforms}
                 creators={creatorOptions}
+                initialQuery={params.q?.trim().slice(0, 160) ?? ""}
               />
               {primaryAuto ? (
                 <p className="mt-3 text-xs text-secondary">

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,7 +60,11 @@ export function ResearchFeedWithFilters({
     <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
       <aside className="h-fit rounded-xl border border-outline-variant/20 bg-surface-primary p-4 paper-shadow">
         <p className="mb-4 text-xs font-semibold uppercase tracking-[0.18em] text-secondary">
-          Filters
+          Filter collected videos
+        </p>
+        <p className="mb-4 text-xs text-secondary">
+          These controls only narrow videos already collected by a discovery
+          scan. They do not search YouTube or TikTok.
         </p>
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -81,7 +86,7 @@ export function ResearchFeedWithFilters({
           <div className="space-y-1.5">
             <Label>Keywords</Label>
             <Input
-              placeholder="Search captions and titles"
+              placeholder="Filter collected captions and titles"
               value={filters.keywords}
               onChange={(e) => set("keywords", e.target.value)}
             />
@@ -230,9 +235,18 @@ export function ResearchFeedWithFilters({
           Showing {filtered.length} of {items.length} posts
         </p>
         {filtered.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-outline-variant/30 p-8 text-sm text-secondary">
-            No posts match these filters.
-          </p>
+          <div className="rounded-xl border border-dashed border-outline-variant/30 p-8 text-sm text-secondary">
+            <p>
+              {items.length === 0
+                ? "No videos have been collected yet. Run a live discovery scan first."
+                : "No collected videos match these filters."}
+            </p>
+            {items.length === 0 ? (
+              <Button asChild size="sm" className="mt-4">
+                <Link href="/research?mode=discover">Discover public videos</Link>
+              </Button>
+            ) : null}
+          </div>
         ) : (
           <div className="grid gap-6 xl:grid-cols-2">
             {filtered.map((item) => (

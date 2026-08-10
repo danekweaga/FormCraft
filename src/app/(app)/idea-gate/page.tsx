@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { AddToCanvasButton } from "@/components/canvas/add-to-canvas-button";
 import { createClient } from "@/lib/supabase/server";
 import { IdeaGateForm } from "./idea-gate-form";
 
@@ -69,6 +70,14 @@ export default async function IdeaGatePage() {
                     Better angle: {item.better_angle}
                   </p>
                 ) : null}
+                <div className="mt-3">
+                  <AddToCanvasButton
+                    nodeType="idea"
+                    title={item.idea_text.slice(0, 80)}
+                    body={[item.why, item.better_angle].filter(Boolean).join("\n")}
+                    entityId={item.id}
+                  />
+                </div>
               </li>
             ))}
           </ul>

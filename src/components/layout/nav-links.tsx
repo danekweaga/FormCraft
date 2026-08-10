@@ -16,7 +16,7 @@ function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void 
       href={item.href}
       onClick={onNavigate}
       className={cn(
-        "flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-semibold tracking-wide transition-colors active:scale-95",
+        "flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-semibold tracking-wide transition-colors active:scale-95",
         active
           ? "bg-surface-container-low text-primary"
           : "text-secondary hover:bg-surface-container-low",
@@ -40,7 +40,7 @@ export function PrimaryNavLinks({ onNavigate }: { onNavigate?: () => void }) {
 
 export function SecondaryNavLinks({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <nav className="flex flex-col gap-1 border-t border-outline-variant/15 pt-4">
+    <nav className="mt-4 flex flex-col gap-1 border-t border-outline-variant/15 pt-4">
       {SECONDARY_NAV.map((item) => (
         <NavLink key={item.href} item={item} onNavigate={onNavigate} />
       ))}

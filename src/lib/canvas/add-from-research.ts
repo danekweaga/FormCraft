@@ -100,7 +100,8 @@ export async function ensureCanvasAnalysisNodes(params: {
       user_id: params.userId,
       from_node_id: params.sourceNodeId,
       to_node_id: analysisNode.id,
-      label: "analyzes",
+      edge_type: "analyzes",
+      label: "Analyzes",
     });
   }
 
@@ -120,13 +121,14 @@ export async function ensureCanvasAnalysisNodes(params: {
       })
       .select("id")
       .single();
-    if (patternNode?.id) {
+      if (patternNode?.id) {
       await params.supabase.from("canvas_edges").insert({
         board_id: params.boardId,
         user_id: params.userId,
         from_node_id: analysisNode.id,
         to_node_id: patternNode.id,
-        label: "extracts",
+        edge_type: "extracts",
+        label: "Extracts",
       });
     }
   }
@@ -168,7 +170,7 @@ export async function addResearchItemToCanvas(params: {
     .insert({
       board_id: boardId,
       user_id: params.userId,
-      node_type: "source",
+      node_type: "external_outlier",
       title: item.title || item.hook_text || "Outlier source",
       body: `${item.platform} · ${item.creator_name ?? "creator"} · ${
         item.outlier_score != null
