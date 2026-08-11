@@ -13,6 +13,10 @@ import { createClient } from "@/lib/supabase/server";
 export type ResearchActionState = {
   error?: string;
   success?: string;
+  discovered?: number;
+  eligible?: number;
+  retained?: number;
+  providers?: string[];
 };
 
 function positiveInteger(value: FormDataEntryValue | null, fallback: number) {
@@ -44,7 +48,7 @@ export async function runResearchScanAction(
     allowedPlatforms: allowed.length ? allowed : ["youtube"],
     creatorIds: formData.getAll("creatorIds"),
     channelHandles: formData.get("channelHandles"),
-    preferNonYoutubeDefault: true,
+    preferNonYoutubeDefault: false,
   });
 
   if (filters.query.length < 2 || filters.query.length > 160) {
@@ -103,8 +107,14 @@ export async function runResearchScanAction(
       scanId: write.data.id,
     });
     revalidatePath("/research");
+    const providersLabel =
+      result.providers.length > 0 ? result.providers.join(", ") : "none";
     return {
-      success: `Found ${result.discovered} provider results via ${result.providers.join(", ")}, ${result.eligible} were short-form posts from the selected time window, and ${result.retained} passed your filters. Deep AI analysis runs only when you click Analyze.`,
+      discovered: result.discovered,
+      eligible: result.eligible,
+      retained: result.retained,
+      providers: result.providers,
+      success: `Discovered ${result.discovered} · eligible ${result.eligible} · retained ${result.retained} (via ${providersLabel}). Deep AI analysis runs only when you click Analyze.`,
     };
   } catch (error) {
     revalidatePath("/research");

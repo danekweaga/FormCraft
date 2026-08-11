@@ -108,33 +108,42 @@ export async function runWatchlistMonitor(params: {
     if (!provider?.getCreatorPosts || !provider.capabilities().getCreatorPosts) {
       continue;
     }
-    const posts = await provider.getCreatorPosts({
-      platform: creator.platform as "youtube" | "tiktok" | "instagram" | "other",
-      platformCreatorId: creator.platform_creator_id,
-      maxResults: params.postsPerCreator ?? 30,
-    });
-    usedProviders.add(provider.providerName);
-    const recentShorts = filterRecentShortForm(posts, { lookbackDays: 30 });
-    allPosts.push(...recentShorts);
-
-    await params.supabase.from("provider_usage_events").insert({
-      user_id: params.userId,
-      provider: provider.providerName,
-      operation: "get_creator_posts",
-      result_count: recentShorts.length,
-      metadata: {
-        externalCreatorId: creator.id,
+    try {
+      const posts = await provider.getCreatorPosts({
+        platform: creator.platform as "youtube" | "tiktok" | "instagram" | "other",
         platformCreatorId: creator.platform_creator_id,
-        lookbackDays: 30,
-        shortFormMaxSeconds: 180,
-      },
-    });
+        maxResults: params.postsPerCreator ?? 30,
+      });
+      usedProviders.add(provider.providerName);
+      const recentShorts = filterRecentShortForm(posts, { lookbackDays: 30 });
+      allPosts.push(...recentShorts);
 
-    await params.supabase
-      .from("external_creators")
-      .update({ data_freshness_at: retrievedAt })
-      .eq("id", creator.id)
-      .eq("user_id", params.userId);
+      await params.supabase.from("provider_usage_events").insert({
+        user_id: params.userId,
+        provider: provider.providerName,
+        operation: "get_creator_posts",
+        result_count: recentShorts.length,
+        metadata: {
+          externalCreatorId: creator.id,
+          platformCreatorId: creator.platform_creator_id,
+          lookbackDays: 30,
+          shortFormMaxSeconds: 180,
+        },
+      });
+
+      await params.supabase
+        .from("external_creators")
+        .update({ data_freshness_at: retrievedAt })
+        .eq("id", creator.id)
+        .eq("user_id", params.userId);
+    } catch (error) {
+      console.error("[watchlist-monitor] creator pull failed", {
+        creatorId: creator.id,
+        platform: creator.platform,
+        provider: provider.providerName,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   const niche = await params.supabase

@@ -58,6 +58,15 @@ function sourceLabel(providerName: string): string {
   return "official_api";
 }
 
+export function passesOutlierMinFilter(
+  outlierScore: number | null | undefined,
+  minOutlierScore: number,
+): boolean {
+  // Unscored posts (no baseline yet) must not be treated as 0 — that emptied first pulls.
+  if (outlierScore == null) return true;
+  return outlierScore >= minOutlierScore;
+}
+
 export async function ingestScoredPosts(params: {
   supabase: SupabaseClient;
   userId: string;
@@ -70,11 +79,12 @@ export async function ingestScoredPosts(params: {
 }): Promise<{ discovered: number; retained: number }> {
   const retrievedAt = params.retrievedAt ?? new Date().toISOString();
   const unique = dedupeSearchPosts(params.posts);
-  const scored = scoreResearchOutliers(unique).filter(
-    (video) =>
-      (video.views ?? 0) >= (params.minViews ?? 0) &&
-      (video.outlierScore ?? 0) >= (params.minOutlierScore ?? 0),
-  );
+  const minViews = params.minViews ?? 0;
+  const minOutlierScore = params.minOutlierScore ?? 0;
+  const scored = scoreResearchOutliers(unique).filter((video) => {
+    if ((video.views ?? 0) < minViews) return false;
+    return passesOutlierMinFilter(video.outlierScore, minOutlierScore);
+  });
 
   const relevanceById = await classifyCheapRelevanceBatch({
     supabase: params.supabase,

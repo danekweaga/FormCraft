@@ -169,7 +169,8 @@ export async function getYoutubeChannelPosts(params: {
   playlistUrl.searchParams.set("playlistId", uploadsId);
   playlistUrl.searchParams.set(
     "maxResults",
-    String(Math.min(50, Math.max(1, params.maxResults ?? 10))),
+    // Oversample uploads so Shorts-length videos survive duration filtering.
+    String(Math.min(50, Math.max(1, (params.maxResults ?? 10) * 3))),
   );
 
   const playlist = await youtubeGet<{
@@ -224,7 +225,7 @@ export async function getYoutubeChannelPosts(params: {
     }>;
   }>(detailsUrl);
 
-  return (details.items ?? []).map((item) => ({
+  const mapped = (details.items ?? []).map((item) => ({
     platform: "youtube" as const,
     externalId: item.id,
     externalUrl: `https://www.youtube.com/watch?v=${item.id}`,
@@ -244,5 +245,17 @@ export async function getYoutubeChannelPosts(params: {
     comments: numberOrNull(item.statistics?.commentCount),
     shares: null,
   }));
+
+  // Prefer Shorts-length uploads (aligned with search videoDuration=short).
+  const shorts = mapped.filter(
+    (v) =>
+      v.durationSeconds != null &&
+      v.durationSeconds > 0 &&
+      v.durationSeconds <= 240,
+  );
+  return (shorts.length > 0 ? shorts : mapped).slice(
+    0,
+    params.maxResults ?? 10,
+  );
 }
 

@@ -2,12 +2,20 @@ import type { SearchPostResult } from "./discovery/types";
 
 export const DEFAULT_DISCOVERY_LOOKBACK_DAYS = 30;
 export const MAX_SHORT_FORM_SECONDS = 180;
+/** YouTube Data API `videoDuration=short` is &lt;4 min — align ingest with that. */
+export const MAX_YOUTUBE_SHORT_FORM_SECONDS = 240;
 
 function normalizeDurationSeconds(value: number | null | undefined): number | null {
   if (value == null || !Number.isFinite(value) || value <= 0) return null;
   // Guard against millisecond payloads (e.g. 15200ms).
   if (value > 1000) return Math.round(value / 1000);
   return Math.round(value);
+}
+
+function maxDurationForPlatform(platform: string): number {
+  return platform === "youtube"
+    ? MAX_YOUTUBE_SHORT_FORM_SECONDS
+    : MAX_SHORT_FORM_SECONDS;
 }
 
 export function isRecentShortForm(
@@ -33,7 +41,10 @@ export function isRecentShortForm(
 
   const durationSeconds = normalizeDurationSeconds(post.durationSeconds);
   if (durationSeconds != null) {
-    return durationSeconds > 0 && durationSeconds <= MAX_SHORT_FORM_SECONDS;
+    return (
+      durationSeconds > 0 &&
+      durationSeconds <= maxDurationForPlatform(post.platform)
+    );
   }
 
   // TikTok/Instagram feeds are video-first; keep unknown duration.

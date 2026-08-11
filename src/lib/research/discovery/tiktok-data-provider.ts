@@ -75,11 +75,24 @@ async function tiktokGet(path: string, params: Record<string, string>) {
 
 async function tiktokGetFirst(
   attempts: Array<{ path: string; params: Record<string, string> }>,
-): Promise<Record<string, unknown>> {
+): Promise<{ body: Record<string, unknown>; path: string; items: unknown[] }> {
   let lastError: Error | null = null;
   for (const attempt of attempts) {
     try {
-      return await tiktokGet(attempt.path, attempt.params);
+      const body = await tiktokGet(attempt.path, attempt.params);
+      const items = extractList(body);
+      if (items.length === 0) {
+        console.warn("[tiktokapi_store] empty payload, trying next endpoint", {
+          path: attempt.path,
+        });
+        lastError = new Error(`Empty response from ${attempt.path}`);
+        continue;
+      }
+      console.info("[tiktokapi_store] using endpoint", {
+        path: attempt.path,
+        count: items.length,
+      });
+      return { body, path: attempt.path, items };
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
     }
@@ -240,12 +253,16 @@ export const tiktokDataDiscoveryProvider: ContentDiscoveryProvider = {
     const retrievedAt = new Date().toISOString();
     const count = String(Math.min(30, Math.max(1, input.maxResults ?? 20)));
 
-    // Docs/blog use /search/videos?query=…; older notes used /search/video?search_term=.
-    // Try both, then trending feed fallbacks.
-    const body = await tiktokGetFirst([
-      { path: "/search/videos", params: { query: input.query, count } },
-      { path: "/search/video", params: { search_term: input.query, count } },
-      { path: "/search/video", params: { keyword: input.query, count } },
+    // TikTokAPI.store documents /search/videos?keyword=… (not query).
+    // Keep legacy param variants, then trending fallbacks. Empty 200s continue.
+    const q = input.query.trim();
+    const { items } = await tiktokGetFirst([
+      { path: "/search/videos", params: { keyword: q, count } },
+      { path: "/search/videos", params: { query: q, count } },
+      { path: "/search/video", params: { keyword: q, count } },
+      { path: "/search/video", params: { search_term: q, count } },
+      { path: "/hashtag/posts", params: { name: q.replace(/^#/, ""), count } },
+      { path: "/hashtag/videos", params: { name: q.replace(/^#/, ""), count } },
       { path: "/feed/trending", params: { region: "US", count } },
       { path: "/feed", params: { region: "US", count } },
     ]);
@@ -253,7 +270,7 @@ export const tiktokDataDiscoveryProvider: ContentDiscoveryProvider = {
     const lookbackMs = (input.lookbackDays ?? 30) * 86_400_000;
     const cutoff = Date.now() - lookbackMs;
 
-    return extractList(body)
+    return items
       .map((raw) => normalizeTiktokVideo(raw, retrievedAt))
       .filter((post): post is SearchPostResult => Boolean(post))
       .filter((post) => (post.views ?? 0) >= (input.minViews ?? 0))
@@ -280,12 +297,12 @@ export const tiktokDataDiscoveryProvider: ContentDiscoveryProvider = {
     const identifier: Record<string, string> = /^\d+$/.test(handle)
       ? { user_id: handle }
       : { unique_id: handle };
-    const body = await tiktokGetFirst([
+    const { items } = await tiktokGetFirst([
       { path: "/user/posts", params: { ...identifier, count } },
       { path: "/user/videos", params: { ...identifier, count } },
     ]);
 
-    return extractList(body)
+    return items
       .map((raw) => normalizeTiktokVideo(raw, retrievedAt))
       .filter((post): post is SearchPostResult => Boolean(post))
       .map((post) => ({

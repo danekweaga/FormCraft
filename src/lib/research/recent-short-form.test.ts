@@ -17,8 +17,16 @@ describe("recent short-form filter", () => {
     expect(isRecentShortForm({ ...base, publishedAt: new Date(now - 31 * 86_400_000).toISOString() }, { now })).toBe(false);
   });
 
+  it("keeps YouTube shorts under 4 minutes", () => {
+    expect(isRecentShortForm({ ...base, durationSeconds: 200 }, { now })).toBe(
+      true,
+    );
+  });
+
   it("rejects long YouTube uploads", () => {
-    expect(isRecentShortForm({ ...base, durationSeconds: 181 }, { now })).toBe(false);
+    expect(isRecentShortForm({ ...base, durationSeconds: 241 }, { now })).toBe(
+      false,
+    );
   });
 
   it("keeps recent TikTok posts when duration is unavailable", () => {

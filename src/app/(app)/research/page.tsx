@@ -61,7 +61,7 @@ function platformLine(platforms: ReturnType<typeof searchablePlatforms>) {
   if (demo && !yt && !tt) parts.push("Demo fixtures (RESEARCH_ENABLE_DEMO)");
   else if (demo) parts.push("Demo available");
   if (parts.length === 0) {
-    return "none configured — set TIKTOK_DATA_API_KEY and/or YOUTUBE_DATA_API_KEY (YouTube opt-in), or RESEARCH_ENABLE_DEMO=1";
+    return "none configured — set TIKTOK_DATA_API_KEY and/or YOUTUBE_DATA_API_KEY, or RESEARCH_ENABLE_DEMO=1";
   }
   return parts.join(" · ");
 }
@@ -256,7 +256,11 @@ export default async function ResearchPage({
   const forYou = [...enriched].sort(
     (a, b) => (b.personalScore ?? 0) - (a.personalScore ?? 0),
   );
-  const outliers = enriched.filter((i) => (i.outlier_score ?? 0) >= 1.5);
+  // Null scores are first-pull / no-baseline — keep them visible so TikTok
+  // (and other) discoveries aren't hidden until a cohort exists.
+  const outliers = enriched.filter(
+    (i) => i.outlier_score == null || i.outlier_score >= 1.5,
+  );
   const watchlistCreatorIds = new Set(
     (watchlistMembers ?? [])
       .map((m) => m.external_creator_id)
@@ -266,7 +270,7 @@ export default async function ResearchPage({
     (i) =>
       i.external_creator_id &&
       watchlistCreatorIds.has(i.external_creator_id) &&
-      (i.outlier_score ?? 0) >= 1.5,
+      (i.outlier_score == null || i.outlier_score >= 1.5),
   );
   const saved = enriched.filter((i) => i.saved);
 
@@ -383,23 +387,74 @@ export default async function ResearchPage({
                 initialQuery={params.q?.trim().slice(0, 160) ?? ""}
               />
               {primaryAuto ? (
-                <p className="mt-3 text-xs text-secondary">
-                  Auto-scan “{primaryAuto.name}” is on
-                  {primaryAuto.platforms?.length
-                    ? ` · platforms: ${primaryAuto.platforms.join(", ")}`
-                    : ""}
-                  . Last run:{" "}
-                  {primaryAuto.last_run_at
-                    ? new Date(primaryAuto.last_run_at).toLocaleString()
-                    : "not yet"}
-                  .
-                </p>
+                <div className="mt-3 space-y-1 text-xs text-secondary">
+                  <p>
+                    Auto-scan “{primaryAuto.name}” is on
+                    {primaryAuto.platforms?.length
+                      ? ` · platforms: ${primaryAuto.platforms.join(", ")}`
+                      : ""}
+                    . Last run:{" "}
+                    {primaryAuto.last_run_at
+                      ? new Date(primaryAuto.last_run_at).toLocaleString()
+                      : "not yet"}
+                    .
+                  </p>
+                  {(() => {
+                    const params =
+                      primaryAuto.parameters &&
+                      typeof primaryAuto.parameters === "object"
+                        ? (primaryAuto.parameters as Record<string, unknown>)
+                        : {};
+                    const stats =
+                      params.last_run_stats &&
+                      typeof params.last_run_stats === "object"
+                        ? (params.last_run_stats as Record<string, unknown>)
+                        : null;
+                    if (!stats) return null;
+                    return (
+                      <p className="font-medium text-on-background">
+                        Last pull: discovered {String(stats.discovered ?? "—")} ·
+                        eligible {String(stats.eligible ?? "—")} · retained{" "}
+                        {String(stats.retained ?? "—")}
+                        {stats.by_platform &&
+                        typeof stats.by_platform === "object"
+                          ? ` · ${Object.entries(
+                              stats.by_platform as Record<string, unknown>,
+                            )
+                              .map(([plat, n]) => `${plat}:${String(n)}`)
+                              .join(" ")}`
+                          : ""}
+                        {Array.isArray(stats.providers) && stats.providers.length
+                          ? ` · ${stats.providers.join(", ")}`
+                          : ""}
+                      </p>
+                    );
+                  })()}
+                  {primaryAuto.last_error ? (
+                    <p className="text-error">
+                      Last error: {primaryAuto.last_error}
+                    </p>
+                  ) : null}
+                </div>
               ) : (
                 <p className="mt-3 text-xs text-secondary">
                   Save a niche profile below to create an auto-scan that refreshes
                   on schedule without searching every time.
                 </p>
               )}
+              {(scans?.length ?? 0) > 0 &&
+              scans!.some((s) => s.last_error) ? (
+                <div className="mt-3 rounded-md border border-error/30 bg-error/5 p-2 text-xs text-error">
+                  {(scans ?? [])
+                    .filter((s) => s.last_error)
+                    .slice(0, 3)
+                    .map((s) => (
+                      <p key={s.id}>
+                        {s.name || s.query}: {s.last_error}
+                      </p>
+                    ))}
+                </div>
+              ) : null}
             </CardContent>
           </Card>
           <Card className="border-outline-variant/20 bg-surface-primary paper-shadow">
@@ -474,16 +529,33 @@ export default async function ResearchPage({
             </CardContent>
           </Card>
           {(scans?.length ?? 0) > 0 ? (
-            <div className="xl:col-span-2 flex flex-wrap gap-2 text-xs text-secondary">
-              <span className="font-semibold text-on-background">
-                Saved searches:
-              </span>
-              {scans!.map((scan) => (
-                <Badge key={scan.id} variant="default">
-                  {scan.name || scan.query} · {scan.status}
-                  {scan.auto_scan_enabled ? " · auto" : ""}
-                </Badge>
-              ))}
+            <div className="xl:col-span-2 space-y-2 text-xs text-secondary">
+              <div className="flex flex-wrap gap-2">
+                <span className="font-semibold text-on-background">
+                  Saved searches:
+                </span>
+                {scans!.map((scan) => {
+                  const params =
+                    scan.parameters && typeof scan.parameters === "object"
+                      ? (scan.parameters as Record<string, unknown>)
+                      : {};
+                  const stats =
+                    params.last_run_stats &&
+                    typeof params.last_run_stats === "object"
+                      ? (params.last_run_stats as Record<string, unknown>)
+                      : null;
+                  return (
+                    <Badge key={scan.id} variant="default">
+                      {scan.name || scan.query} · {scan.status}
+                      {scan.auto_scan_enabled ? " · auto" : ""}
+                      {stats
+                        ? ` · ${String(stats.discovered ?? "?")}/${String(stats.eligible ?? "?")}/${String(stats.retained ?? "?")}`
+                        : ""}
+                      {scan.last_error ? " · error" : ""}
+                    </Badge>
+                  );
+                })}
+              </div>
             </div>
           ) : null}
         </div>

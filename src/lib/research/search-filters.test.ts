@@ -5,8 +5,9 @@ import {
 } from "./search-filters";
 
 describe("defaultDiscoveryPlatforms", () => {
-  it("excludes youtube when other platforms exist", () => {
+  it("includes youtube when other platforms exist", () => {
     expect(defaultDiscoveryPlatforms(["youtube", "tiktok"])).toEqual([
+      "youtube",
       "tiktok",
     ]);
   });
@@ -17,7 +18,15 @@ describe("defaultDiscoveryPlatforms", () => {
 });
 
 describe("normalizeSearchFilters", () => {
-  it("defaults to non-youtube when platforms omitted", () => {
+  it("defaults to all configured platforms including youtube", () => {
+    const filters = normalizeSearchFilters({
+      query: "ai careers",
+      allowedPlatforms: ["youtube", "tiktok"],
+    });
+    expect(filters.platforms).toEqual(["youtube", "tiktok"]);
+  });
+
+  it("supports legacy preferNonYoutubeDefault", () => {
     const filters = normalizeSearchFilters({
       query: "ai careers",
       allowedPlatforms: ["youtube", "tiktok"],
@@ -33,6 +42,15 @@ describe("normalizeSearchFilters", () => {
       allowedPlatforms: ["youtube", "tiktok"],
     });
     expect(filters.platforms).toEqual(["youtube", "tiktok"]);
+  });
+
+  it("defaults min outlier score to 0 for first pulls", () => {
+    const filters = normalizeSearchFilters({
+      query: "niche",
+      platforms: ["tiktok"],
+      allowedPlatforms: ["tiktok"],
+    });
+    expect(filters.minOutlierScore).toBe(0);
   });
 
   it("parses channel handles and creator ids", () => {

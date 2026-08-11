@@ -26,11 +26,6 @@ export function NicheProfileForm({
     initial,
   );
 
-  const hasNonYoutube = searchablePlatforms.some((p) => p.platform !== "youtube");
-  const youtubeOnly =
-    searchablePlatforms.length > 0 &&
-    searchablePlatforms.every((p) => p.platform === "youtube");
-
   return (
     <form action={action} className="grid gap-3 md:grid-cols-2">
       <div className="space-y-2">
@@ -75,17 +70,15 @@ export function NicheProfileForm({
           Auto-scan platforms
         </legend>
         <p className="text-xs text-secondary">
-          Saved to your niche profile and used by Auto: scans. YouTube stays off
-          unless you check it (or it is the only configured provider).
+          Saved to your niche profile and used by Auto: scans. YouTube is on by
+          default when configured — uncheck to save quota.
         </p>
         <div className="flex flex-wrap gap-4">
           {searchablePlatforms.map((p) => {
             const isYoutube = p.platform === "youtube";
             const saved = values.platforms.includes(p.platform);
             const defaultChecked =
-              saved ||
-              (!values.platforms.length &&
-                (isYoutube ? youtubeOnly && !hasNonYoutube : true));
+              saved || (!values.platforms.length && true);
             return (
               <label
                 key={p.platform}
@@ -99,7 +92,7 @@ export function NicheProfileForm({
                   className="size-4 rounded border-outline-variant"
                 />
                 {isYoutube
-                  ? "Include YouTube search"
+                  ? "YouTube Shorts search"
                   : `${p.platform} (${p.providerName})`}
               </label>
             );

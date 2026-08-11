@@ -14,6 +14,28 @@ const initialState: ResearchActionState = {};
 
 function ResultMessage({ state }: { state: ResearchActionState }) {
   if (state.error) return <p className="text-sm text-error">{state.error}</p>;
+  if (
+    state.discovered != null ||
+    state.eligible != null ||
+    state.retained != null
+  ) {
+    return (
+      <div className="space-y-1 text-sm text-primary-container">
+        <p className="font-medium">
+          Discovered {state.discovered ?? "—"} · eligible {state.eligible ?? "—"}{" "}
+          · retained {state.retained ?? "—"}
+        </p>
+        {state.providers?.length ? (
+          <p className="text-xs text-secondary">
+            Providers: {state.providers.join(", ")}
+          </p>
+        ) : null}
+        {state.success ? (
+          <p className="text-xs text-secondary">{state.success}</p>
+        ) : null}
+      </div>
+    );
+  }
   if (state.success) {
     return <p className="text-sm text-primary-container">{state.success}</p>;
   }
@@ -48,10 +70,7 @@ export function ResearchScanForm({
     initialState,
   );
 
-  const hasNonYoutube = platforms.some((p) => p.platform !== "youtube");
-  const youtubeOnly =
-    platforms.length > 0 && platforms.every((p) => p.platform === "youtube");
-  const youtubeDefaultOn = youtubeOnly && !hasNonYoutube;
+  const hasYoutube = platforms.some((p) => p.platform === "youtube");
 
   return (
     <form action={action} className="space-y-4">
@@ -76,15 +95,15 @@ export function ResearchScanForm({
         <p className="text-xs text-secondary">
           Select a live discovery source. TikTok Login only syncs your own
           account; public TikTok niche search needs TIKTOK_DATA_API_KEY.
+          {hasYoutube
+            ? " YouTube is available — include it to search Shorts."
+            : null}{" "}
           Instagram public search is not available via its official API, so use
           Manual reference for Instagram links.
         </p>
         <div className="flex flex-wrap gap-4">
           {platforms.map((p) => {
             const isYoutube = p.platform === "youtube";
-            const defaultChecked = isYoutube
-              ? youtubeDefaultOn
-              : true;
             return (
               <label
                 key={p.platform}
@@ -94,12 +113,12 @@ export function ResearchScanForm({
                   type="checkbox"
                   name="platforms"
                   value={p.platform}
-                  defaultChecked={defaultChecked}
+                  defaultChecked
                   className="size-4 rounded border-outline-variant"
                 />
                 <span>
                   {isYoutube
-                    ? "YouTube (live public search)"
+                    ? "YouTube Shorts (live public search)"
                     : p.platform === "tiktok"
                       ? "TikTok (TikTokAPI.store)"
                       : `${p.platform} (${p.providerName})`}
@@ -173,18 +192,21 @@ export function ResearchScanForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor="min-views">Minimum views</Label>
-          <Input id="min-views" name="minViews" type="number" min="0" defaultValue="1000" />
+          <Input id="min-views" name="minViews" type="number" min="0" defaultValue="100" />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="outlier-score">Minimum outlier</Label>
+          <Label htmlFor="outlier-score">Minimum outlier (optional)</Label>
           <Input
             id="outlier-score"
             name="minOutlierScore"
             type="number"
             min="0"
             step="0.1"
-            defaultValue="1.5"
+            defaultValue="0"
           />
+          <p className="text-xs text-secondary">
+            Leave at 0 for first pulls. Raise (e.g. 1.5) once you have baselines.
+          </p>
         </div>
       </div>
       <Button type="submit" disabled={pending || !configured}>

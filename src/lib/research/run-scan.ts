@@ -110,6 +110,7 @@ export async function runResearchScan(params: {
     const maxResults = Math.min(scan.max_results, budgets.maxResultsPerQuery);
     const usedProviders = new Set<string>();
     let discovered: SearchPostResult[] = [];
+    const providerErrors: string[] = [];
 
     if (targetCreators) {
       const { data: tracked } = creatorIds.length
@@ -179,28 +180,43 @@ export async function runResearchScan(params: {
         ) {
           continue;
         }
-        const posts = await provider.getCreatorPosts({
-          platform: target.platform as "youtube" | "tiktok" | "instagram" | "other",
-          platformCreatorId: target.platformCreatorId,
-          maxResults: Math.min(15, maxResults),
-        });
-        usedProviders.add(provider.providerName);
-        discovered.push(...posts);
-        await params.supabase.from("provider_usage_events").insert({
-          user_id: params.userId,
-          provider: provider.providerName,
-          operation: "get_creator_posts",
-          result_count: posts.length,
-          metadata: {
-            scanId: scan.id,
+        try {
+          const posts = await provider.getCreatorPosts({
+            platform: target.platform as
+              | "youtube"
+              | "tiktok"
+              | "instagram"
+              | "other",
             platformCreatorId: target.platformCreatorId,
-          },
-        });
+            maxResults: Math.min(15, maxResults),
+          });
+          usedProviders.add(provider.providerName);
+          discovered.push(...posts);
+          await params.supabase.from("provider_usage_events").insert({
+            user_id: params.userId,
+            provider: provider.providerName,
+            operation: "get_creator_posts",
+            result_count: posts.length,
+            metadata: {
+              scanId: scan.id,
+              platformCreatorId: target.platformCreatorId,
+            },
+          });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          providerErrors.push(`${provider.providerName}: ${message}`);
+          console.error("[research-scan] creator pull failed", {
+            platform: target.platform,
+            provider: provider.providerName,
+            message,
+          });
+        }
       }
     } else {
-      const discoveredBatches = await Promise.all(
-        searchProviders.map((provider) =>
-          provider.searchPosts({
+      const settled = await Promise.allSettled(
+        searchProviders.map(async (provider) => {
+          const posts = await provider.searchPosts({
             query: scan.query,
             platforms: scan.platforms as Array<
               "youtube" | "instagram" | "tiktok"
@@ -208,21 +224,43 @@ export async function runResearchScan(params: {
             lookbackDays: scan.lookback_days,
             maxResults,
             minViews: scan.min_views,
-          }),
-        ),
+          });
+          return { provider, posts };
+        }),
       );
-      discovered = discoveredBatches.flat();
-      for (const provider of searchProviders) {
-        usedProviders.add(provider.providerName);
-        await params.supabase.from("provider_usage_events").insert({
-          user_id: params.userId,
-          provider: provider.providerName,
-          operation: "search_posts",
-          result_count: discovered.filter(
-            (d) => d.providerName === provider.providerName,
-          ).length,
-          metadata: { scanId: scan.id, query: scan.query },
-        });
+
+      for (let i = 0; i < settled.length; i++) {
+        const result = settled[i]!;
+        const provider = searchProviders[i]!;
+        if (result.status === "fulfilled") {
+          const { posts } = result.value;
+          usedProviders.add(provider.providerName);
+          discovered.push(...posts);
+          await params.supabase.from("provider_usage_events").insert({
+            user_id: params.userId,
+            provider: provider.providerName,
+            operation: "search_posts",
+            result_count: posts.length,
+            metadata: { scanId: scan.id, query: scan.query },
+          });
+          if (posts.length === 0) {
+            providerErrors.push(`${provider.providerName}: 0 results`);
+          }
+        } else {
+          const message =
+            result.reason instanceof Error
+              ? result.reason.message
+              : String(result.reason);
+          providerErrors.push(`${provider.providerName}: ${message}`);
+          console.error("[research-scan] provider search failed", {
+            provider: provider.providerName,
+            message,
+          });
+        }
+      }
+
+      if (discovered.length === 0 && providerErrors.length > 0) {
+        throw new Error(providerErrors.join(" · "));
       }
     }
 
@@ -242,13 +280,35 @@ export async function runResearchScan(params: {
 
     const now = new Date();
     const nextRun = new Date(now.getTime() + 86_400_000);
+    const byPlatform = discovered.reduce<Record<string, number>>((acc, post) => {
+      acc[post.platform] = (acc[post.platform] ?? 0) + 1;
+      return acc;
+    }, {});
+    const lastRunStats = {
+      discovered: discovered.length,
+      eligible: eligiblePosts.length,
+      retained: ingested.retained,
+      providers: [...usedProviders],
+      by_platform: byPlatform,
+      provider_errors: providerErrors,
+      at: now.toISOString(),
+    };
+    const softError =
+      providerErrors.length > 0
+        ? providerErrors.join(" · ").slice(0, 500)
+        : null;
     await params.supabase
       .from("research_scans")
       .update({
         status: "active",
         last_run_at: now.toISOString(),
         next_run_at: nextRun.toISOString(),
-        last_error: null,
+        // Keep partial provider failures visible without failing the whole scan.
+        last_error: softError,
+        parameters: {
+          ...parameters,
+          last_run_stats: lastRunStats,
+        },
       })
       .eq("id", scan.id)
       .eq("user_id", params.userId);

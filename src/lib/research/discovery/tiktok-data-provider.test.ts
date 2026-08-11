@@ -88,7 +88,7 @@ describe("tiktokDataDiscoveryProvider", () => {
     const [requestUrl, init] = fetchMock.mock.calls[0]!;
     const url = new URL(String(requestUrl));
     expect(url.pathname).toBe("/api/v1/search/videos");
-    expect(url.searchParams.get("query")).toBe("coding");
+    expect(url.searchParams.get("keyword")).toBe("coding");
     expect(init?.headers).toEqual({ Authorization: "Bearer test-key" });
     expect(results).toHaveLength(1);
   });
@@ -96,35 +96,34 @@ describe("tiktokDataDiscoveryProvider", () => {
   it("falls back to trending feed when search endpoints fail", async () => {
     vi.stubEnv("TIKTOK_DATA_API_KEY", "test-key");
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ message: "search unavailable" }), {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ message: "search unavailable" }), {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ message: "search unavailable" }), {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ data: { videos: [] } }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo) => {
+      const path = new URL(String(input)).pathname;
+      if (path.includes("/feed/trending")) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              videos: [
+                {
+                  id: "trend1",
+                  desc: "trending",
+                  author: { unique_id: "t" },
+                  stats: { play_count: 5000 },
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ message: "search unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
-    await tiktokDataDiscoveryProvider.searchPosts!({
+    const results = await tiktokDataDiscoveryProvider.searchPosts!({
       query: "coding",
       platforms: ["tiktok"],
       lookbackDays: 30,
@@ -132,9 +131,49 @@ describe("tiktokDataDiscoveryProvider", () => {
       minViews: 0,
     });
 
-    expect(new URL(String(fetchMock.mock.calls[3]?.[0])).pathname).toBe(
-      "/api/v1/feed/trending",
-    );
+    expect(results).toHaveLength(1);
+    expect(results[0]?.externalId).toBe("trend1");
+  });
+
+  it("continues fallbacks when an endpoint returns empty 200", async () => {
+    vi.stubEnv("TIKTOK_DATA_API_KEY", "test-key");
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo) => {
+      const path = new URL(String(input)).pathname;
+      if (path.includes("/feed/trending")) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              videos: [
+                {
+                  id: "from-trend",
+                  desc: "ok",
+                  author: { unique_id: "u" },
+                  stats: { play_count: 900 },
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ data: { videos: [] } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const results = await tiktokDataDiscoveryProvider.searchPosts!({
+      query: "coding",
+      platforms: ["tiktok"],
+      lookbackDays: 30,
+      maxResults: 10,
+      minViews: 0,
+    });
+
+    expect(results.map((r) => r.externalId)).toEqual(["from-trend"]);
   });
 
   it("normalizes millisecond durations", () => {

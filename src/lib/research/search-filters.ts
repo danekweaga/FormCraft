@@ -15,16 +15,13 @@ export type NormalizedSearchFilters = {
 const ALLOWED: ResearchPlatform[] = ["youtube", "instagram", "tiktok", "other"];
 
 /**
- * Default platforms for discovery: exclude YouTube unless it is the only
- * configured searchable platform (saves YouTube Data API quota by default).
+ * Default platforms for discovery: all configured searchable sources.
+ * YouTube is included when YOUTUBE_DATA_API_KEY is present (users can uncheck).
  */
 export function defaultDiscoveryPlatforms(
   searchable: ResearchPlatform[],
 ): ResearchPlatform[] {
-  if (searchable.length === 0) return [];
-  const nonYoutube = searchable.filter((p) => p !== "youtube");
-  if (nonYoutube.length > 0) return nonYoutube;
-  return searchable.includes("youtube") ? ["youtube"] : [...searchable];
+  return [...searchable];
 }
 
 export function normalizeSearchFilters(input: {
@@ -38,7 +35,10 @@ export function normalizeSearchFilters(input: {
   allowedPlatforms?: ResearchPlatform[];
   creatorIds?: unknown;
   channelHandles?: unknown;
-  /** When true and platforms empty after parse, use defaultDiscoveryPlatforms */
+  /**
+   * Legacy: when true and platforms empty, drop YouTube if another source exists.
+   * Default is false — include all configured platforms (incl. YouTube).
+   */
   preferNonYoutubeDefault?: boolean;
 }): NormalizedSearchFilters {
   const query = String(input.query ?? "").trim().slice(0, 200);
@@ -59,15 +59,22 @@ export function normalizeSearchFilters(input: {
   }
 
   if (platforms.length === 0) {
-    platforms =
-      input.preferNonYoutubeDefault !== false
-        ? defaultDiscoveryPlatforms(allowed)
-        : [...allowed];
+    if (input.preferNonYoutubeDefault === true) {
+      const nonYoutube = allowed.filter((p) => p !== "youtube");
+      platforms =
+        nonYoutube.length > 0
+          ? nonYoutube
+          : allowed.includes("youtube")
+            ? (["youtube"] as ResearchPlatform[])
+            : [...allowed];
+    } else {
+      platforms = defaultDiscoveryPlatforms(allowed);
+    }
   }
 
   const lookbackDays = clampInt(input.lookbackDays, 1, 90, 30);
   const minViews = clampInt(input.minViews, 0, 10_000_000, 0);
-  const minOutlierScore = clampFloat(input.minOutlierScore, 0, 50, 1.5);
+  const minOutlierScore = clampFloat(input.minOutlierScore, 0, 50, 0);
   const maxResults = clampInt(input.maxResults, 1, 50, 25);
   const language =
     typeof input.language === "string" && input.language.trim()

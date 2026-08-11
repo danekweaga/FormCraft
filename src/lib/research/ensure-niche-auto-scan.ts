@@ -5,7 +5,8 @@ import type { ResearchPlatform } from "./types";
 
 /**
  * Ensure an auto-enabled research scan exists from the user's niche profile.
- * Respects niche_profiles.platforms (YouTube excluded unless opted in).
+ * Uses niche_profiles.platforms when set; otherwise all configured providers
+ * (including YouTube when the key is present).
  */
 export async function ensureNicheAutoScan(params: {
   supabase: SupabaseClient;
@@ -60,8 +61,8 @@ export async function ensureNicheAutoScan(params: {
     query,
     platforms,
     lookback_days: 30,
-    min_views: 1000,
-    min_outlier_score: 1.5,
+    min_views: 100,
+    min_outlier_score: 0,
     max_results: 25,
     auto_scan_enabled: true,
     status: "active",
