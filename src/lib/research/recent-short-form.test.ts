@@ -24,4 +24,31 @@ describe("recent short-form filter", () => {
   it("keeps recent TikTok posts when duration is unavailable", () => {
     expect(isRecentShortForm({ ...base, platform: "tiktok", durationSeconds: null }, { now })).toBe(true);
   });
+
+  it("keeps TikTok posts with unknown publish date", () => {
+    expect(
+      isRecentShortForm(
+        { platform: "tiktok", publishedAt: null, durationSeconds: null },
+        { now },
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects YouTube posts with unknown publish date", () => {
+    expect(
+      isRecentShortForm(
+        { platform: "youtube", publishedAt: null, durationSeconds: 40 },
+        { now },
+      ),
+    ).toBe(false);
+  });
+
+  it("normalizes millisecond durations as short-form", () => {
+    expect(
+      isRecentShortForm(
+        { ...base, platform: "tiktok", durationSeconds: 15_200 },
+        { now },
+      ),
+    ).toBe(true);
+  });
 });

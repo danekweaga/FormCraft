@@ -52,6 +52,9 @@ export async function searchYoutubeResearch(params: {
   searchUrl.searchParams.set("part", "snippet");
   searchUrl.searchParams.set("type", "video");
   searchUrl.searchParams.set("videoEmbeddable", "true");
+  // Niche discovery targets short-form; without this, long uploads dominate
+  // and then get dropped by the short-form filter → empty results.
+  searchUrl.searchParams.set("videoDuration", "short");
   searchUrl.searchParams.set("order", "viewCount");
   searchUrl.searchParams.set("q", params.query);
   searchUrl.searchParams.set("publishedAfter", publishedAfter);

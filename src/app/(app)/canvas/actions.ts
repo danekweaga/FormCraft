@@ -133,27 +133,36 @@ export async function createCanvasEdgeAction(input: {
   if (!auth.supabase || !auth.user) return { error: "Not signed in" };
   if (!isCanvasEdgeType(input.edgeType)) return { error: "Invalid edge type" };
   if (input.edgeId && !isUuid(input.edgeId)) return { error: "Invalid edge id" };
-  if (input.fromNodeId === input.toNodeId) return { error: "Cannot connect a node to itself" };
+  if (input.fromNodeId === input.toNodeId) {
+    return { error: "Cannot connect a node to itself" };
+  }
 
-  const edge = await insertCanvasEdge({
-    supabase: auth.supabase,
-    userId: auth.user.id,
-    boardId: input.boardId,
-    id: input.edgeId,
-    fromNodeId: input.fromNodeId,
-    toNodeId: input.toNodeId,
-    edgeType: input.edgeType as CanvasEdgeType,
-  });
-  revalidateBoard(input.boardId);
-  return {
-    success: true,
-    edge: {
-      id: edge.id,
-      source: input.fromNodeId,
-      target: input.toNodeId,
+  try {
+    const edge = await insertCanvasEdge({
+      supabase: auth.supabase,
+      userId: auth.user.id,
+      boardId: input.boardId,
+      id: input.edgeId,
+      fromNodeId: input.fromNodeId,
+      toNodeId: input.toNodeId,
       edgeType: input.edgeType as CanvasEdgeType,
-    },
-  };
+    });
+    revalidateBoard(input.boardId);
+    return {
+      success: true,
+      edge: {
+        id: edge.id,
+        source: input.fromNodeId,
+        target: input.toNodeId,
+        edgeType: input.edgeType as CanvasEdgeType,
+      },
+    };
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error ? error.message : "Could not create canvas edge.",
+    };
+  }
 }
 
 export async function deleteCanvasNodesAction(input: {
@@ -541,24 +550,25 @@ export async function persistCanvasGraphAction(input: {
   }
 
   if (input.snapshot.edges.length) {
-    const edgeRows = input.snapshot.edges.map((edge) => ({
-      id: edge.id,
-      board_id: input.boardId,
-      user_id: auth.user!.id,
-      from_node_id: edge.source,
-      to_node_id: edge.target,
-      edge_type: edge.edgeType,
-    }));
-    for (const row of edgeRows) {
-      await insertCanvasEdge({
-        supabase: auth.supabase,
-        userId: auth.user.id,
-        boardId: input.boardId,
-        id: row.id,
-        fromNodeId: row.from_node_id,
-        toNodeId: row.to_node_id,
-        edgeType: row.edge_type,
-      });
+    for (const edge of input.snapshot.edges) {
+      try {
+        await insertCanvasEdge({
+          supabase: auth.supabase,
+          userId: auth.user.id,
+          boardId: input.boardId,
+          id: edge.id,
+          fromNodeId: edge.source,
+          toNodeId: edge.target,
+          edgeType: edge.edgeType,
+        });
+      } catch (error) {
+        return {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not persist canvas edges.",
+        };
+      }
     }
   }
 

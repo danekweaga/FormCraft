@@ -20,7 +20,8 @@ export default async function CanvasBoardPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/sign-in");
 
-  const [{ data: board }, { data: nodes }, { data: edges }] = await Promise.all([
+  const [{ data: board, error: boardError }, { data: nodes, error: nodesError }, { data: edges, error: edgesError }] =
+    await Promise.all([
     supabase
       .from("canvas_boards")
       .select("id, title, description, template_key, viewport, updated_at")
@@ -42,7 +43,16 @@ export default async function CanvasBoardPage({
       .eq("user_id", user.id),
   ]);
 
+  if (boardError) {
+    throw new Error(`Canvas board query failed: ${boardError.message}`);
+  }
   if (!board) notFound();
+  if (nodesError) {
+    throw new Error(`Canvas nodes query failed: ${nodesError.message}`);
+  }
+  if (edgesError) {
+    throw new Error(`Canvas edges query failed: ${edgesError.message}`);
+  }
 
   const nodesWithSignedAudio = await Promise.all(
     (nodes ?? []).map(async (node) => {

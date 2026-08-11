@@ -15,6 +15,7 @@ import {
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
+  SelectionMode,
   addEdge,
   useEdgesState,
   useNodesState,
@@ -604,6 +605,8 @@ function CanvasBoardInner({
           onPaneClick={() => setNodeMenu(null)}
           nodeTypes={nodeTypes}
           fitView={!initialViewport}
+          multiSelectionKeyCode="Shift"
+          selectionMode={SelectionMode.Partial}
           deleteKeyCode={null}
           proOptions={{ hideAttribution: true }}
         >

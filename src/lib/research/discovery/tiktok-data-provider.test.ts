@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  normalizeTiktokDurationSeconds,
   normalizeTiktokVideo,
   tiktokDataDiscoveryProvider,
 } from "./tiktok-data-provider";
@@ -55,7 +56,7 @@ describe("tiktokDataDiscoveryProvider", () => {
     vi.restoreAllMocks();
   });
 
-  it("uses the documented search_term parameter and bearer authorization", async () => {
+  it("uses documented search paths and falls back across variants", async () => {
     vi.stubEnv("TIKTOK_DATA_API_KEY", "test-key");
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
@@ -86,18 +87,29 @@ describe("tiktokDataDiscoveryProvider", () => {
 
     const [requestUrl, init] = fetchMock.mock.calls[0]!;
     const url = new URL(String(requestUrl));
-    expect(url.pathname).toBe("/api/v1/search/video");
-    expect(url.searchParams.get("search_term")).toBe("coding");
-    expect(url.searchParams.has("keyword")).toBe(false);
+    expect(url.pathname).toBe("/api/v1/search/videos");
+    expect(url.searchParams.get("query")).toBe("coding");
     expect(init?.headers).toEqual({ Authorization: "Bearer test-key" });
     expect(results).toHaveLength(1);
   });
 
-  it("falls back to the documented feed endpoint", async () => {
+  it("falls back to trending feed when search endpoints fail", async () => {
     vi.stubEnv("TIKTOK_DATA_API_KEY", "test-key");
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const fetchMock = vi
       .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: "search unavailable" }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: "search unavailable" }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ message: "search unavailable" }), {
           status: 503,
@@ -120,8 +132,13 @@ describe("tiktokDataDiscoveryProvider", () => {
       minViews: 0,
     });
 
-    expect(new URL(String(fetchMock.mock.calls[1]?.[0])).pathname).toBe(
-      "/api/v1/feed",
+    expect(new URL(String(fetchMock.mock.calls[3]?.[0])).pathname).toBe(
+      "/api/v1/feed/trending",
     );
+  });
+
+  it("normalizes millisecond durations", () => {
+    expect(normalizeTiktokDurationSeconds(15200)).toBe(15);
+    expect(normalizeTiktokDurationSeconds(42)).toBe(42);
   });
 });

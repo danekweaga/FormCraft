@@ -37,6 +37,14 @@ function pickRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+/** TikTok APIs often return duration in milliseconds. */
+export function normalizeTiktokDurationSeconds(value: unknown): number | null {
+  const raw = asNumber(value);
+  if (raw == null || raw <= 0) return null;
+  if (raw > 1000) return Math.round(raw / 1000);
+  return Math.round(raw);
+}
+
 async function tiktokGet(path: string, params: Record<string, string>) {
   const url = new URL(`${BASE}${path}`);
   for (const [key, value] of Object.entries(params)) {
@@ -65,13 +73,31 @@ async function tiktokGet(path: string, params: Record<string, string>) {
   return body;
 }
 
+async function tiktokGetFirst(
+  attempts: Array<{ path: string; params: Record<string, string> }>,
+): Promise<Record<string, unknown>> {
+  let lastError: Error | null = null;
+  for (const attempt of attempts) {
+    try {
+      return await tiktokGet(attempt.path, attempt.params);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  throw lastError ?? new Error("TikTokAPI.store request failed.");
+}
+
 function extractList(body: Record<string, unknown>): unknown[] {
-  const data = body.data;
-  if (Array.isArray(data)) return data;
-  const record = pickRecord(data);
-  if (!record) return [];
+  if (Array.isArray(body.data)) return body.data;
+  const data = pickRecord(body.data);
+  if (data) {
+    for (const key of ["videos", "aweme_list", "items", "list", "results"]) {
+      const value = data[key];
+      if (Array.isArray(value)) return value;
+    }
+  }
   for (const key of ["videos", "aweme_list", "items", "list", "results"]) {
-    const value = record[key];
+    const value = body[key];
     if (Array.isArray(value)) return value;
   }
   return [];
@@ -94,6 +120,7 @@ export function normalizeTiktokVideo(
     pickRecord(item.user) ??
     pickRecord(item.authorMeta) ??
     {};
+  const video = pickRecord(item.video) ?? {};
 
   const id =
     asString(item.id) ??
@@ -135,8 +162,9 @@ export function normalizeTiktokVideo(
   const cover =
     asString(item.cover) ??
     asString(item.coverUrl) ??
-    asString(pickRecord(item.video)?.cover) ??
-    asString(pickRecord(item.video)?.origin_cover);
+    asString(video.cover) ??
+    asString(video.origin_cover) ??
+    asString(video.dynamic_cover);
 
   return {
     platform: "tiktok",
@@ -157,9 +185,9 @@ export function normalizeTiktokVideo(
     thumbnailUrl: cover,
     publishedAt,
     durationSeconds:
-      asNumber(item.duration) ??
-      asNumber(pickRecord(item.video)?.duration) ??
-      null,
+      normalizeTiktokDurationSeconds(item.duration) ??
+      normalizeTiktokDurationSeconds(video.duration) ??
+      normalizeTiktokDurationSeconds(item.video_duration),
     views:
       asNumber(stats.play_count) ??
       asNumber(stats.playCount) ??
@@ -212,20 +240,15 @@ export const tiktokDataDiscoveryProvider: ContentDiscoveryProvider = {
     const retrievedAt = new Date().toISOString();
     const count = String(Math.min(30, Math.max(1, input.maxResults ?? 20)));
 
-    // TikTokAPI.store calls this parameter `search_term` (not `keyword`).
-    // Fall back to the documented regional feed if search is unavailable.
-    let body: Record<string, unknown>;
-    try {
-      body = await tiktokGet("/search/video", {
-        search_term: input.query,
-        count,
-      });
-    } catch {
-      body = await tiktokGet("/feed", {
-        region: "US",
-        count,
-      });
-    }
+    // Docs/blog use /search/videos?query=…; older notes used /search/video?search_term=.
+    // Try both, then trending feed fallbacks.
+    const body = await tiktokGetFirst([
+      { path: "/search/videos", params: { query: input.query, count } },
+      { path: "/search/video", params: { search_term: input.query, count } },
+      { path: "/search/video", params: { keyword: input.query, count } },
+      { path: "/feed/trending", params: { region: "US", count } },
+      { path: "/feed", params: { region: "US", count } },
+    ]);
 
     const lookbackMs = (input.lookbackDays ?? 30) * 86_400_000;
     const cutoff = Date.now() - lookbackMs;
@@ -257,10 +280,10 @@ export const tiktokDataDiscoveryProvider: ContentDiscoveryProvider = {
     const identifier: Record<string, string> = /^\d+$/.test(handle)
       ? { user_id: handle }
       : { unique_id: handle };
-    const body = await tiktokGet("/user/posts", {
-      ...identifier,
-      count,
-    });
+    const body = await tiktokGetFirst([
+      { path: "/user/posts", params: { ...identifier, count } },
+      { path: "/user/videos", params: { ...identifier, count } },
+    ]);
 
     return extractList(body)
       .map((raw) => normalizeTiktokVideo(raw, retrievedAt))

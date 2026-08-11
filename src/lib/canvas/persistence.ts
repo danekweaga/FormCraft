@@ -92,21 +92,23 @@ export function dbNodesToFlow(nodes: DbCanvasNode[]): Node<CanvasNodeData>[] {
   return ordered.map((n) => {
     const nodeType = normalizeNodeType(n.node_type);
     const parentFrameId = n.parent_frame_id ?? null;
+    const width = n.width != null ? Number(n.width) : nodeType === "frame" ? 480 : 240;
+    const height =
+      n.height != null ? Number(n.height) : nodeType === "frame" ? 280 : 150;
     return {
       id: n.id,
       type: nodeType === "frame" ? "frame" : "formcraft",
       position: { x: Number(n.position_x), y: Number(n.position_y) },
       parentId: parentFrameId ?? undefined,
-      extent: parentFrameId ? "parent" : undefined,
+      extent: parentFrameId ? ("parent" as const) : undefined,
       expandParent: Boolean(parentFrameId),
       zIndex: nodeType === "frame" ? -1 : 0,
-      style:
-        n.width || n.height
-          ? {
-              width: n.width ? Number(n.width) : undefined,
-              height: n.height ? Number(n.height) : undefined,
-            }
-          : undefined,
+      style: {
+        width,
+        height,
+      },
+      width,
+      height,
       data: {
         nodeType,
         title: n.title || CANVAS_NODE_LABELS[nodeType],

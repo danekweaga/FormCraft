@@ -226,13 +226,13 @@ export async function runResearchScan(params: {
       }
     }
 
-    const eligible = filterRecentShortForm(discovered, {
+    const eligiblePosts = filterRecentShortForm(discovered, {
       lookbackDays: scan.lookback_days,
     });
     const ingested = await ingestScoredPosts({
       supabase: params.supabase,
       userId: params.userId,
-      posts: eligible,
+      posts: eligiblePosts,
       query: scan.query,
       researchScanId: scan.id,
       minViews: scan.min_views,
@@ -255,7 +255,7 @@ export async function runResearchScan(params: {
 
     return {
       discovered: discovered.length,
-      eligible: ingested.discovered,
+      eligible: eligiblePosts.length,
       retained: ingested.retained,
       providers: [...usedProviders],
     };
