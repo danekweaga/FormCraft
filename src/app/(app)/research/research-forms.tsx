@@ -308,7 +308,7 @@ export function SaveResearchReferenceForm() {
           name="transcript"
           rows={6}
           maxLength={40000}
-          placeholder="Paste the actual spoken transcript here. FormCraft will try public YouTube captions, but paste/upload the transcript if YouTube does not expose them."
+          placeholder="Optional: paste the spoken transcript. If blank, FormCraft asks Supadata for supported public links and caches the result."
           className="w-full rounded-md border border-outline-variant/30 bg-surface-container-lowest px-3 py-2 text-sm"
         />
       </div>
@@ -316,8 +316,8 @@ export function SaveResearchReferenceForm() {
         {pending ? "Saving…" : "Analyze and save reference"}
       </Button>
       <p className="text-xs text-secondary">
-        Instagram has no official niche search — paste a public post/Reel URL
-        here.
+        Instagram has no official niche search here, but a public Reel URL can
+        be transcribed and analyzed after you paste it.
       </p>
       <ResultMessage state={state} />
     </form>

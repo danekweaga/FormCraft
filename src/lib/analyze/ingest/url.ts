@@ -1,11 +1,23 @@
+import {
+  fetchSupadataTranscript,
+  identifySupadataPlatform,
+  isSupadataConfigured,
+  type SupadataPlatform,
+} from "@/lib/analyze/transcription/supadata-provider";
+import type { TranscriptSegment } from "@/lib/analyze/transcription/types";
 import { fetchYouTubeTranscript } from "@/lib/research/youtube-transcript";
 
 export type UrlIngestResult =
   | {
       ok: true;
-      platform: "youtube";
-      videoId: string;
+      platform: SupadataPlatform;
+      videoId: string | null;
       transcript: string;
+      rawTranscript: string;
+      transcriptProvider: string;
+      transcriptLanguage: string | null;
+      timestampedTranscript: TranscriptSegment[];
+      billableRequests: number | null;
       thumbnailUrl: string | null;
       sourceUrl: string;
     }
@@ -18,20 +30,30 @@ export type UrlIngestResult =
 
 function extractYouTubeId(url: string): string | null {
   try {
-    const u = new URL(url);
-    if (u.hostname.includes("youtu.be")) {
-      return u.pathname.replace("/", "") || null;
+    const parsed = new URL(url);
+    if (parsed.hostname === "youtu.be") {
+      return parsed.pathname.replace("/", "") || null;
     }
-    if (u.hostname.includes("youtube.com")) {
-      if (u.pathname.startsWith("/shorts/")) {
-        return u.pathname.split("/")[2] || null;
+    if (
+      parsed.hostname === "youtube.com" ||
+      parsed.hostname.endsWith(".youtube.com")
+    ) {
+      if (parsed.pathname.startsWith("/shorts/")) {
+        return parsed.pathname.split("/")[2] || null;
       }
-      return u.searchParams.get("v");
+      return parsed.searchParams.get("v");
     }
   } catch {
     return null;
   }
   return null;
+}
+
+function platformSuggestion(platform: SupadataPlatform): string {
+  if (platform === "youtube") {
+    return "Try another public video, paste a transcript, or upload the media.";
+  }
+  return "Confirm the video opens in a signed-out browser, or paste/upload its transcript instead.";
 }
 
 export async function ingestPublicVideoUrl(
@@ -47,57 +69,83 @@ export async function ingestPublicVideoUrl(
     };
   }
 
-  const ytId = extractYouTubeId(trimmed);
-  if (ytId) {
-    const transcript = await fetchYouTubeTranscript(ytId);
-    if (!transcript) {
-      return {
-        ok: false,
-        reason: "Could not fetch YouTube captions for this video.",
-        platform: "youtube",
-        suggestion:
-          "Upload the file, paste a transcript, or try another video with captions.",
-      };
-    }
+  const platform = identifySupadataPlatform(trimmed);
+  if (!platform) {
     return {
-      ok: true,
-      platform: "youtube",
-      videoId: ytId,
-      transcript,
-      thumbnailUrl: `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`,
-      sourceUrl: trimmed,
+      ok: false,
+      reason: "Unsupported or non-public URL.",
+      platform: null,
+      suggestion:
+        "Use a public YouTube, TikTok, Instagram, Facebook, or X video URL, or upload media.",
     };
   }
 
-  if (/tiktok\.com/i.test(trimmed)) {
-    return {
-      ok: false,
-      reason: "TikTok media cannot be downloaded automatically.",
-      platform: "tiktok",
-      suggestion: "Upload the video/audio file or paste a transcript.",
-    };
+  if (isSupadataConfigured()) {
+    try {
+      const transcript = await fetchSupadataTranscript(trimmed);
+      const videoId = platform === "youtube" ? extractYouTubeId(trimmed) : null;
+      return {
+        ok: true,
+        platform,
+        videoId,
+        transcript: transcript.normalizedTranscript,
+        rawTranscript: transcript.rawTranscript,
+        transcriptProvider: transcript.provider,
+        transcriptLanguage: transcript.language,
+        timestampedTranscript: transcript.segments,
+        billableRequests: transcript.billableRequests,
+        thumbnailUrl:
+          platform === "youtube" && videoId
+            ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+            : null,
+        sourceUrl: trimmed,
+      };
+    } catch (error) {
+      if (platform !== "youtube") {
+        return {
+          ok: false,
+          reason:
+            error instanceof Error
+              ? error.message
+              : "Supadata could not create a transcript.",
+          platform,
+          suggestion: platformSuggestion(platform),
+        };
+      }
+      // Preserve the free YouTube caption path if Supadata is temporarily down.
+    }
   }
-  if (/instagram\.com/i.test(trimmed)) {
-    return {
-      ok: false,
-      reason: "Instagram media cannot be downloaded automatically.",
-      platform: "instagram",
-      suggestion: "Upload the Reel file or paste a transcript/caption.",
-    };
-  }
-  if (/loom\.com/i.test(trimmed)) {
-    return {
-      ok: false,
-      reason: "Loom download is not configured.",
-      platform: "loom",
-      suggestion: "Export/download the video and upload it, or paste a transcript.",
-    };
+
+  if (platform === "youtube") {
+    const videoId = extractYouTubeId(trimmed);
+    const transcript = videoId
+      ? await fetchYouTubeTranscript(videoId)
+      : null;
+    if (transcript) {
+      return {
+        ok: true,
+        platform,
+        videoId,
+        transcript,
+        rawTranscript: transcript,
+        transcriptProvider: "youtube_captions",
+        transcriptLanguage: null,
+        timestampedTranscript: [],
+        billableRequests: 0,
+        thumbnailUrl: videoId
+          ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+          : null,
+        sourceUrl: trimmed,
+      };
+    }
   }
 
   return {
     ok: false,
-    reason: "Unsupported or private URL.",
-    platform: null,
-    suggestion: "Upload media or paste a transcript for analysis.",
+    reason: isSupadataConfigured()
+      ? "No usable public transcript was returned."
+      : "SUPADATA_API_KEY is not configured for social-video transcripts.",
+    platform,
+    suggestion: platformSuggestion(platform),
   };
 }

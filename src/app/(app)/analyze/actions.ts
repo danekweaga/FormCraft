@@ -40,6 +40,35 @@ async function requireUser() {
   return { supabase, user, error: null };
 }
 
+function urlInputType(platform: string) {
+  if (platform === "youtube") return "youtube_url" as const;
+  if (platform === "tiktok") return "tiktok_url" as const;
+  if (platform === "instagram") return "instagram_url" as const;
+  return "social_url" as const;
+}
+
+async function recordTranscriptProviderUsage(params: {
+  supabase: NonNullable<Awaited<ReturnType<typeof requireUser>>["supabase"]>;
+  userId: string;
+  provider: string;
+  platform: string;
+  billableRequests: number | null;
+  source: string;
+}) {
+  if (!params.provider.startsWith("supadata")) return;
+  await params.supabase.from("provider_usage_events").insert({
+    user_id: params.userId,
+    provider: "supadata",
+    operation: "transcript",
+    result_count: 1,
+    metadata: {
+      platform: params.platform,
+      billableRequests: params.billableRequests,
+      source: params.source,
+    },
+  });
+}
+
 async function nextVersion(
   supabase: NonNullable<Awaited<ReturnType<typeof requireUser>>["supabase"]>,
   userId: string,
@@ -289,22 +318,44 @@ export async function analyzeMyContentPost(
 
   const { data: post } = await auth.supabase
     .from("content_posts")
-    .select("id, title, caption, transcript, platform, source")
+    .select("id, title, transcript, platform, source, external_url")
     .eq("id", postId)
     .eq("user_id", auth.user.id)
     .maybeSingle();
 
   if (!post) return { error: "Post not found." };
 
-  let transcript = (post.transcript || post.caption || "").trim();
-  if (!transcript) {
-    return {
-      error:
-        "This post has no caption or transcript to analyze. Add a transcript first.",
-    };
+  let transcript = (post.transcript || "").trim();
+  let transcriptProvider = transcript ? "cached_content_transcript" : "unavailable";
+  let transcriptLanguage: string | null = null;
+  let timestampedTranscript: unknown = null;
+  if (!transcript && post.external_url) {
+    const ingested = await ingestPublicVideoUrl(post.external_url);
+    if (ingested.ok) {
+      transcript = ingested.transcript;
+      transcriptProvider = ingested.transcriptProvider;
+      transcriptLanguage = ingested.transcriptLanguage;
+      timestampedTranscript = ingested.timestampedTranscript;
+      await auth.supabase
+        .from("content_posts")
+        .update({ transcript })
+        .eq("id", post.id)
+        .eq("user_id", auth.user.id);
+      await recordTranscriptProviderUsage({
+        supabase: auth.supabase,
+        userId: auth.user.id,
+        provider: ingested.transcriptProvider,
+        platform: ingested.platform,
+        billableRequests: ingested.billableRequests,
+        source: "my_content",
+      });
+    }
   }
   if (transcript.length < 20) {
-    transcript = `${transcript}\n\n[Short caption — limited structural evidence.]`;
+    return {
+      error:
+        "No spoken transcript is available for this post. Add a transcript or a supported public video URL. FormCraft will not treat the caption as spoken audio.",
+    };
   }
 
   const result = await createTranscriptAnalysis({
@@ -315,6 +366,11 @@ export async function analyzeMyContentPost(
     sourceType: "my_content",
     contentPostId: post.id,
     inputType: "my_content_post",
+    sourceUrl: post.external_url,
+    transcriptProvider,
+    transcriptLanguage,
+    timestampedTranscript,
+    hasAudioEvidence: true,
   });
   if (result.analysisId) redirect(`/analyze/${result.analysisId}`);
   return result;
@@ -349,6 +405,10 @@ export async function createAnalysisFromUrlAction(
   const url = String(formData.get("sourceUrl") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim() || "URL analysis";
   const mode = (formData.get("mode") as "quick" | "deep" | "expert") || "deep";
+  const auth = await requireUser();
+  if (auth.error || !auth.supabase || !auth.user) {
+    return { error: auth.error ?? "You must be signed in." };
+  }
   const ingested = await ingestPublicVideoUrl(url);
   if (!ingested.ok) {
     return { error: `${ingested.reason} ${ingested.suggestion}` };
@@ -360,12 +420,24 @@ export async function createAnalysisFromUrlAction(
     mode,
     subjectType: "viral_outlier",
     sourceType: "external_research",
-    inputType: "youtube_url",
+    inputType: urlInputType(ingested.platform),
     sourceUrl: ingested.sourceUrl,
-    transcriptProvider: "youtube_captions",
-    hasVisualEvidence: Boolean(ingested.thumbnailUrl),
+    rawTranscript: ingested.rawTranscript,
+    transcriptProvider: ingested.transcriptProvider,
+    transcriptLanguage: ingested.transcriptLanguage,
+    timestampedTranscript: ingested.timestampedTranscript,
+    hasVisualEvidence: false,
+    hasAudioEvidence: true,
   });
   if (result.error) return { error: result.error };
+  await recordTranscriptProviderUsage({
+    supabase: auth.supabase,
+    userId: auth.user.id,
+    provider: ingested.transcriptProvider,
+    platform: ingested.platform,
+    billableRequests: ingested.billableRequests,
+    source: "analyze_link",
+  });
   redirect(`/analyze/${result.analysisId}`);
 }
 
@@ -569,7 +641,7 @@ export async function breakDownResearchItemAction(
   const { data: item } = await auth.supabase
     .from("research_items")
     .select(
-      "id, title, description, platform, external_id, external_url, hook_text, outlier_score",
+      "id, title, description, platform, external_id, external_url, hook_text, outlier_score, transcript, transcript_provider, transcript_language, transcript_segments",
     )
     .eq("id", researchItemId)
     .eq("user_id", auth.user.id)
@@ -586,29 +658,52 @@ export async function breakDownResearchItemAction(
     .limit(1)
     .maybeSingle();
 
-  let transcript = previous?.transcript?.trim() ?? "";
-  let provider = previous?.transcript_provider ?? "unavailable";
-  let inputType: "youtube_url" | "social_url" | "formcraft_source" =
+  let transcript = item.transcript?.trim() ?? previous?.transcript?.trim() ?? "";
+  let provider = item.transcript_provider ?? previous?.transcript_provider ?? "unavailable";
+  let language = item.transcript_language ?? null;
+  let timestampedTranscript = item.transcript_segments ?? null;
+  let inputType:
+    | "youtube_url"
+    | "tiktok_url"
+    | "instagram_url"
+    | "social_url"
+    | "formcraft_source" =
     previous?.input_type === "youtube_url" ? "youtube_url" : "formcraft_source";
 
-  if (!transcript && item.platform === "youtube" && item.external_id) {
-    const { fetchYouTubeTranscript } = await import(
-      "@/lib/research/youtube-transcript"
-    );
-    const captions = await fetchYouTubeTranscript(item.external_id);
-    if (captions) {
-      transcript = captions;
-      provider = "youtube_captions";
-      inputType = "youtube_url";
+  if (!transcript && item.external_url) {
+    const ingested = await ingestPublicVideoUrl(item.external_url);
+    if (ingested.ok) {
+      transcript = ingested.transcript;
+      provider = ingested.transcriptProvider;
+      language = ingested.transcriptLanguage;
+      timestampedTranscript = ingested.timestampedTranscript;
+      inputType = urlInputType(ingested.platform);
+      await auth.supabase
+        .from("research_items")
+        .update({
+          transcript,
+          transcript_provider: provider,
+          transcript_language: language,
+          transcript_segments: timestampedTranscript,
+          transcript_retrieved_at: new Date().toISOString(),
+        })
+        .eq("id", item.id)
+        .eq("user_id", auth.user.id);
+      await recordTranscriptProviderUsage({
+        supabase: auth.supabase,
+        userId: auth.user.id,
+        provider,
+        platform: ingested.platform,
+        billableRequests: ingested.billableRequests,
+        source: "research_breakdown",
+      });
     }
   }
 
   if (transcript.length < 20) {
     return {
       error:
-        item.platform === "youtube"
-          ? "Public captions were unavailable for this YouTube video. Open Analyze and paste the transcript or upload the video; FormCraft will not use the title/caption as the spoken hook."
-          : "This platform does not provide a public transcript. Open Analyze and paste the transcript or upload the video; FormCraft will not use the caption as the spoken hook.",
+        "A spoken transcript could not be retrieved from this public link. Paste or upload the transcript in Analyze. FormCraft will not use the title or caption as the spoken hook.",
     };
   }
 
@@ -622,6 +717,9 @@ export async function breakDownResearchItemAction(
     inputType,
     sourceUrl: item.external_url,
     transcriptProvider: provider,
+    transcriptLanguage: language,
+    timestampedTranscript,
+    hasAudioEvidence: true,
   });
   if (result.analysisId) redirect(`/analyze/${result.analysisId}`);
   return result;

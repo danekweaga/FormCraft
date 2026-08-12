@@ -74,8 +74,9 @@ export function AnalyzeForm() {
       <CardHeader>
         <CardTitle>New analysis</CardTitle>
         <CardDescription>
-          Paste a transcript, upload video/audio (Whisper), or paste a YouTube
-          URL with captions. TikTok/IG need upload or paste — no auto-download.
+          Paste a transcript, upload video/audio, or analyze a public YouTube,
+          TikTok, Instagram, Facebook, or X link. Supadata retrieves the spoken
+          transcript on demand; FormCraft does not claim visual evidence from a link.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -152,7 +153,7 @@ export function AnalyzeForm() {
                 id="sourceUrl"
                 name="sourceUrl"
                 required
-                placeholder="https://youtube.com/watch?v=… or Shorts URL"
+                placeholder="https://www.tiktok.com/@creator/video/…"
               />
             </div>
             {urlState.error ? (

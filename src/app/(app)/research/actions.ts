@@ -2,6 +2,7 @@
 
 import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { ingestPublicVideoUrl } from "@/lib/analyze/ingest/url";
 import { analyzeResearchBatch } from "@/lib/research/analyze";
 import { searchablePlatforms } from "@/lib/research/discovery/registry";
 import { runResearchScan } from "@/lib/research/run-scan";
@@ -18,6 +19,28 @@ export type ResearchActionState = {
   retained?: number;
   providers?: string[];
 };
+
+async function recordSupadataUsage(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  userId: string;
+  provider: string;
+  platform: string;
+  billableRequests: number | null;
+  source: string;
+}) {
+  if (!params.provider.startsWith("supadata")) return;
+  await params.supabase.from("provider_usage_events").insert({
+    user_id: params.userId,
+    provider: "supadata",
+    operation: "transcript",
+    result_count: 1,
+    metadata: {
+      platform: params.platform,
+      billableRequests: params.billableRequests,
+      source: params.source,
+    },
+  });
+}
 
 function positiveInteger(value: FormDataEntryValue | null, fallback: number) {
   const parsed = Number(value);
@@ -204,16 +227,32 @@ export async function saveResearchReferenceAction(
     scoreBasis: "unavailable",
   };
   const transcriptsByExternalId = new Map<string, string>();
+  let transcript = "";
+  let transcriptProvider: string | null = null;
+  let transcriptLanguage: string | null = null;
+  let transcriptSegments: unknown[] = [];
   if (suppliedTranscript.length >= 20) {
-    transcriptsByExternalId.set(video.externalId, suppliedTranscript);
-  } else if (reference.platform === "youtube") {
-    const { fetchYouTubeTranscript } = await import(
-      "@/lib/research/youtube-transcript"
-    );
-    const publicCaptions = await fetchYouTubeTranscript(video.externalId);
-    if (publicCaptions) {
-      transcriptsByExternalId.set(video.externalId, publicCaptions);
+    transcript = suppliedTranscript;
+    transcriptProvider = "paste";
+  } else {
+    const ingested = await ingestPublicVideoUrl(reference.normalizedUrl);
+    if (ingested.ok) {
+      transcript = ingested.transcript;
+      transcriptProvider = ingested.transcriptProvider;
+      transcriptLanguage = ingested.transcriptLanguage;
+      transcriptSegments = ingested.timestampedTranscript;
+      await recordSupadataUsage({
+        supabase,
+        userId: user.id,
+        provider: ingested.transcriptProvider,
+        platform: ingested.platform,
+        billableRequests: ingested.billableRequests,
+        source: "manual_reference",
+      });
     }
+  }
+  if (transcript.length >= 20) {
+    transcriptsByExternalId.set(video.externalId, transcript);
   }
 
   const analyzed = await analyzeResearchBatch({
@@ -239,6 +278,11 @@ export async function saveResearchReferenceAction(
       topic: result?.analysis.topic ?? null,
       analysis: result?.analysis ?? {},
       analysis_model: result?.model ?? null,
+      transcript: transcript || null,
+      transcript_provider: transcriptProvider,
+      transcript_language: transcriptLanguage,
+      transcript_segments: transcriptSegments,
+      transcript_retrieved_at: transcript ? new Date().toISOString() : null,
       saved: true,
       source: "manual_reference",
     },
@@ -249,8 +293,8 @@ export async function saveResearchReferenceAction(
   revalidatePath("/research");
   return {
     success: transcriptGrounded
-      ? "Reference saved. The spoken hook was derived from captions/transcript."
-      : "Reference saved with metadata only. Add a transcript or use a YouTube video with public captions before analyzing its spoken hook.",
+      ? `Reference saved. The spoken hook was derived from the ${transcriptProvider === "supadata_auto" ? "Supadata transcript" : "provided transcript"}.`
+      : "Reference saved with metadata only. Add a transcript or use a supported public video link before analyzing its spoken hook.",
   };
 }
 
@@ -309,12 +353,42 @@ export async function analyzeResearchItemAction(
   };
 
   const transcriptsByExternalId = new Map<string, string>();
-  if (item.platform === "youtube" && item.external_id) {
-    const { fetchYouTubeTranscript } = await import(
-      "@/lib/research/youtube-transcript"
-    );
-    const transcript = await fetchYouTubeTranscript(item.external_id);
-    if (transcript) transcriptsByExternalId.set(item.external_id, transcript);
+  let transcript = String(item.transcript ?? "").trim();
+  let transcriptProvider = item.transcript_provider as string | null;
+  let transcriptLanguage = item.transcript_language as string | null;
+  let transcriptSegments = Array.isArray(item.transcript_segments)
+    ? item.transcript_segments
+    : [];
+  if (transcript.length < 20 && item.external_url) {
+    const ingested = await ingestPublicVideoUrl(item.external_url);
+    if (ingested.ok) {
+      transcript = ingested.transcript;
+      transcriptProvider = ingested.transcriptProvider;
+      transcriptLanguage = ingested.transcriptLanguage;
+      transcriptSegments = ingested.timestampedTranscript;
+      await supabase
+        .from("research_items")
+        .update({
+          transcript,
+          transcript_provider: transcriptProvider,
+          transcript_language: transcriptLanguage,
+          transcript_segments: transcriptSegments,
+          transcript_retrieved_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .eq("user_id", user.id);
+      await recordSupadataUsage({
+        supabase,
+        userId: user.id,
+        provider: ingested.transcriptProvider,
+        platform: ingested.platform,
+        billableRequests: ingested.billableRequests,
+        source: "research_analyze",
+      });
+    }
+  }
+  if (transcript.length >= 20) {
+    transcriptsByExternalId.set(item.external_id, transcript);
   }
 
   const analyzed = await analyzeResearchBatch({
@@ -354,7 +428,7 @@ export async function analyzeResearchItemAction(
 
   const basis =
     transcriptGrounded
-      ? "metadata + public captions/transcript"
+      ? `metadata + ${transcriptProvider === "supadata_auto" ? "Supadata transcript" : "spoken transcript"}`
       : "metadata-only evidence";
   return {
     success: transcriptGrounded
