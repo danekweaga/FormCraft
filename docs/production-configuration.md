@@ -21,7 +21,8 @@ Provider-specific variables:
 - Instagram owned account: `META_APP_ID`, `META_APP_SECRET`, optionally `META_GRAPH_API_VERSION` and `INSTAGRAM_LOGIN_CONFIG_ID`.
 - TikTok owned account: `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`.
 - YouTube niche discovery: `YOUTUBE_DATA_API_KEY`.
-- TikTok niche discovery: `TIKTOK_DATA_API_KEY` (separate from Login Kit; optional third-party provider).
+- TikTok + Instagram public discovery: `SCRAPECREATORS_API_KEY` (1 request = 1 credit; 402 when empty).
+- TikTok fallback discovery: `TIKTOK_DATA_API_KEY` (tiktokapi.store; unused when ScrapeCreators is set).
 - YouTube owned-account OAuth: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
 
 Generate independent high-entropy values for `CRON_SECRET` and `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`. Do not reuse OAuth client secrets.

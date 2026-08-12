@@ -18,6 +18,20 @@ export type ResearchActionState = {
   eligible?: number;
   retained?: number;
   providers?: string[];
+  hooks?: {
+    formatMatched: Array<{
+      text: string;
+      grade: string;
+      note: string;
+      formatLabel?: string;
+    }>;
+    original: Array<{
+      text: string;
+      grade: string;
+      note: string;
+      formatLabel?: string;
+    }>;
+  };
 };
 
 async function recordSupadataUsage(params: {
@@ -473,10 +487,21 @@ export async function addCreatorToWatchlistAction(
   const handleRaw = String(formData.get("handle") ?? "").trim();
   if (!watchlistId) return { error: "Pick a watchlist." };
   if (handleRaw.length < 2) return { error: "Enter a creator handle." };
-  if (platform === "instagram") {
+  if (!["tiktok", "youtube", "instagram"].includes(platform)) {
+    return { error: "Pick TikTok, YouTube, or Instagram." };
+  }
+
+  const { canDiscoverPlatform } = await import(
+    "@/lib/research/discovery/configured"
+  );
+  if (!canDiscoverPlatform(platform)) {
     return {
       error:
-        "Instagram creator auto-pull is not available. Paste Reel URLs under Discover → Manual reference, or track TikTok/YouTube creators.",
+        platform === "instagram"
+          ? "Instagram pull needs SCRAPECREATORS_API_KEY."
+          : platform === "youtube"
+            ? "YouTube pull needs YOUTUBE_DATA_API_KEY (or SCRAPECREATORS_API_KEY)."
+            : "TikTok pull needs SCRAPECREATORS_API_KEY or TIKTOK_DATA_API_KEY.",
     };
   }
 
@@ -602,7 +627,7 @@ export async function addCreatorToWatchlistAction(
     success:
       pulled > 0
         ? `Added @${handle} and pulled ${pulled} recent posts (creator-relative outliers scored).`
-        : `Added @${handle}. Configure TIKTOK_DATA_API_KEY (or YouTube) then Refresh now to pull posts.`,
+        : `Added @${handle}. Configure SCRAPECREATORS_API_KEY (or YouTube) then Refresh now to pull posts.`,
   };
 }
 
@@ -731,6 +756,37 @@ export async function generateIdeasFromResearchAction(
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : "Idea generation failed.",
+    };
+  }
+}
+
+export async function generateHookMachineAction(
+  formData: FormData,
+): Promise<ResearchActionState> {
+  const id = String(formData.get("id") ?? "");
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+  if (!id) return { error: "Missing research item." };
+
+  try {
+    const { generateHookPackFromResearch } = await import(
+      "@/lib/hooks/hook-machine"
+    );
+    const { pack } = await generateHookPackFromResearch({
+      supabase,
+      userId: user.id,
+      researchItemId: id,
+    });
+    return {
+      success: `Hook Machine: ${pack.original.length} original · ${pack.formatMatched.length} format-matched.`,
+      hooks: pack,
+    };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Hook generation failed.",
     };
   }
 }
@@ -913,7 +969,11 @@ export async function refreshWatchlistMonitoringAction(
       supabase,
       userId: user.id,
     });
-    const result = await runWatchlistMonitor({ supabase, userId: user.id });
+    const result = await runWatchlistMonitor({
+      supabase,
+      userId: user.id,
+      maxCreators: 10,
+    });
     revalidatePath("/research");
     if (result.creatorsChecked === 0) {
       return {
@@ -922,7 +982,7 @@ export async function refreshWatchlistMonitoringAction(
       };
     }
     return {
-      success: `Synced ${catalog.imported} creator sources (${catalog.trackable} currently API-trackable). Checked ${result.creatorsChecked} supported creator channels, found ${result.discovered} recent short-form posts, and kept ${result.retained}. By platform: ${Object.entries(result.byPlatform)
+      success: `Synced ${catalog.imported} creator sources (${catalog.trackable} currently API-trackable). Checked ${result.creatorsChecked} supported creator channels in this batch${result.remainingCreators > 0 ? `; ${result.remainingCreators} remain for later batches` : ""}, found ${result.discovered} recent short-form posts, and kept ${result.retained}. By platform: ${Object.entries(result.byPlatform)
         .map(([platform, count]) => `${platform} ${count}`)
         .join(", ") || "none"}.${result.failedCreators > 0 ? ` ${result.failedCreators} creator pulls failed: ${result.errors.join(" · ")}` : ""}`,
     };

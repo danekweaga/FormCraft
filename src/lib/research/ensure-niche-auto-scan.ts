@@ -41,9 +41,12 @@ export async function ensureNicheAutoScan(params: {
       : fallback.length > 0
         ? fallback
         : configured;
-  // Older niche profiles opted YouTube-only; still pull TikTok when keyed.
+  // Older niche profiles opted YouTube-only; still pull live sources when keyed.
   if (configured.includes("tiktok") && !platforms.includes("tiktok")) {
     platforms = [...platforms, "tiktok"];
+  }
+  if (configured.includes("instagram") && !platforms.includes("instagram")) {
+    platforms = [...platforms, "instagram"];
   }
 
   if (platforms.length === 0) return null;

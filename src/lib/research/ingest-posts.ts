@@ -54,7 +54,12 @@ export async function upsertExternalCreator(
 
 export function sourceLabel(providerName: string): string {
   if (providerName === "demo") return "manual_reference";
-  if (providerName === "tiktokapi_store") return "third_party_api";
+  if (
+    providerName === "tiktokapi_store" ||
+    providerName === "scrapecreators"
+  ) {
+    return "third_party_api";
+  }
   return "official_api";
 }
 

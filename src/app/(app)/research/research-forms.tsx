@@ -98,10 +98,10 @@ export function ResearchScanForm({
           Platforms
         </legend>
         <p className="text-xs text-secondary">
-          Pulls live YouTube Shorts and TikTok. Instagram has no public search
-          API yet — paste a URL under Manual reference.
+          Pulls live YouTube Shorts, TikTok, and Instagram Reels when those
+          sources are configured.
           {hasYoutube
-            ? " Leave YouTube checked to include Shorts."
+            ? " Leave YouTube checked to include Shorts (official API, no ScrapeCreators credits)."
             : ""}
         </p>
         <input type="hidden" name="maxResults" value="50" />
@@ -122,10 +122,14 @@ export function ResearchScanForm({
                 />
                 <span>
                   {isYoutube
-                    ? "YouTube Shorts (live public search)"
-                    : p.platform === "tiktok"
-                      ? "TikTok (TikTokAPI.store)"
-                      : `${p.platform} (${p.providerName})`}
+                    ? "YouTube Shorts (official search)"
+                    : p.platform === "tiktok" && p.providerName === "scrapecreators"
+                      ? "TikTok (ScrapeCreators)"
+                      : p.platform === "instagram"
+                        ? "Instagram Reels (ScrapeCreators)"
+                        : p.platform === "tiktok"
+                          ? "TikTok (TikTokAPI.store)"
+                          : `${p.platform} (${p.providerName})`}
                 </span>
               </label>
             );
@@ -144,7 +148,8 @@ export function ResearchScanForm({
           <p className="text-xs text-secondary">
             When you select tracked creators or paste handles, FormCraft pulls
             those channels&apos; posts via getCreatorPosts instead of a broad
-            niche search. Select all scans every supported creator shown; the
+            niche search. Select all queues every supported creator shown.
+            FormCraft processes the oldest channels in safe batches, then the
             outlier filters decide which videos stay.
           </p>
           {creators.length > 0 ? (
@@ -232,7 +237,6 @@ export function ResearchScanForm({
             <option value="7">7 days</option>
             <option value="30">30 days</option>
             <option value="90">90 days</option>
-            <option value="365">1 year</option>
           </select>
         </div>
         <div className="space-y-2">
@@ -255,13 +259,13 @@ export function ResearchScanForm({
         </div>
       </div>
       <Button type="submit" disabled={pending || !configured}>
-        {pending ? "Pulling YouTube + TikTok…" : "Pull YouTube + TikTok"}
+        {pending ? "Pulling live videos…" : "Pull live videos"}
       </Button>
       {!configured ? (
         <p className="text-sm text-secondary">
-          Add TIKTOK_DATA_API_KEY and/or YOUTUBE_DATA_API_KEY, or set
-          RESEARCH_ENABLE_DEMO=1 for fixture results (labelled demo, not live
-          platform data).
+          Add SCRAPECREATORS_API_KEY for TikTok + Instagram, and/or
+          YOUTUBE_DATA_API_KEY for official YouTube search. RESEARCH_ENABLE_DEMO=1
+          still works for fixture results (labelled demo, not live platform data).
         </p>
       ) : null}
       <ResultMessage state={state} />
@@ -316,8 +320,8 @@ export function SaveResearchReferenceForm() {
         {pending ? "Saving…" : "Analyze and save reference"}
       </Button>
       <p className="text-xs text-secondary">
-        Instagram has no official niche search here, but a public Reel URL can
-        be transcribed and analyzed after you paste it.
+        Instagram Reels are searchable via ScrapeCreators. Paste a URL here when
+        you already have a specific post to analyze.
       </p>
       <ResultMessage state={state} />
     </form>

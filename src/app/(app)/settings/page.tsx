@@ -7,7 +7,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  integrationCounts,
+  listAppIntegrations,
+} from "@/lib/integrations/catalog";
+import {
+  getScrapeCreatorsUsage,
+} from "@/lib/research/discovery/scrapecreators-client";
 import { createClient } from "@/lib/supabase/server";
+import { IntegrationsPanel } from "./integrations-panel";
 import { SettingsForm } from "./settings-form";
 
 export default async function SettingsPage() {
@@ -29,11 +37,18 @@ export default async function SettingsPage() {
   const displayName =
     profile?.display_name ?? user.email?.split("@")[0] ?? "Creator";
 
+  const integrations = listAppIntegrations();
+  const counts = integrationCounts(integrations);
+  // Do not call the balance endpoint here: ScrapeCreators charges one credit
+  // for it. A scan response records the remaining balance without an extra
+  // request, and this process-local value is the safe fallback for Settings.
+  const scrapeUsage = getScrapeCreatorsUsage();
+
   return (
-    <div>
+    <div className="space-y-8">
       <PageHeader
         title="Settings"
-        description="Manage your account details and how FormCraft addresses you across the workspace."
+        description="Account details and every service FormCraft is wired to. Keys stay on the server — this page never shows secrets."
       />
 
       <Card className="max-w-xl border-outline-variant/20 bg-surface-primary paper-shadow">
@@ -47,6 +62,27 @@ export default async function SettingsPage() {
           <SettingsForm displayName={displayName} />
         </CardContent>
       </Card>
+
+      <div className="space-y-3">
+        <div>
+          <h2 className="text-xl font-semibold text-on-background">
+            Integrations
+          </h2>
+          <p className="mt-1 text-sm text-secondary">
+            {counts.connected} connected · {counts.missing} missing ·{" "}
+            {counts.optional} optional. Add keys in{" "}
+            <code>.env.local</code> / Vercel, then restart the app.
+          </p>
+        </div>
+        <IntegrationsPanel
+          integrations={integrations}
+          scrapeCreators={{
+            remaining: scrapeUsage.creditsRemaining,
+            exhausted: scrapeUsage.exhausted,
+            warning: null,
+          }}
+        />
+      </div>
     </div>
   );
 }

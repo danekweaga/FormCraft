@@ -14,6 +14,10 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { CREATOR_CATALOG } from "@/data/creator-catalog";
 import { searchablePlatforms } from "@/lib/research/discovery/registry";
+import {
+  isScrapeCreatorsConfigured,
+  scrapeCreatorsCreditWarning,
+} from "@/lib/research/discovery/scrapecreators-client";
 import { scorePersonalRelevance } from "@/lib/research/relevance";
 import type { NicheBrief } from "@/lib/research/niche-brief";
 import { createClient } from "@/lib/supabase/server";
@@ -57,15 +61,61 @@ function platformLine(platforms: ReturnType<typeof searchablePlatforms>) {
   const parts: string[] = [];
   const yt = platforms.find((p) => p.platform === "youtube");
   const tt = platforms.find((p) => p.platform === "tiktok");
+  const ig = platforms.find((p) => p.platform === "instagram");
   const demo = platforms.find((p) => p.providerType === "demo");
-  if (yt) parts.push("YouTube official public search");
-  if (tt) parts.push("TikTok via TIKTOK_DATA_API_KEY (third-party)");
-  if (demo && !yt && !tt) parts.push("Demo fixtures (RESEARCH_ENABLE_DEMO)");
+  if (yt) {
+    parts.push(
+      yt.providerName === "scrapecreators"
+        ? "YouTube via ScrapeCreators"
+        : "YouTube official public search",
+    );
+  }
+  if (tt) {
+    parts.push(
+      tt.providerName === "scrapecreators"
+        ? "TikTok via ScrapeCreators"
+        : "TikTok via TikTokAPI.store",
+    );
+  }
+  if (ig) parts.push("Instagram Reels via ScrapeCreators");
+  if (demo && !yt && !tt && !ig) parts.push("Demo fixtures (RESEARCH_ENABLE_DEMO)");
   else if (demo) parts.push("Demo available");
   if (parts.length === 0) {
-    return "none configured — set TIKTOK_DATA_API_KEY and/or YOUTUBE_DATA_API_KEY, or RESEARCH_ENABLE_DEMO=1";
+    return "none configured — set SCRAPECREATORS_API_KEY and/or YOUTUBE_DATA_API_KEY";
   }
   return parts.join(" · ");
+}
+
+function latestScrapeCreatorsCredits(
+  scans: Array<{ parameters: unknown; last_run_at: string | null }> | null,
+): { remaining: number | null; exhausted: boolean } | null {
+  if (!scans?.length) return null;
+  let best: { remaining: number | null; exhausted: boolean; at: number } | null =
+    null;
+  for (const scan of scans) {
+    const params =
+      scan.parameters && typeof scan.parameters === "object"
+        ? (scan.parameters as Record<string, unknown>)
+        : {};
+    const stats =
+      params.last_run_stats && typeof params.last_run_stats === "object"
+        ? (params.last_run_stats as Record<string, unknown>)
+        : null;
+    const sc =
+      stats?.scrapecreators && typeof stats.scrapecreators === "object"
+        ? (stats.scrapecreators as Record<string, unknown>)
+        : null;
+    if (!sc) continue;
+    const at = scan.last_run_at ? new Date(scan.last_run_at).getTime() : 0;
+    if (best && at < best.at) continue;
+    best = {
+      remaining:
+        typeof sc.credits_remaining === "number" ? sc.credits_remaining : null,
+      exhausted: sc.exhausted === true,
+      at,
+    };
+  }
+  return best ? { remaining: best.remaining, exhausted: best.exhausted } : null;
 }
 
 export default async function ResearchPage({
@@ -88,6 +138,7 @@ export default async function ResearchPage({
   const discoveryConfigured = platforms.length > 0;
   const tiktokConfigured = platforms.some((p) => p.platform === "tiktok");
   const youtubeConfigured = platforms.some((p) => p.platform === "youtube");
+  const instagramConfigured = platforms.some((p) => p.platform === "instagram");
 
   const [
     { data: rawItems },
@@ -305,6 +356,14 @@ export default async function ResearchPage({
     name: w.name,
   }));
 
+  const scrapeCredits = latestScrapeCreatorsCredits(scans ?? []);
+  const scrapeCreditWarning = isScrapeCreatorsConfigured()
+    ? scrapeCreatorsCreditWarning(
+        scrapeCredits?.remaining ?? null,
+        scrapeCredits?.exhausted ?? false,
+      )
+    : null;
+
   const searchablePlatformIds = new Set(platforms.map((p) => p.platform));
   const creatorOptions = (creators ?? [])
     .filter(
@@ -327,7 +386,7 @@ export default async function ResearchPage({
     <div>
       <PageHeader
         title="Research"
-        description="Live pull from YouTube + TikTok. Instagram comes later (paste a URL). Outlier scores are relative, not fake trends."
+        description="Live pull from YouTube, TikTok, and Instagram Reels. Outlier scores are relative, not fake trends."
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
@@ -354,9 +413,24 @@ export default async function ResearchPage({
       </div>
 
       <p className="mb-6 text-xs text-secondary">
-        Live sources: {platformLine(platforms)}. Instagram is not searchable yet
-        — save a public URL on Discover.
+        Live sources: {platformLine(platforms)}.
+        {isScrapeCreatorsConfigured() && scrapeCredits?.remaining != null
+          ? ` ScrapeCreators credits left: ${scrapeCredits.remaining} (1 request = 1 credit).`
+          : isScrapeCreatorsConfigured()
+            ? " ScrapeCreators is on — remaining credits show after a pull, and on Settings."
+            : ""}
       </p>
+
+      {scrapeCreditWarning ? (
+        <div className="mb-6 rounded-xl border border-error/30 bg-error/10 p-4 text-sm">
+          <p className="font-semibold text-on-background">
+            {scrapeCredits?.exhausted || scrapeCredits?.remaining === 0
+              ? "ScrapeCreators credits finished"
+              : "ScrapeCreators credits running low"}
+          </p>
+          <p className="mt-1 text-secondary">{scrapeCreditWarning}</p>
+        </div>
+      ) : null}
 
       {isFeedMode && enriched.length < 8 ? (
         <div className="mb-6 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm">
@@ -365,8 +439,8 @@ export default async function ResearchPage({
             your feed.
           </p>
           <p className="mt-1 text-secondary">
-            Pull YouTube + TikTok for your niche. Old scans kept 3 “relevant”
-            hits and threw the rest away.
+            Pull YouTube, TikTok, and Instagram for your niche. Old scans kept 3
+            “relevant” hits and threw the rest away.
           </p>
           <Button asChild size="sm" className="mt-3">
             <Link
@@ -379,7 +453,7 @@ export default async function ResearchPage({
                 ).toString(),
               )}`}
             >
-              Pull YouTube + TikTok
+              Pull live videos
             </Link>
           </Button>
         </div>
@@ -495,8 +569,8 @@ export default async function ResearchPage({
             <CardHeader>
               <CardTitle>Manual reference</CardTitle>
               <CardDescription>
-                Paste a public URL when discovery providers cannot search that
-                platform (especially Instagram).
+                Paste a public URL when you already have a specific post, or when
+                a platform is not in the live search list.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -642,8 +716,8 @@ export default async function ResearchPage({
               <CardHeader>
                 <CardTitle>Add creator by handle</CardTitle>
                 <CardDescription>
-                  Add TikTok or YouTube creators you already know are in your
-                  niche, then pull their recent outliers.
+                  Add TikTok, Instagram, or YouTube creators you already know
+                  are in your niche, then pull their recent outliers.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -651,6 +725,7 @@ export default async function ResearchPage({
                   watchlists={watchlistOptions}
                   tiktokConfigured={tiktokConfigured}
                   youtubeConfigured={youtubeConfigured}
+                  instagramConfigured={instagramConfigured}
                 />
               </CardContent>
             </Card>

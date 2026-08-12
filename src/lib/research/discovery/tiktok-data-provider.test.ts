@@ -39,6 +39,22 @@ describe("normalizeTiktokVideo", () => {
     expect(post?.externalUrl).toContain("712345");
   });
 
+  it("reads cover URLs from TikTok url_list objects", () => {
+    const post = normalizeTiktokVideo(
+      {
+        aweme_id: "99",
+        desc: "cover test",
+        author: { unique_id: "u" },
+        video: {
+          cover: { url_list: ["https://cdn.example/cover.jpg"] },
+        },
+        statistics: { play_count: 10 },
+      },
+      "2026-08-12T12:00:00.000Z",
+    );
+    expect(post?.thumbnailUrl).toBe("https://cdn.example/cover.jpg");
+  });
+
   it("returns null without an id", () => {
     expect(
       normalizeTiktokVideo(

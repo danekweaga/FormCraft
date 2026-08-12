@@ -19,6 +19,7 @@ export async function runWatchlistMonitor(params: {
   externalCreatorIds?: string[];
 }): Promise<{
   creatorsChecked: number;
+  remainingCreators: number;
   discovered: number;
   retained: number;
   providers: string[];
@@ -27,10 +28,10 @@ export async function runWatchlistMonitor(params: {
   errors: string[];
 }> {
   const budgets = getDiscoveryBudgets();
-  const maxCreators =
+  const requestedMaxCreators =
     params.maxCreators != null && params.maxCreators > 0
       ? Math.floor(params.maxCreators)
-      : null;
+      : 10;
 
   const dayStart = new Date();
   dayStart.setUTCHours(0, 0, 0, 0);
@@ -55,12 +56,17 @@ export async function runWatchlistMonitor(params: {
     budgets,
   });
   if (!budget.ok) throw new Error(budget.message);
+  const maxCreators = Math.min(
+    requestedMaxCreators,
+    Math.max(0, budgets.dailyCalls - (callsToday ?? 0)),
+    Math.max(0, budgets.monthlyCalls - (callsMonth ?? 0)),
+  );
 
   let creatorIds: string[];
 
   if (params.externalCreatorIds?.length) {
     const uniqueIds = Array.from(new Set(params.externalCreatorIds));
-    creatorIds = maxCreators == null ? uniqueIds : uniqueIds.slice(0, maxCreators);
+    creatorIds = uniqueIds;
   } else {
     const { data: watchlists } = await params.supabase
       .from("research_watchlists")
@@ -72,6 +78,7 @@ export async function runWatchlistMonitor(params: {
     if (watchlistIds.length === 0) {
       return {
         creatorsChecked: 0,
+        remainingCreators: 0,
         discovered: 0,
         retained: 0,
         providers: [],
@@ -98,6 +105,7 @@ export async function runWatchlistMonitor(params: {
   if (creatorIds.length === 0) {
     return {
       creatorsChecked: 0,
+      remainingCreators: 0,
       discovered: 0,
       retained: 0,
       providers: [],
@@ -114,7 +122,7 @@ export async function runWatchlistMonitor(params: {
     .in("id", creatorIds)
     .eq("tracking_paused", false)
     .order("data_freshness_at", { ascending: true, nullsFirst: true });
-  if (maxCreators != null) creatorsQuery = creatorsQuery.limit(maxCreators);
+  creatorsQuery = creatorsQuery.limit(maxCreators);
   const { data: creators } = await creatorsQuery;
 
   const retrievedAt = new Date().toISOString();
@@ -163,12 +171,9 @@ export async function runWatchlistMonitor(params: {
       providerErrors.push(
         `${creator.platform} @${creator.handle || creator.platform_creator_id}: ${message}`,
       );
-      console.error("[watchlist-monitor] creator pull failed", {
-        creatorId: creator.id,
-        platform: creator.platform,
-        provider: provider.providerName,
-        message,
-      });
+      console.error(
+        `[watchlist-monitor] creator pull failed creator=${creator.id} platform=${creator.platform} provider=${provider.providerName}: ${message}`,
+      );
     }
   }
 
@@ -200,6 +205,10 @@ export async function runWatchlistMonitor(params: {
 
   return {
     creatorsChecked: (creators ?? []).length,
+    remainingCreators: Math.max(
+      0,
+      creatorIds.length - (creators ?? []).length,
+    ),
     discovered: ingested.discovered,
     retained: ingested.retained,
     providers: [...usedProviders],
@@ -239,7 +248,7 @@ export async function refreshSingleCreatorPosts(params: {
   if (!provider?.getCreatorPosts || !provider.capabilities().getCreatorPosts) {
     throw new Error(
       creator.platform === "instagram"
-        ? "Instagram auto-pull is not available."
+        ? "Instagram auto-pull needs SCRAPECREATORS_API_KEY."
         : `No post provider configured for ${creator.platform}.`,
     );
   }

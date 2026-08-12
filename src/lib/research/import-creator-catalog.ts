@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CREATOR_CATALOG, parseCatalogCount } from "@/data/creator-catalog";
+import { canDiscoverPlatform } from "./discovery/configured";
 import { resolvePlatformCreatorId } from "./resolve-creator";
 
 function creatorProfileUrl(platform: string, username: string): string {
@@ -9,9 +10,7 @@ function creatorProfileUrl(platform: string, username: string): string {
 }
 
 function canPullPlatform(platform: string): boolean {
-  if (platform === "youtube") return Boolean(process.env.YOUTUBE_DATA_API_KEY?.trim());
-  if (platform === "tiktok") return Boolean(process.env.TIKTOK_DATA_API_KEY?.trim());
-  return false;
+  return canDiscoverPlatform(platform);
 }
 
 export async function importCreatorCatalog(params: {
@@ -73,7 +72,7 @@ export async function importCreatorCatalog(params: {
         trackable
           ? "Rolling 30-day short-form scan enabled."
           : entry.platform === "instagram"
-            ? "Manual public Reel references only; competitor-feed access is not provided by Instagram's official API."
+            ? "Instagram pull needs SCRAPECREATORS_API_KEY."
             : "Provider access is not configured."
       }`,
     };

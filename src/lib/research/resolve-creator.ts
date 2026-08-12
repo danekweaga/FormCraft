@@ -38,7 +38,11 @@ export async function resolvePlatformCreatorId(params: {
   if (params.platform === "youtube") {
     if (/^UC[\w-]{20,}$/i.test(cleaned)) return cleaned;
     const apiKey = process.env.YOUTUBE_DATA_API_KEY?.trim();
-    if (!apiKey) return null;
+    // ScrapeCreators accepts a YouTube handle directly. Do not pause imported
+    // YouTube creators merely because the official Google API is unavailable.
+    if (!apiKey) {
+      return process.env.SCRAPECREATORS_API_KEY?.trim() ? cleaned : null;
+    }
     const url = new URL("https://www.googleapis.com/youtube/v3/channels");
     url.searchParams.set("key", apiKey);
     url.searchParams.set("part", "id");
@@ -48,8 +52,13 @@ export async function resolvePlatformCreatorId(params: {
       items?: Array<{ id?: string }>;
       error?: { message?: string };
     };
-    if (!response.ok || body.error) return null;
-    return body.items?.[0]?.id ?? null;
+    if (!response.ok || body.error) {
+      return process.env.SCRAPECREATORS_API_KEY?.trim() ? cleaned : null;
+    }
+    return (
+      body.items?.[0]?.id ??
+      (process.env.SCRAPECREATORS_API_KEY?.trim() ? cleaned : null)
+    );
   }
 
   if (params.platform === "tiktok" || params.platform === "instagram") {

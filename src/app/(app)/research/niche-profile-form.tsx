@@ -104,7 +104,7 @@ export function NicheProfileForm({
           })}
           {searchablePlatforms.length === 0 ? (
             <p className="text-sm text-secondary">
-              Configure TIKTOK_DATA_API_KEY or YOUTUBE_DATA_API_KEY first.
+              Configure SCRAPECREATORS_API_KEY or YOUTUBE_DATA_API_KEY first.
             </p>
           ) : null}
         </div>

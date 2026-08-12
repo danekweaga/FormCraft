@@ -32,6 +32,17 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function asMediaUrl(value: unknown): string | null {
+  const direct = asString(value);
+  if (direct) return direct;
+  const rec = pickRecord(value);
+  if (!rec) return null;
+  if (Array.isArray(rec.url_list) && rec.url_list.length > 0) {
+    return asString(rec.url_list[0]);
+  }
+  return asString(rec.url);
+}
+
 function pickRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -192,6 +203,7 @@ export function normalizeTiktokVideo(
   const publishedAt =
     asString(item.published_at) ??
     asString(item.create_time_iso) ??
+    asString(item.create_time_utc) ??
     (createTime && createTime > 1_000_000_000
       ? new Date(
           createTime > 10_000_000_000 ? createTime : createTime * 1000,
@@ -199,11 +211,11 @@ export function normalizeTiktokVideo(
       : null);
 
   const cover =
-    asString(item.cover) ??
+    asMediaUrl(item.cover) ??
     asString(item.coverUrl) ??
-    asString(video.cover) ??
-    asString(video.origin_cover) ??
-    asString(video.dynamic_cover);
+    asMediaUrl(video.cover) ??
+    asMediaUrl(video.origin_cover) ??
+    asMediaUrl(video.dynamic_cover);
 
   return {
     platform: "tiktok",

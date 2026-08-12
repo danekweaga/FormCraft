@@ -72,4 +72,20 @@ describe("normalizeSearchFilters", () => {
     expect(filters.creatorIds).toHaveLength(1);
     expect(filters.channelHandles).toContain("creator_one");
   });
+
+  it("keeps a full imported creator selection instead of truncating at 25", () => {
+    const creatorIds = Array.from(
+      { length: 192 },
+      (_, index) =>
+        `${String(index).padStart(8, "0")}-1111-4111-8111-111111111111`,
+    );
+    const filters = normalizeSearchFilters({
+      query: "student tech",
+      platforms: ["instagram"],
+      allowedPlatforms: ["instagram"],
+      creatorIds,
+    });
+
+    expect(filters.creatorIds).toHaveLength(192);
+  });
 });

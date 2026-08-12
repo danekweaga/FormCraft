@@ -3,6 +3,11 @@ import {
   getConfiguredDiscoveryProviders,
   getProviderForPlatform,
 } from "./discovery/registry";
+import {
+  getScrapeCreatorsUsage,
+  resetScrapeCreatorsUsage,
+  scrapeCreatorsCreditWarning,
+} from "./discovery/scrapecreators-client";
 import type { SearchPostResult } from "./discovery/types";
 import { ingestScoredPosts } from "./ingest-posts";
 import {
@@ -76,7 +81,7 @@ export async function runResearchScan(params: {
 
   if (!targetCreators && searchProviders.length === 0) {
     throw new Error(
-      "No configured discovery provider supports the selected platforms. Set TIKTOK_DATA_API_KEY and/or opt into YouTube with YOUTUBE_DATA_API_KEY, or enable RESEARCH_ENABLE_DEMO.",
+      "No configured discovery provider supports the selected platforms. Set SCRAPECREATORS_API_KEY (TikTok + Instagram), YOUTUBE_DATA_API_KEY, and/or TIKTOK_DATA_API_KEY, or enable RESEARCH_ENABLE_DEMO.",
     );
   }
 
@@ -106,6 +111,7 @@ export async function runResearchScan(params: {
   if (!budget.ok) throw new Error(budget.message);
 
   try {
+    resetScrapeCreatorsUsage();
     const retrievedAt = new Date().toISOString();
     const maxResults = Math.min(scan.max_results, budgets.maxResultsPerQuery);
     const usedProviders = new Set<string>();
@@ -116,14 +122,21 @@ export async function runResearchScan(params: {
       const { data: tracked } = creatorIds.length
         ? await params.supabase
             .from("external_creators")
-            .select("id, platform, platform_creator_id, handle")
+            .select(
+              "id, platform, platform_creator_id, handle, data_freshness_at",
+            )
             .eq("user_id", params.userId)
             .in("id", creatorIds)
+            .order("data_freshness_at", {
+              ascending: true,
+              nullsFirst: true,
+            })
         : { data: [] as Array<{
             id: string;
             platform: string;
             platform_creator_id: string;
             handle: string | null;
+            data_freshness_at: string | null;
           }> };
 
       const targets: Array<{
@@ -159,7 +172,7 @@ export async function runResearchScan(params: {
         );
       }
 
-      const uniqueTargets = Array.from(
+      const allUniqueTargets = Array.from(
         new Map(
           targets.map((t) => [`${t.platform}:${t.platformCreatorId}`, t]),
         ).values(),
@@ -177,6 +190,18 @@ export async function runResearchScan(params: {
               provider.capabilities().getCreatorPosts,
           );
         });
+
+      // A server action has a 60-second window and each creator profile costs
+      // one provider request. Pull the oldest ten selected creators per run;
+      // subsequent runs continue with the next stale batch.
+      const remainingBudget = Math.min(
+        Math.max(0, budgets.dailyCalls - (callsToday ?? 0)),
+        Math.max(0, budgets.monthlyCalls - (callsMonth ?? 0)),
+      );
+      const uniqueTargets = allUniqueTargets.slice(
+        0,
+        Math.min(10, remainingBudget),
+      );
 
       if (uniqueTargets.length === 0) {
         throw new Error(
@@ -223,12 +248,16 @@ export async function runResearchScan(params: {
           const message =
             error instanceof Error ? error.message : String(error);
           providerErrors.push(`${provider.providerName}: ${message}`);
-          console.error("[research-scan] creator pull failed", {
-            platform: target.platform,
-            provider: provider.providerName,
-            message,
-          });
+          console.error(
+            `[research-scan] creator pull failed platform=${target.platform} provider=${provider.providerName}: ${message}`,
+          );
         }
+      }
+
+      if (allUniqueTargets.length > uniqueTargets.length) {
+        providerErrors.push(
+          `Pulled ${uniqueTargets.length} of ${allUniqueTargets.length} selected creators in this safe batch; run the pull again for the next oldest channels`,
+        );
       }
 
       if (discovered.length === 0 && providerErrors.length > 0) {
@@ -273,10 +302,9 @@ export async function runResearchScan(params: {
               ? result.reason.message
               : String(result.reason);
           providerErrors.push(`${provider.providerName}: ${message}`);
-          console.error("[research-scan] provider search failed", {
-            provider: provider.providerName,
-            message,
-          });
+          console.error(
+            `[research-scan] provider search failed provider=${provider.providerName}: ${message}`,
+          );
         }
       }
 
@@ -305,6 +333,11 @@ export async function runResearchScan(params: {
       acc[post.platform] = (acc[post.platform] ?? 0) + 1;
       return acc;
     }, {});
+    const scUsage = getScrapeCreatorsUsage();
+    const creditWarning = scrapeCreatorsCreditWarning(
+      scUsage.creditsRemaining,
+      scUsage.exhausted,
+    );
     const lastRunStats = {
       discovered: discovered.length,
       eligible: eligiblePosts.length,
@@ -313,11 +346,16 @@ export async function runResearchScan(params: {
       by_platform: byPlatform,
       provider_errors: providerErrors,
       at: now.toISOString(),
+      scrapecreators: {
+        credits_remaining: scUsage.creditsRemaining,
+        credits_charged: scUsage.creditsChargedThisSession,
+        exhausted: scUsage.exhausted,
+      },
     };
-    const softError =
-      providerErrors.length > 0
-        ? providerErrors.join(" · ").slice(0, 500)
-        : null;
+    const softError = [creditWarning, ...providerErrors]
+      .filter(Boolean)
+      .join(" · ")
+      .slice(0, 500) || null;
     await params.supabase
       .from("research_scans")
       .update({

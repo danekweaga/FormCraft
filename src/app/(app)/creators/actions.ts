@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { CREATOR_CATALOG, parseCatalogCount } from "@/data/creator-catalog";
+import { canDiscoverPlatform } from "@/lib/research/discovery/configured";
 import { importCreatorCatalog } from "@/lib/research/import-creator-catalog";
 import { resolvePlatformCreatorId } from "@/lib/research/resolve-creator";
 import { createClient } from "@/lib/supabase/server";
@@ -20,9 +21,7 @@ function creatorProfileUrl(platform: string, username: string): string {
 }
 
 function canPullPlatform(platform: string): boolean {
-  if (platform === "youtube") return Boolean(process.env.YOUTUBE_DATA_API_KEY?.trim());
-  if (platform === "tiktok") return Boolean(process.env.TIKTOK_DATA_API_KEY?.trim());
-  return false;
+  return canDiscoverPlatform(platform);
 }
 
 export async function followCreatorFromCatalogAction(formData: FormData): Promise<void> {
@@ -77,7 +76,7 @@ export async function followCreatorFromCatalogAction(formData: FormData): Promis
         data_source: "user_import",
         data_freshness_at: null,
         tracking_paused: !trackable,
-        notes: `Imported workbook snapshot: ${catalogEntry.followers} followers/subscribers; ${catalogEntry.views} views. ${trackable ? "Included in rolling 30-day short-form scans." : catalogEntry.platform === "instagram" ? "Instagram's official APIs do not allow competitor-feed pulling; save public Reel URLs manually." : "Add the matching discovery provider key to enable scheduled pulls."}`,
+        notes: `Imported workbook snapshot: ${catalogEntry.followers} followers/subscribers; ${catalogEntry.views} views. ${trackable ? "Included in rolling 30-day short-form scans." : catalogEntry.platform === "instagram" ? "Instagram pull needs SCRAPECREATORS_API_KEY." : "Add the matching discovery provider key to enable scheduled pulls."}`,
       },
       { onConflict: "user_id,platform,platform_creator_id" },
     )

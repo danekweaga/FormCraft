@@ -61,10 +61,12 @@ export function AddCreatorToWatchlistForm({
   watchlists,
   tiktokConfigured,
   youtubeConfigured,
+  instagramConfigured,
 }: {
   watchlists: Array<{ id: string; name: string }>;
   tiktokConfigured: boolean;
   youtubeConfigured: boolean;
+  instagramConfigured: boolean;
 }) {
   const [state, action, pending] = useActionState(
     addCreatorToWatchlistAction,
@@ -81,16 +83,18 @@ export function AddCreatorToWatchlistForm({
 
   const defaultPlatform = tiktokConfigured
     ? "tiktok"
-    : youtubeConfigured
-      ? "youtube"
-      : "tiktok";
+    : instagramConfigured
+      ? "instagram"
+      : youtubeConfigured
+        ? "youtube"
+        : "tiktok";
 
   return (
     <form action={action} className="space-y-3">
       <p className="text-sm text-secondary">
         Same model as Sandcastle: list creators in your niche → pull their
-        recent posts → score outliers vs that creator&apos;s baseline. No
-        Instagram auto-pull (paste URLs in Discover instead).
+        recent posts → score outliers vs that creator&apos;s baseline. Instagram
+        Reels pull through ScrapeCreators when that key is set.
       </p>
       <div className="space-y-2">
         <Label htmlFor="wl-pick">Watchlist</Label>
@@ -118,12 +122,15 @@ export function AddCreatorToWatchlistForm({
             className="h-10 w-full rounded-md border border-outline-variant/30 bg-surface-container-lowest px-3 text-sm"
           >
             <option value="tiktok" disabled={!tiktokConfigured}>
-              TikTok{tiktokConfigured ? "" : " (needs TIKTOK_DATA_API_KEY)"}
+              TikTok{tiktokConfigured ? "" : " (needs SCRAPECREATORS_API_KEY)"}
             </option>
             <option value="youtube" disabled={!youtubeConfigured}>
               YouTube{youtubeConfigured ? "" : " (needs YOUTUBE_DATA_API_KEY)"}
             </option>
-            <option value="instagram">Instagram (manual only)</option>
+            <option value="instagram" disabled={!instagramConfigured}>
+              Instagram
+              {instagramConfigured ? "" : " (needs SCRAPECREATORS_API_KEY)"}
+            </option>
           </select>
         </div>
         <div className="space-y-2">
@@ -136,13 +143,19 @@ export function AddCreatorToWatchlistForm({
           />
         </div>
       </div>
-      <Button type="submit" disabled={pending || (!tiktokConfigured && !youtubeConfigured)}>
+      <Button
+        type="submit"
+        disabled={
+          pending ||
+          (!tiktokConfigured && !youtubeConfigured && !instagramConfigured)
+        }
+      >
         {pending ? "Adding & pulling…" : "Add creator & pull posts"}
       </Button>
-      {!tiktokConfigured && !youtubeConfigured ? (
+      {!tiktokConfigured && !youtubeConfigured && !instagramConfigured ? (
         <p className="text-xs text-secondary">
-          Set TIKTOK_DATA_API_KEY (recommended) or YOUTUBE_DATA_API_KEY to pull
-          posts.
+          Set SCRAPECREATORS_API_KEY (TikTok + Instagram) or YOUTUBE_DATA_API_KEY
+          to pull posts.
         </p>
       ) : null}
       {state.error ? <p className="text-sm text-error">{state.error}</p> : null}

@@ -34,6 +34,7 @@ export async function GET(request: Request) {
       const result = await runWatchlistMonitor({
         supabase: admin,
         userId,
+        maxCreators: 40,
       });
       results.push({ userId, ok: true, ...result });
     } catch (monitorError) {

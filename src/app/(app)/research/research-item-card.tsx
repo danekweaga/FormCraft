@@ -4,22 +4,17 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { outlierLabelDisplay } from "@/lib/research/outliers";
 import type { OutlierLabel } from "@/lib/research/outliers";
 import {
   analyzeResearchItemAction,
   addResearchItemToCanvasAction,
+  generateHookMachineAction,
   generateIdeasFromResearchAction,
   submitResearchFeedbackAction,
   toggleResearchSavedAction,
   trackCreatorFromItemAction,
+  type ResearchActionState,
 } from "./actions";
 import { breakDownResearchItemAction } from "@/app/(app)/analyze/actions";
 import { saveEditingPatternFromAnalysisAction } from "@/app/(app)/pre-publish/actions";
@@ -59,13 +54,44 @@ export type ResearchCardItem = {
   personalScore?: number;
 };
 
+function compactCount(value: number | null): string | null {
+  if (value == null) return null;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 10_000) return `${Math.round(value / 1000)}K`;
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
+  return value.toLocaleString();
+}
+
+function outlierScoreLabel(value: number | null): string | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  if (value >= 1000) return `${Math.round(value).toLocaleString()}×`;
+  return `${value.toFixed(1)}×`;
+}
+
 function freshnessLabel(iso: string | null) {
   if (!iso) return "Freshness unknown";
-  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (mins < 60) return `Updated ${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 48) return `Updated ${hours}h ago`;
-  return `Updated ${Math.round(hours / 24)}d ago`;
+  const timestamp = new Date(iso);
+  if (Number.isNaN(timestamp.getTime())) return "Freshness unknown";
+  // Use a deterministic UTC date. Relative `Date.now()` output can change
+  // between server rendering and hydration and causes a visible React error.
+  return `Updated ${timestamp.toISOString().slice(0, 10)}`;
+}
+
+function platformTone(platform: string) {
+  if (platform === "tiktok") return "bg-[#111111] text-white";
+  if (platform === "youtube") return "bg-[#c1121f] text-white";
+  if (platform === "instagram") return "bg-[#7b2d8e] text-white";
+  return "bg-on-background text-surface-container-lowest";
+}
+
+function mediaPreviewUrls(item: ResearchCardItem): string[] {
+  const urls: string[] = [];
+  if (item.thumbnail_url) urls.push(item.thumbnail_url);
+  if (item.platform === "youtube" && item.external_id) {
+    const youtube = `https://i.ytimg.com/vi/${item.external_id}/hqdefault.jpg`;
+    if (!urls.includes(youtube)) urls.push(youtube);
+  }
+  return urls;
 }
 
 export function ResearchItemCard({
@@ -76,10 +102,13 @@ export function ResearchItemCard({
   watchlists?: Array<{ id: string; name: string }>;
 }) {
   const [pending, start] = useTransition();
+  const [showMore, setShowMore] = useState(false);
+  const [thumbIndex, setThumbIndex] = useState(0);
   const [actionMessage, setActionMessage] = useState<{
     kind: "success" | "error";
     text: string;
   } | null>(null);
+  const [hookPack, setHookPack] = useState<ResearchActionState["hooks"]>();
   const analysis = item.analysis ?? {};
   const reasons = Array.isArray(analysis.whyItMayWork)
     ? (analysis.whyItMayWork as string[])
@@ -89,253 +118,109 @@ export function ResearchItemCard({
     : typeof analysis.reusablePattern === "string"
       ? [analysis.reusablePattern]
       : [];
-  const embed =
-    item.platform === "youtube"
-      ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(item.external_id)}`
+  const preview = mediaPreviewUrls(item)[thumbIndex] ?? null;
+  const views = compactCount(item.views);
+  const likes = compactCount(item.likes);
+  const duration =
+    item.duration_seconds != null
+      ? `${Math.round(Number(item.duration_seconds))}s`
       : null;
+  const outlierScore = outlierScoreLabel(item.outlier_score);
+  const title = item.title || item.hook_text || "Untitled reference";
 
   return (
-    <Card className="overflow-hidden border-outline-variant/20 bg-surface-primary paper-shadow">
-      {embed ? (
-        <div className="aspect-video bg-black">
-          <iframe
-            src={embed}
-            title={item.title ?? "Research video"}
-            className="h-full w-full"
-            loading="lazy"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
-        </div>
-      ) : item.thumbnail_url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={item.thumbnail_url}
-          alt=""
-          className="aspect-video w-full object-cover"
-        />
-      ) : null}
-      <CardHeader>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="default">{item.platform}</Badge>
-          <Badge variant="default">{item.source.replace(/_/g, " ")}</Badge>
-          {item.outlier_score != null ? (
-            <Badge variant="success">
-              {Number(item.outlier_score).toFixed(1)}×{" "}
+    <article className="group flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-outline-variant/20 bg-surface-primary paper-shadow transition-[transform,border-color] duration-200 hover:-translate-y-0.5 hover:border-primary-container/35">
+      <div className="relative aspect-video overflow-hidden bg-on-background">
+        <a
+          href={item.external_url}
+          target="_blank"
+          rel="noreferrer"
+          className="absolute inset-0 block"
+          aria-label={`Open original: ${title}`}
+        >
+          {preview ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={preview}
+              alt=""
+              referrerPolicy="no-referrer"
+              onError={() => setThumbIndex((index) => index + 1)}
+              className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+            />
+          ) : (
+            <span className="flex h-full items-center justify-center text-xs uppercase tracking-[0.2em] text-white/50">
+              No preview
+            </span>
+          )}
+        </a>
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/15 to-black/10" />
+        <div className="pointer-events-none absolute left-3 top-3 z-[1] flex flex-wrap gap-1.5">
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${platformTone(item.platform)}`}
+          >
+            {item.platform}
+          </span>
+          {outlierScore ? (
+            <span className="rounded-full bg-white/90 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-on-background">
+              {outlierScore}{" "}
               {outlierLabelDisplay(item.outlier_label as OutlierLabel | null)}
-            </Badge>
+            </span>
           ) : (
-            <Badge variant="warning">Unscored</Badge>
+            <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white">
+              Unscored
+            </span>
           )}
-          {item.baseline_confidence ? (
-            <Badge
-              variant={
-                item.baseline_confidence === "high"
-                  ? "success"
-                  : item.baseline_confidence === "medium"
-                    ? "primary"
-                    : "warning"
-              }
-            >
-              Baseline {item.baseline_confidence}
-              {item.baseline_sample_size != null
-                ? ` · n=${item.baseline_sample_size}`
-                : ""}
-            </Badge>
-          ) : null}
-          {item.saved ? <Badge variant="primary">Saved</Badge> : null}
-          {item.analysis_model ? (
-            <Badge variant="default">
-              Analyzed
-              {typeof analysis.evidenceBasis === "string" &&
-              analysis.evidenceBasis === "metadata_and_transcript"
-                ? " + captions"
-                : ""}
-            </Badge>
-          ) : (
-            <Badge variant="warning">Not analyzed</Badge>
-          )}
-          {item.personalFit ? (
-            <Badge variant="primary">Fit: {item.personalFit}</Badge>
+          {item.saved ? (
+            <span className="rounded-full bg-primary-container px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-on-primary-container">
+              Saved
+            </span>
           ) : null}
         </div>
-        <CardTitle className="mt-2 text-lg">
-          {item.title || item.hook_text || "Untitled reference"}
-        </CardTitle>
-        <CardDescription>
-          {item.creator_name ?? "Creator unavailable"}
-          {item.views != null ? ` · ${item.views.toLocaleString()} views` : ""}
-          {item.likes != null ? ` · ${item.likes.toLocaleString()} likes` : ""}
-          {item.creator_followers != null
-            ? ` · ${item.creator_followers.toLocaleString()} followers`
-            : ""}
-          {item.duration_seconds != null
-            ? ` · ${Math.round(Number(item.duration_seconds))}s`
-            : ""}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4 text-sm">
-        <div className="rounded-lg bg-surface-container-lowest p-4">
-          <p className="text-xs font-semibold uppercase tracking-widest text-primary-container">
-            Observed
+        <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full border border-white/35 bg-black/45 text-white shadow-lg backdrop-blur-sm transition-transform duration-200 group-hover:scale-105">
+            <span className="ml-0.5 text-lg" aria-hidden="true">
+              ▶
+            </span>
+          </span>
+        </div>
+        <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-[1] text-white">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70">
+            {[views ? `${views} views` : null, likes ? `${likes} likes` : null, duration]
+              .filter(Boolean)
+              .join(" · ")}
           </p>
-          <p className="mt-2 text-secondary">
-            Outlier:{" "}
-            {item.outlier_score != null
-              ? `${Number(item.outlier_score).toFixed(1)}×`
-              : "n/a"}{" "}
-            · Confidence: {item.baseline_confidence ?? "n/a"} · Compared with:{" "}
-            {item.baseline_sample_size ?? "n/a"} posts · Basis:{" "}
-            {item.score_basis?.replace(/_/g, " ") ?? "unavailable"}
-          </p>
-          <p className="mt-1 text-xs text-secondary">
-            {freshnessLabel(item.data_freshness_at)}
-            {item.collection_method
-              ? ` · ${item.collection_method}`
+        </div>
+      </div>
+
+      <div className="flex flex-1 flex-col gap-4 p-4">
+        <header className="min-w-0">
+          <h3
+            className="line-clamp-2 font-headline text-lg font-semibold leading-snug text-on-background"
+            title={title}
+          >
+            {title}
+          </h3>
+          <p className="mt-1 truncate text-xs text-secondary">
+            {item.creator_name ?? "Creator unavailable"}
+            {item.creator_followers != null
+              ? ` · ${compactCount(item.creator_followers)} followers`
               : ""}
           </p>
-          <p className="mt-3 font-semibold text-on-background">
-            Transcript-derived hook
+        </header>
+
+        <blockquote className="border-l-2 border-primary-container pl-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary-container">
+            Spoken hook
           </p>
-          <p className="mt-1 text-secondary">
+          <p
+            className={`mt-1 font-headline text-base leading-snug text-on-background ${showMore ? "" : "line-clamp-3"}`}
+          >
             {item.hook_text ??
-              "Unavailable until public captions, a pasted transcript, or an uploaded video is analyzed."}
+              "Unavailable until captions, a pasted transcript, or an uploaded video is analyzed."}
           </p>
-          <p className="mt-3 font-semibold text-on-background">Topic</p>
-          <p className="mt-1 text-secondary">{item.topic ?? "Unclassified"}</p>
-        </div>
+        </blockquote>
 
-        {item.whyRelevant && item.whyRelevant.length > 0 ? (
-          <div className="rounded-lg border border-outline-variant/15 p-4">
-            <p className="text-xs font-semibold uppercase tracking-widest text-primary-container">
-              Why this is relevant to you
-            </p>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-secondary">
-              {item.whyRelevant.map((r) => (
-                <li key={r}>{r}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {reasons.length > 0 ? (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-primary-container">
-              AI interpretation
-            </p>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-secondary">
-              {reasons.map((reason) => (
-                <li key={reason}>{reason}</li>
-              ))}
-            </ul>
-            <p className="mt-2 text-xs text-secondary">
-              Interpretation only — not proof of causation.
-            </p>
-          </div>
-        ) : null}
-
-        {principles.length > 0 ? (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-primary-container">
-              Repeatable principles
-            </p>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-secondary">
-              {principles.map((p) => (
-                <li key={p}>{p}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {Array.isArray(analysis.structureBeats) &&
-        (analysis.structureBeats as string[]).length > 0 ? (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-primary-container">
-              Structure (from captions/transcript)
-            </p>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-secondary">
-              {(analysis.structureBeats as string[]).slice(0, 5).map((beat) => (
-                <li key={beat}>{beat}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        <div className="flex flex-wrap gap-2">
-          <Button asChild variant="outline" size="sm">
-            <a href={item.external_url} target="_blank" rel="noreferrer">
-              Open original
-            </a>
-          </Button>
-          {item.platform === "youtube" ? (
-            <Button asChild variant="outline" size="sm">
-              <a
-                href={`https://youtube-transcript.ai/transcript?v=${encodeURIComponent(item.external_id)}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open free transcript
-              </a>
-            </Button>
-          ) : null}
-          {item.external_creator_id ? (
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/research/creators/${item.external_creator_id}`}>
-                Creator
-              </Link>
-            </Button>
-          ) : null}
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={pending}
-            onClick={() =>
-              start(async () => {
-                setActionMessage(null);
-                const result = await analyzeResearchItemAction(
-                  (() => {
-                    const fd = new FormData();
-                    fd.set("id", item.id);
-                    return fd;
-                  })(),
-                );
-                setActionMessage({
-                  kind: result.error ? "error" : "success",
-                  text:
-                    result.error ?? result.success ?? "Analysis complete.",
-                });
-              })
-            }
-          >
-            Analyze
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={pending}
-            onClick={() =>
-              start(async () => {
-                setActionMessage(null);
-                const result = await breakDownResearchItemAction(item.id);
-                if (result?.error) {
-                  setActionMessage({ kind: "error", text: result.error });
-                }
-              })
-            }
-          >
-            Break Down
-          </Button>
-          <form action={saveEditingPatternFromAnalysisAction}>
-            <input type="hidden" name="researchItemId" value={item.id} />
-            <input
-              type="hidden"
-              name="name"
-              value={`Editing · ${item.title || item.creator_name || "research"}`}
-            />
-            <Button type="submit" size="sm" variant="outline">
-              Save editing pattern
-            </Button>
-          </form>
+        <div className="mt-auto flex flex-wrap gap-2 border-t border-outline-variant/15 pt-4">
           <Button asChild size="sm">
             <Link href={`/create?researchItem=${item.id}`}>Create my version</Link>
           </Button>
@@ -345,75 +230,283 @@ export function ResearchItemCard({
             disabled={pending}
             onClick={() =>
               start(async () => {
-                await generateIdeasFromResearchAction(
-                  (() => {
-                    const fd = new FormData();
-                    fd.set("id", item.id);
-                    return fd;
-                  })(),
-                );
-              })
-            }
-          >
-            Generate ideas → Idea Gate
-          </Button>
-          <form action={toggleResearchSavedAction}>
-            <input type="hidden" name="id" value={item.id} />
-            <input type="hidden" name="nextSaved" value={String(!item.saved)} />
-            <Button
-              type="submit"
-              size="sm"
-              variant={item.saved ? "ghost" : "default"}
-            >
-              {item.saved ? "Unsave" : "Save"}
-            </Button>
-          </form>
-          {watchlists[0] ? (
-            <form action={trackCreatorFromItemAction}>
-              <input type="hidden" name="itemId" value={item.id} />
-              <input type="hidden" name="watchlistId" value={watchlists[0].id} />
-              <Button type="submit" size="sm" variant="outline">
-                Track creator
-              </Button>
-            </form>
-          ) : null}
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={pending}
-            onClick={() =>
-              start(async () => {
+                setActionMessage(null);
                 const fd = new FormData();
-                fd.set("itemId", item.id);
-                fd.set("feedbackType", "not_relevant");
-                await submitResearchFeedbackAction(fd);
+                fd.set("id", item.id);
+                const result = await generateHookMachineAction(fd);
+                if (result.hooks) setHookPack(result.hooks);
+                setActionMessage({
+                  kind: result.error ? "error" : "success",
+                  text:
+                    result.error ??
+                    result.success ??
+                    "Hook Machine finished.",
+                });
               })
             }
           >
-            Not relevant
+            {pending ? "Writing hooks…" : "Hook Machine"}
+          </Button>
+          <Button asChild size="sm" variant="outline">
+            <a href={item.external_url} target="_blank" rel="noreferrer">
+              Open original
+            </a>
           </Button>
           <Button
             size="sm"
             variant="ghost"
-            disabled={pending}
-            onClick={() =>
-              start(async () => {
-                const fd = new FormData();
-                fd.set("itemId", item.id);
-                fd.set("feedbackType", "hide_creator");
-                await submitResearchFeedbackAction(fd);
-              })
-            }
+            aria-expanded={showMore}
+            onClick={() => setShowMore((value) => !value)}
           >
-            Hide creator
+            {showMore ? "Less" : "More"}
           </Button>
-          <form action={addResearchItemToCanvasAction}>
-            <input type="hidden" name="id" value={item.id} />
-            <Button type="submit" size="sm" variant="ghost" disabled={pending}>
-              Add to Canvas
-            </Button>
-          </form>
         </div>
+
+        {hookPack ? (
+          <div className="space-y-3 rounded-xl bg-surface-container-lowest p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary-container">
+              Hook Machine
+            </p>
+            {hookPack.formatMatched?.length ? (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-on-background">
+                  Format-matched
+                </p>
+                {hookPack.formatMatched.map((hook) => (
+                  <div key={hook.text} className="rounded-lg border border-outline-variant/15 p-2.5">
+                    <p className="text-sm font-medium text-on-background">
+                      {hook.text}
+                    </p>
+                    <p className="mt-1 text-xs text-secondary">
+                      {hook.grade}
+                      {hook.formatLabel ? ` · ${hook.formatLabel}` : ""} · {hook.note}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-on-background">Original</p>
+              {(hookPack.original ?? []).map((hook) => (
+                <div key={hook.text} className="rounded-lg border border-outline-variant/15 p-2.5">
+                  <p className="text-sm font-medium text-on-background">{hook.text}</p>
+                  <p className="mt-1 text-xs text-secondary">
+                    {hook.grade} · {hook.note}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {showMore ? (
+          <div className="space-y-3 text-sm">
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="default">
+                {(item.source ?? "unknown").replace(/_/g, " ")}
+              </Badge>
+              {item.baseline_confidence ? (
+                <Badge
+                  variant={
+                    item.baseline_confidence === "high"
+                      ? "success"
+                      : item.baseline_confidence === "medium"
+                        ? "primary"
+                        : "warning"
+                  }
+                >
+                  Baseline {item.baseline_confidence}
+                  {item.baseline_sample_size != null
+                    ? ` · n=${item.baseline_sample_size}`
+                    : ""}
+                </Badge>
+              ) : null}
+              {item.analysis_model ? (
+                <Badge variant="default">Analyzed</Badge>
+              ) : (
+                <Badge variant="warning">Not analyzed</Badge>
+              )}
+              {item.personalFit ? (
+                <Badge variant="primary">Fit: {item.personalFit}</Badge>
+              ) : null}
+            </div>
+            <p className="text-xs text-secondary">
+              Outlier{" "}
+              {item.outlier_score != null
+                ? `${Number(item.outlier_score).toFixed(1)}×`
+                : "n/a"}{" "}
+              · {item.score_basis?.replace(/_/g, " ") ?? "unavailable"} ·{" "}
+              {freshnessLabel(item.data_freshness_at)}
+              {item.topic ? ` · ${item.topic}` : ""}
+            </p>
+            {item.whyRelevant && item.whyRelevant.length > 0 ? (
+              <ul className="list-disc space-y-1 pl-5 text-secondary">
+                {item.whyRelevant.map((r) => (
+                  <li key={r}>{r}</li>
+                ))}
+              </ul>
+            ) : null}
+            {reasons.length > 0 ? (
+              <ul className="list-disc space-y-1 pl-5 text-secondary">
+                {reasons.map((reason) => (
+                  <li key={reason}>{reason}</li>
+                ))}
+              </ul>
+            ) : null}
+            {principles.length > 0 ? (
+              <ul className="list-disc space-y-1 pl-5 text-secondary">
+                {principles.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              {item.platform === "youtube" ? (
+                <Button asChild variant="outline" size="sm">
+                  <a
+                    href={`https://youtube-transcript.ai/transcript?v=${encodeURIComponent(item.external_id)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Transcript
+                  </a>
+                </Button>
+              ) : null}
+              {item.external_creator_id ? (
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/research/creators/${item.external_creator_id}`}>
+                    Creator
+                  </Link>
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pending}
+                onClick={() =>
+                  start(async () => {
+                    setActionMessage(null);
+                    const result = await analyzeResearchItemAction(
+                      (() => {
+                        const fd = new FormData();
+                        fd.set("id", item.id);
+                        return fd;
+                      })(),
+                    );
+                    setActionMessage({
+                      kind: result.error ? "error" : "success",
+                      text: result.error ?? result.success ?? "Analysis complete.",
+                    });
+                  })
+                }
+              >
+                Analyze
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pending}
+                onClick={() =>
+                  start(async () => {
+                    setActionMessage(null);
+                    const result = await breakDownResearchItemAction(item.id);
+                    if (result?.error) {
+                      setActionMessage({ kind: "error", text: result.error });
+                    }
+                  })
+                }
+              >
+                Break Down
+              </Button>
+              <form action={saveEditingPatternFromAnalysisAction}>
+                <input type="hidden" name="researchItemId" value={item.id} />
+                <input
+                  type="hidden"
+                  name="name"
+                  value={`Editing · ${item.title || item.creator_name || "research"}`}
+                />
+                <Button type="submit" size="sm" variant="outline">
+                  Save editing pattern
+                </Button>
+              </form>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pending}
+                onClick={() =>
+                  start(async () => {
+                    await generateIdeasFromResearchAction(
+                      (() => {
+                        const fd = new FormData();
+                        fd.set("id", item.id);
+                        return fd;
+                      })(),
+                    );
+                  })
+                }
+              >
+                Ideas → Idea Gate
+              </Button>
+              <form action={toggleResearchSavedAction}>
+                <input type="hidden" name="id" value={item.id} />
+                <input type="hidden" name="nextSaved" value={String(!item.saved)} />
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant={item.saved ? "ghost" : "default"}
+                >
+                  {item.saved ? "Unsave" : "Save"}
+                </Button>
+              </form>
+              {watchlists[0] ? (
+                <form action={trackCreatorFromItemAction}>
+                  <input type="hidden" name="itemId" value={item.id} />
+                  <input type="hidden" name="watchlistId" value={watchlists[0].id} />
+                  <Button type="submit" size="sm" variant="outline">
+                    Track creator
+                  </Button>
+                </form>
+              ) : null}
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={pending}
+                onClick={() =>
+                  start(async () => {
+                    const fd = new FormData();
+                    fd.set("itemId", item.id);
+                    fd.set("feedbackType", "not_relevant");
+                    await submitResearchFeedbackAction(fd);
+                  })
+                }
+              >
+                Not relevant
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={pending}
+                onClick={() =>
+                  start(async () => {
+                    const fd = new FormData();
+                    fd.set("itemId", item.id);
+                    fd.set("feedbackType", "hide_creator");
+                    await submitResearchFeedbackAction(fd);
+                  })
+                }
+              >
+                Hide creator
+              </Button>
+              <form action={addResearchItemToCanvasAction}>
+                <input type="hidden" name="id" value={item.id} />
+                <Button type="submit" size="sm" variant="ghost" disabled={pending}>
+                  Add to Canvas
+                </Button>
+              </form>
+            </div>
+          </div>
+        ) : null}
+
         {actionMessage ? (
           <p
             role="status"
@@ -426,7 +519,7 @@ export function ResearchItemCard({
             {actionMessage.text}
           </p>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </article>
   );
 }

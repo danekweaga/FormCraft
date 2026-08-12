@@ -133,7 +133,7 @@ function parseIdList(value: unknown): string[] {
     ),
   )
     .filter((v) => /^[0-9a-f-]{36}$/i.test(v))
-    .slice(0, 25);
+    .slice(0, 250);
 }
 
 function parseHandleList(value: unknown): string[] {
@@ -148,7 +148,7 @@ function parseHandleList(value: unknown): string[] {
         .map((v) => String(v).trim().replace(/^@/, ""))
         .filter((v) => v.length >= 2 && v.length <= 80),
     ),
-  ).slice(0, 25);
+  ).slice(0, 250);
 }
 
 function clampInt(

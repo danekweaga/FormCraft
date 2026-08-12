@@ -113,7 +113,7 @@ export function CreatorPostsWorkspace({
         Open originals to sanity-check scores. Analyze and Add to Canvas when a
         post looks worth studying
         {platform === "instagram"
-          ? " (Instagram metrics are manual/reference only)."
+          ? " (Instagram Reels via ScrapeCreators)."
           : "."}
       </p>
 
@@ -123,7 +123,7 @@ export function CreatorPostsWorkspace({
           description={
             canAutoPull
               ? "Hit Pull posts now to fetch recent videos and score them vs this creator’s median."
-              : "Instagram auto-pull is unavailable — paste Reel URLs under Discover → Manual reference."
+              : "No discovery provider is configured for this platform. Add SCRAPECREATORS_API_KEY for Instagram/TikTok, or YOUTUBE_DATA_API_KEY for YouTube."
           }
         />
       ) : visible.length === 0 ? (
