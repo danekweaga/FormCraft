@@ -6,9 +6,11 @@ export type StarterPsychologyPrinciple = {
   limitations: string;
   evidenceStrength: "limited" | "emerging" | "moderate" | "strong";
   source: {
+    sourceType?: "doi" | "pubmed" | "research_url";
+    providerId?: string;
     title: string;
     citation: string;
-    doi: string;
+    doi?: string;
     url: string;
   };
 };
@@ -18,6 +20,121 @@ export type StarterPsychologyPrinciple = {
  * inferences from the cited work, not claims that the papers studied social video.
  */
 export const STARTER_PSYCHOLOGY_PRINCIPLES: StarterPsychologyPrinciple[] = [
+  {
+    name: "Relevant state curiosity",
+    description:
+      "A clear, relevant unanswered question can focus information seeking and is associated with better memory for the sought information.",
+    mechanism:
+      "Curiosity directs processing toward resolving a specific information gap; it is not the same as vague withholding.",
+    contentApplication:
+      "Make the viewer's question, stakes, and path toward an answer intelligible. Provide progress while the question remains open, then deliver the promised payoff.",
+    limitations:
+      "The meta-analysis concerns memory, not guaranteed social-video retention. Curiosity can also reduce processing of unrelated information, so avoid opening a strong loop and then detouring.",
+    evidenceStrength: "strong",
+    source: {
+      sourceType: "pubmed",
+      providerId: "PMID:41748968",
+      title: "Mnemonic benefits of state curiosity — A meta-analysis",
+      citation: "Meta-analysis of 47 independent studies (PubMed PMID 41748968).",
+      url: "https://pubmed.ncbi.nlm.nih.gov/41748968/",
+    },
+  },
+  {
+    name: "Meaningful segmentation and coherence",
+    description:
+      "Signaling, segmentation, coherence, and related multimedia principles generally support learning when they organize meaning and reduce irrelevant competition.",
+    mechanism:
+      "Viewers benefit when information is grouped around meaningful changes and visual or textual cues point toward the current idea.",
+    contentApplication:
+      "Segment around claims, examples, proof, contradictions, and payoffs. Prefer a screenshot that proves the claim over an arbitrary zoom that adds no information.",
+    limitations:
+      "This evidence primarily concerns multimedia learning, not a universal formula for short-form reach. More edits are not automatically better.",
+    evidenceStrength: "strong",
+    source: {
+      sourceType: "doi",
+      providerId: "DOI:10.3102/00346543211052329",
+      title: "Multimedia Design for Learning: An Overview of Reviews With Meta-Meta-Analysis",
+      citation: "Meta-meta-analysis of 29 reviews, 1,189 studies, and 78,177 participants (2022).",
+      doi: "10.3102/00346543211052329",
+      url: "https://journals.sagepub.com/doi/10.3102/00346543211052329",
+    },
+  },
+  {
+    name: "Fragmentation is not progression",
+    description:
+      "Breaking material into more short units does not guarantee better integration or memory.",
+    mechanism:
+      "Frequent fragmentation can interrupt the integration of related information even when total content and duration are similar.",
+    contentApplication:
+      "Count informational progress separately from cuts. Compress repeated explanation before adding decorative pattern interrupts.",
+    limitations:
+      "The cited controlled study had 57 participants and studied learning and memory. It does not establish an optimal edit rate for social video.",
+    evidenceStrength: "emerging",
+    source: {
+      sourceType: "pubmed",
+      providerId: "PMID:41519954",
+      title: "Fragmented learning from short videos modulates neural activity and connectivity during memory retrieval",
+      citation: "Controlled short-versus-continuous video study, 57 participants (PubMed PMID 41519954).",
+      url: "https://pubmed.ncbi.nlm.nih.gov/41519954/",
+    },
+  },
+  {
+    name: "Caption competition risk",
+    description:
+      "Captions can support comprehension, but difficult or dense subtitles can absorb substantial visual processing.",
+    mechanism:
+      "Simultaneous speech, dense text, and complex visual proof can compete for limited processing resources.",
+    contentApplication:
+      "Use captions to signal hierarchy. When showing code or visual proof, simplify captions or give the evidence enough screen time to be read.",
+    limitations:
+      "The cited eye-tracking comparison concerns Arabic subtitle quality, not a universal caption-density threshold for Reels or TikTok.",
+    evidenceStrength: "emerging",
+    source: {
+      sourceType: "pubmed",
+      providerId: "PMID:40708801",
+      title: "Through the Eyes of the Viewer: Cognitive Load of LLM-Generated vs Professional Arabic Subtitles",
+      citation: "Eye-tracking subtitle study (PubMed PMID 40708801).",
+      url: "https://pubmed.ncbi.nlm.nih.gov/40708801/",
+    },
+  },
+  {
+    name: "Emotion should advance the message",
+    description:
+      "Emotion can support memorable encoding, but emotionally loaded interpretation can also compete with memory for the video itself.",
+    mechanism:
+      "Emotion is most defensible when it is part of the event, stakes, or payoff rather than an unrelated layer demanding attention.",
+    contentApplication:
+      "Use emotional reactions, music, or text when they clarify the story or consequence. Avoid unrelated dramatic decoration over a demanding explanation.",
+    limitations:
+      "The cited study examines video memory, not social performance, and does not imply that low-emotion content is inferior.",
+    evidenceStrength: "moderate",
+    source: {
+      sourceType: "pubmed",
+      providerId: "PMID:42393484",
+      title: "Video, text, and memory: An emotional verbal overshadowing effect",
+      citation: "Video-memory study with 649 participants (PubMed PMID 42393484).",
+      url: "https://pubmed.ncbi.nlm.nih.gov/42393484/",
+    },
+  },
+  {
+    name: "Proof and credibility are contextual",
+    description:
+      "Credibility cues can affect persuasion, but their effect depends on the source, audience, claim, and context.",
+    mechanism:
+      "Concrete demonstrations and attributable evidence help viewers evaluate a claim instead of relying on unsupported authority language.",
+    contentApplication:
+      "Map important claims to personal experience, a live demonstration, code or results, screenshots, numbers, external sources, or honest limitations.",
+    limitations:
+      "The cited experiment concerns clinical-trial TikToks. Its exact effects should not be generalized to CS or developer content.",
+    evidenceStrength: "emerging",
+    source: {
+      sourceType: "pubmed",
+      providerId: "PMID:38699819",
+      title: "Trust Me, I'm a Doctor: How TikTok Videos from Different Sources Influence Clinical Trial Participation",
+      citation: "Short-form source-credibility experiment, 396 participants (PubMed PMID 38699819).",
+      url: "https://pubmed.ncbi.nlm.nih.gov/38699819/",
+    },
+  },
   {
     name: "Information gap",
     description: "Curiosity can arise when a person notices a specific gap between what they know and what they want to know.",

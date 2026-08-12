@@ -1,5 +1,6 @@
 import type { AnalysisResult } from "./schema";
 import { scoreToRating } from "./schema";
+import { buildDeterministicEvidence } from "./evidence";
 
 const OPEN_LOOP_PATTERNS =
   /\b(but|however|wait|what if|you won't believe|here's why|the problem is|secret|mistake)\b/i;
@@ -177,31 +178,49 @@ export function analyzeTranscriptHeuristic(
         : "Opening relies on a single primary mechanism.",
   };
 
-  const rehooks = sentences
-    .map((text, index) => ({ text, index }))
-    .filter(({ text, index }) => index > 0 && REHOOK_PATTERNS.test(text))
-    .slice(0, mode === "quick" ? 2 : 5)
-    .map(({ text, index }) => ({
-      timestamp: Math.min(index * 5, timeline.at(-1)?.endSeconds ?? index * 5),
-      text,
-      type: "Verbal rehook",
-      purpose: "Renew attention / reopen tension",
-      assessment: "May re-engage if the prior section was dense or explanatory.",
-    }));
-
-  const openLoops = sentences
-    .filter((s) => OPEN_LOOP_PATTERNS.test(s) || /\?$/.test(s))
-    .slice(0, mode === "quick" ? 3 : 6)
-    .map((text, index) => ({
-      createdAt: Math.min(index * 8, timeline.at(-1)?.endSeconds ?? index * 8),
-      resolvedAt: null as number | null,
-      questionCreated: text,
-      assessment:
-        "Loop detected from phrasing — resolution inferred only if later text answers it.",
-      text,
-      resolved: index < sentences.length - 1,
-      notes: "Detected from phrasing — resolution inferred from transcript order only",
-    }));
+  const deterministicEvidence = buildDeterministicEvidence({
+    timeline,
+    hasVisualEvidence: hasVisual,
+  });
+  const effectiveRehooks = deterministicEvidence.rehooks.slice(
+    0,
+    mode === "quick" ? 2 : 8,
+  );
+  const effectiveOpenLoops = deterministicEvidence.openLoops.slice(
+    0,
+    mode === "quick" ? 3 : 8,
+  );
+  const hookText = primaryHook?.text ?? null;
+  const audienceCue = hookText?.match(
+    /\b(students?|developers?|founders?|creators?|beginners?|interns?|engineers?)\b/i,
+  )?.[0];
+  const firstClaimProof = deterministicEvidence.claimEvidenceMap[0];
+  const hookDiagnostics: AnalysisResult["hookDiagnostics"] = {
+    hookText,
+    audience: audienceCue ?? null,
+    claim: hookText && CLAIM_PATTERNS.test(hookText) ? hookText : null,
+    promise:
+      hookText && /\b(show|learn|find out|here(?:'|’)s|the reason|by the end)\b/i.test(hookText)
+        ? hookText
+        : null,
+    openQuestion: effectiveOpenLoops[0]?.questionCreated ?? null,
+    stakes:
+      hookText && /\b(job|money|time|fail|mistake|lose|waste|risk|interview|career)\b/i.test(hookText)
+        ? "A concrete consequence or risk is named in the opening."
+        : null,
+    specificity:
+      hookText && (/\d/.test(hookText) || /\b(this|these|exact|specific|project|error|result)\b/i.test(hookText))
+        ? "The opening contains at least one concrete object, number, or situation."
+        : "The opening is mostly general wording; add specificity only if it improves truth and clarity.",
+    novelty: "Novelty cannot be established from this transcript alone; compare it with recent niche research and your own posts.",
+    proofProximitySeconds: firstClaimProof?.proofLatencySeconds ?? null,
+    answerLeakage: deterministicEvidence.evidenceFindings.some((finding) =>
+      finding.id.startsWith("finding:answer-leakage"),
+    )
+      ? "A possible early resolution was detected. This is a hypothesis, not a universal pacing rule."
+      : "No deterministic answer-leakage flag was raised.",
+    stacking: hookStack.assessment,
+  };
 
   const psychology = PSYCHOLOGY_PATTERNS.flatMap(({ technique, pattern }) => {
     const matchIndex = sentences.findIndex((s) => pattern.test(s));
@@ -220,6 +239,38 @@ export function analyzeTranscriptHeuristic(
     ];
   }).slice(0, mode === "quick" ? 2 : 5);
 
+  const psychologyWithEvidence = [
+    ...psychology,
+    ...(effectiveOpenLoops.length > 0
+      ? [
+          {
+            mechanism: "Relevant state curiosity",
+            evidence: effectiveOpenLoops[0]!.questionCreated,
+            timestamp: effectiveOpenLoops[0]!.createdAt,
+            interpretation:
+              "This opening may create a relevant information gap if the viewer understands why the answer matters. Curiosity research is background evidence, not proof of retention.",
+            technique: "Relevant information gap",
+            example: effectiveOpenLoops[0]!.questionCreated,
+            notes: "See the Psychology Library for source, population, and limitations.",
+          },
+        ]
+      : []),
+    ...(deterministicEvidence.progressDeserts.length > 0
+      ? [
+          {
+            mechanism: "Meaningful segmentation and coherence",
+            evidence: deterministicEvidence.progressDeserts[0]!.reason,
+            timestamp: deterministicEvidence.progressDeserts[0]!.startSeconds,
+            interpretation:
+              "This interval may benefit from compression or meaningful evidence; more decorative edits alone are not treated as progression.",
+            technique: "Semantic progress",
+            example: deterministicEvidence.progressDeserts[0]!.reason,
+            notes: "General multimedia evidence; applicability to this video remains a hypothesis.",
+          },
+        ]
+      : []),
+  ].slice(0, mode === "quick" ? 3 : 7);
+
   const retentionDevices = [
     {
       timestamp: 0,
@@ -229,7 +280,7 @@ export function analyzeTranscriptHeuristic(
       location: "Throughout transcript",
       notes: `${paragraphs.length} paragraph breaks detected`,
     },
-    ...rehooks.slice(0, 2).map((r) => ({
+    ...effectiveRehooks.slice(0, 2).map((r) => ({
       timestamp: r.timestamp,
       type: "Rehook",
       explanation: r.text.slice(0, 120),
@@ -262,7 +313,7 @@ export function analyzeTranscriptHeuristic(
       suggestion: "Shorten the first line or split into two beats",
     });
   }
-  if (openLoops.length === 0) {
+  if (effectiveOpenLoops.length === 0) {
     retentionRisks.push({
       startSeconds: 0,
       endSeconds: timeline[0]?.endSeconds ?? 10,
@@ -302,10 +353,10 @@ export function analyzeTranscriptHeuristic(
   if (paragraphs.length >= 3) {
     strengths.push("Transcript has clear sectional structure");
   }
-  if (psychology.length >= 2) {
+  if (psychologyWithEvidence.length >= 2) {
     strengths.push("Multiple persuasion patterns appear in the script");
   }
-  if (rehooks.length > 0) {
+  if (effectiveRehooks.length > 0) {
     strengths.push("At least one verbal rehook candidate was detected");
   }
   if (strengths.length === 0) {
@@ -325,7 +376,7 @@ export function analyzeTranscriptHeuristic(
       suggestion: "Sharpen the first sentence with a specific outcome or tension",
     });
   }
-  if (openLoops.length < 2) {
+  if (effectiveOpenLoops.length < 2) {
     improvements.push({
       priority: "medium",
       timestamp: 0,
@@ -395,13 +446,13 @@ export function analyzeTranscriptHeuristic(
     },
     {
       category: "Rehooks",
-      score: scoreFromRatio(rehooks.length, 3, 1),
-      rationale: `${rehooks.length} rehook candidates`,
+      score: scoreFromRatio(effectiveRehooks.length, 3, 1),
+      rationale: `${effectiveRehooks.length} evidence-backed rehook candidates`,
     },
     {
       category: "Open loops",
-      score: scoreFromRatio(openLoops.length, 4, 2),
-      rationale: `${openLoops.length} candidate loops in text`,
+      score: scoreFromRatio(effectiveOpenLoops.length, 4, 2),
+      rationale: `${effectiveOpenLoops.length} candidate loops in text`,
     },
     {
       category: "Specificity",
@@ -410,8 +461,8 @@ export function analyzeTranscriptHeuristic(
     },
     {
       category: "Viewer psychology",
-      score: scoreFromRatio(psychology.length, 4, 2),
-      rationale: `${psychology.length} psychology patterns matched`,
+      score: scoreFromRatio(psychologyWithEvidence.length, 4, 2),
+      rationale: `${psychologyWithEvidence.length} psychology hypotheses linked to transcript evidence`,
     },
     {
       category: "Visual communication",
@@ -453,7 +504,7 @@ export function analyzeTranscriptHeuristic(
   return {
     overview: {
       topic: sentences[0]?.slice(0, 80) || "Transcript analysis",
-      intendedAudience: psychology.some((p) => p.mechanism === "Identity")
+      intendedAudience: psychologyWithEvidence.some((p) => p.mechanism === "Identity")
         ? "Identity cues detected in transcript"
         : null,
       coreMessage: `Transcript contains ~${wordCount} words across ${paragraphs.length} paragraphs.`,
@@ -461,9 +512,9 @@ export function analyzeTranscriptHeuristic(
     },
     timeline,
     hooks,
-    rehooks,
-    openLoops,
-    psychology,
+    rehooks: effectiveRehooks,
+    openLoops: effectiveOpenLoops,
+    psychology: psychologyWithEvidence,
     retentionDevices,
     retentionRisks,
     potentialRetentionRisks: retentionRisks,
@@ -481,6 +532,14 @@ export function analyzeTranscriptHeuristic(
     observedRetention: [],
     hookStack,
     rewrittenScript: null,
+    evidenceFindings: deterministicEvidence.evidenceFindings,
+    progressEvents: deterministicEvidence.progressEvents,
+    hookWindows: deterministicEvidence.hookWindows,
+    hookDiagnostics,
+    progressDeserts: deterministicEvidence.progressDeserts,
+    claimEvidenceMap: deterministicEvidence.claimEvidenceMap,
+    attentionSupport: deterministicEvidence.attentionSupport,
+    personalComparison: null,
   };
 }
 

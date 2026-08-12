@@ -154,6 +154,27 @@ export function PrePublishDetailClient({
                       ))}
                     </ul>
                   ) : null}
+                  <div className="mt-3 border-t border-outline-variant/15 pt-2 text-xs text-secondary">
+                    <p>
+                      Confidence: {item.confidence}. {item.uncertainty}
+                    </p>
+                    {item.evidenceRefs.length > 0 ? (
+                      <p className="mt-1">Evidence: {item.evidenceRefs.join(" · ")}</p>
+                    ) : null}
+                    {item.psychologyPrincipleNames.length > 0 ? (
+                      <p className="mt-1">
+                        Psychology context: {item.psychologyPrincipleNames.join(", ")}.{" "}
+                        <Link href="/psychology" className="text-primary hover:underline">
+                          View sources
+                        </Link>
+                      </p>
+                    ) : null}
+                    {item.suggestedExperiment ? (
+                      <p className="mt-1 text-on-background">
+                        Worth testing: {item.suggestedExperiment}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
               ))}
             </CardContent>

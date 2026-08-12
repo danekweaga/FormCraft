@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { persistCapturedFrames } from "@/lib/analyze/media/frames";
+import { persistAnalysisEvidence } from "@/lib/analyze/evidence-store";
 import {
   assertAllowedMedia,
   createSignedMediaUrl,
@@ -19,6 +20,10 @@ import {
 import { normalizeTranscriptText } from "@/lib/analyze/transcription/types";
 import { getDefaultTranscriptionProvider } from "@/lib/analyze/transcription/whisper-provider";
 import { getAnalyzeLimits } from "@/lib/analyze/limits";
+import {
+  detectObservedRetentionChanges,
+  parseRetentionCurve,
+} from "@/lib/analyze/retention";
 import {
   isPublicTiktokVideoUrl,
   resolveTiktokPublicVideo,
@@ -271,6 +276,13 @@ export async function createTranscriptAnalysis(input: {
       })
       .eq("id", row.id)
       .eq("user_id", auth.user.id);
+
+    await persistAnalysisEvidence({
+      supabase: auth.supabase,
+      userId: auth.user.id,
+      analysisId: row.id,
+      result: staged.result,
+    });
 
     const transcriptHook = staged.result.hooks[0]?.text?.trim() || null;
     if (transcriptHook && contentPostId) {
@@ -614,6 +626,13 @@ export async function createAnalysisFromUploadAction(
       })
       .eq("id", placeholder.id);
 
+    await persistAnalysisEvidence({
+      supabase: auth.supabase,
+      userId: auth.user.id,
+      analysisId: placeholder.id,
+      result: staged.result,
+    });
+
     revalidatePath("/analyze");
     revalidatePath(`/analyze/${placeholder.id}`);
     redirect(`/analyze/${placeholder.id}`);
@@ -882,6 +901,130 @@ export async function saveAnalysisCorrectionsAction(formData: FormData) {
     .eq("user_id", auth.user.id);
 
   revalidatePath(`/analyze/${analysisId}`);
+}
+
+export async function attachRetentionCurveAction(
+  formData: FormData,
+): Promise<{ error?: string; success?: string }> {
+  const analysisId = String(formData.get("analysisId") ?? "");
+  const rawCurve = String(formData.get("retentionCurve") ?? "").trim();
+  const sourceLabel = String(formData.get("sourceLabel") ?? "Manual import").trim();
+  const auth = await requireUser();
+  if (auth.error || !auth.supabase || !auth.user) {
+    return { error: auth.error ?? "Not signed in." };
+  }
+  if (!analysisId || !rawCurve) {
+    return { error: "Paste a retention curve first." };
+  }
+
+  const { data: analysis } = await auth.supabase
+    .from("video_analyses")
+    .select("id, result")
+    .eq("id", analysisId)
+    .eq("user_id", auth.user.id)
+    .maybeSingle();
+  if (!analysis?.result) return { error: "Analysis not found." };
+
+  const result = normalizeAnalysisResult(analysis.result);
+  const duration = Math.max(1, ...result.timeline.map((item) => item.endSeconds));
+  let points;
+  try {
+    points = parseRetentionCurve(rawCurve, duration);
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Invalid retention curve.",
+    };
+  }
+
+  const { data: curve, error: curveError } = await auth.supabase
+    .from("analysis_retention_curves")
+    .insert({
+      user_id: auth.user.id,
+      analysis_id: analysisId,
+      provider: "manual",
+      source_label: sourceLabel.slice(0, 200),
+      duration_seconds: duration,
+    })
+    .select("id")
+    .single();
+  if (curveError || !curve) {
+    return { error: curveError?.message ?? "Could not save retention curve." };
+  }
+
+  const { error: pointError } = await auth.supabase
+    .from("analysis_retention_points")
+    .insert(
+      points.map((point) => ({
+        user_id: auth.user.id,
+        curve_id: curve.id,
+        elapsed_seconds: point.elapsedSeconds,
+        position_ratio: point.positionRatio,
+        audience_watch_ratio: point.audienceWatchRatio,
+      })),
+    );
+  if (pointError) return { error: pointError.message };
+
+  const observedRetention = detectObservedRetentionChanges(points);
+  const evidenceFindings = [
+    ...result.evidenceFindings.filter(
+      (finding) => finding.evidenceClass !== "observed",
+    ),
+    ...observedRetention.map((change, index) => ({
+      id: `finding:observed-retention:${index}`,
+      evidenceClass: "observed" as const,
+      title: "Observed retention drop",
+      statement: change.note,
+      startSeconds: change.startSeconds,
+      endSeconds: change.endSeconds,
+      evidenceIds: [`retention:${curve.id}:${index}`],
+      psychologyPrincipleNames: [] as string[],
+      confidence: "high" as const,
+      uncertainty:
+        "The curve shows viewer behavior but does not prove why the change occurred.",
+      suggestedExperiment: null,
+    })),
+  ];
+  const attentionSupport = result.attentionSupport.map((item) =>
+    item.dimension === "observed_retention"
+      ? {
+          ...item,
+          status: observedRetention.length ? ("mixed" as const) : ("supportive" as const),
+          evidence: observedRetention.length
+            ? `${observedRetention.length} significant observed decline interval(s) detected.`
+            : "No persistent decline above the conservative five-point threshold was detected.",
+        }
+      : item,
+  );
+  const updated = {
+    ...result,
+    observedRetention,
+    evidenceFindings,
+    attentionSupport,
+    confidenceNotes: [
+      ...result.confidenceNotes.filter(
+        (note) => !note.startsWith("Observed retention curve:"),
+      ),
+      `Observed retention curve: ${points.length} points from ${sourceLabel || "manual import"}. Values above 100% are preserved as replay behavior.`,
+    ],
+  };
+
+  const { error: updateError } = await auth.supabase
+    .from("video_analyses")
+    .update({ result: updated })
+    .eq("id", analysisId)
+    .eq("user_id", auth.user.id);
+  if (updateError) return { error: updateError.message };
+
+  await persistAnalysisEvidence({
+    supabase: auth.supabase,
+    userId: auth.user.id,
+    analysisId,
+    result: updated,
+  });
+  revalidatePath(`/analyze/${analysisId}`);
+  return {
+    success: `Saved ${points.length} retention points and found ${observedRetention.length} significant decline interval(s).`,
+  };
 }
 
 export async function toggleAnalysisSavedAction(formData: FormData) {

@@ -20,6 +20,9 @@ export const findingBuckets = [
 
 export const evidenceKinds = [
   "observation",
+  "structural_observation",
+  "psychology",
+  "personal_evidence",
   "creative_suggestion",
   "performance_evidence",
   "current_experiment",
@@ -34,6 +37,11 @@ export const findingSchema = z.object({
   whyItMatters: z.string(),
   suggestion: z.string(),
   alternatives: z.array(z.string()).default([]),
+  evidenceRefs: z.array(z.string()).min(1),
+  psychologyPrincipleNames: z.array(z.string()).default([]),
+  confidence: z.enum(["low", "medium", "high"]).default("medium"),
+  uncertainty: z.string().default(""),
+  suggestedExperiment: z.string().nullable().default(null),
 });
 
 export const checklistItemSchema = z.object({

@@ -25,6 +25,7 @@ import {
 } from "@/app/(app)/pre-publish/actions";
 import {
   addAnalysisToCanvasAction,
+  attachRetentionCurveAction,
   createExperimentFromInsight,
   reanalyzeTranscript,
   saveAnalysisCorrectionsAction,
@@ -62,6 +63,7 @@ const TABS = [
   "Hook",
   "Psychology",
   "Retention",
+  "Evidence",
   "Proof",
   "Editing",
   "Improvements",
@@ -137,6 +139,10 @@ export function AnalysisDetailClient({ analysis }: { analysis: AnalysisDetail })
   const [isPending, startTransition] = useTransition();
   const [tab, setTab] = useState<(typeof TABS)[number]>("Overview");
   const [transcriptQuery, setTranscriptQuery] = useState("");
+  const [retentionMessage, setRetentionMessage] = useState<{
+    kind: "success" | "error";
+    text: string;
+  } | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const result = useMemo(
     () => (analysis.result ? normalizeAnalysisResult(analysis.result) : null),
@@ -421,6 +427,37 @@ export function AnalysisDetailClient({ analysis }: { analysis: AnalysisDetail })
                     </ul>
                   </div>
                 ) : null}
+                {result.personalComparison ? (
+                  <div className="rounded-lg border border-outline-variant/20 bg-surface-container-lowest p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-semibold">Personal evidence</p>
+                      <Badge variant="default">
+                        {result.personalComparison.sampleSize} comparable posts ·{" "}
+                        {result.personalComparison.confidence.replace(/_/g, " ")}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-secondary">
+                      {result.personalComparison.comparableRule}.{" "}
+                      {result.personalComparison.note}
+                    </p>
+                    <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                      {result.personalComparison.metrics
+                        .filter((metric) => metric.current != null || metric.median != null)
+                        .map((metric) => (
+                          <li key={metric.metric} className="text-xs text-secondary">
+                            <span className="font-medium text-on-background">
+                              {metric.metric.replace(/_/g, " ")}
+                            </span>{" "}
+                            · {metric.current?.toLocaleString() ?? "unavailable"} current
+                            {metric.median != null
+                              ? ` · ${metric.median.toLocaleString()} median`
+                              : ""}
+                            {metric.ratio != null ? ` · ${metric.ratio.toFixed(2)}×` : ""}
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           ) : null}
@@ -433,6 +470,46 @@ export function AnalysisDetailClient({ analysis }: { analysis: AnalysisDetail })
               </CardHeader>
               <CardContent className="space-y-4">
                 <StructureMap timeline={result.timeline} onSeek={seek} />
+                {result.progressEvents.length > 0 ? (
+                  <div>
+                    <p className="font-semibold">Progress events</p>
+                    <p className="text-xs text-secondary">
+                      Meaningful information changes, not a count of edits.
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {result.progressEvents.map((event) => (
+                        <button
+                          key={event.id}
+                          type="button"
+                          className="rounded-full border border-outline-variant/25 px-2.5 py-1 text-xs text-secondary hover:border-primary hover:text-on-background"
+                          onClick={() => seek(event.timestamp)}
+                          title={event.text}
+                        >
+                          {formatClock(event.timestamp)} · {event.type.replace(/_/g, " ")}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {result.progressDeserts.length > 0 ? (
+                  <div className="rounded-lg border border-warning/30 bg-warning/5 p-3">
+                    <p className="font-semibold">Possible progress deserts</p>
+                    <ul className="mt-1 space-y-1 text-xs text-secondary">
+                      {result.progressDeserts.map((desert, index) => (
+                        <li key={`${desert.startSeconds}-${index}`}>
+                          <button
+                            type="button"
+                            className="text-primary hover:underline"
+                            onClick={() => seek(desert.startSeconds)}
+                          >
+                            {formatClock(desert.startSeconds)}–{formatClock(desert.endSeconds)}
+                          </button>{" "}
+                          · {desert.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
                 <ul className="space-y-3 text-sm">
                   {result.timeline.map((t, i) => (
                     <li key={i} className="rounded-lg border border-outline-variant/15 p-3">
@@ -486,6 +563,65 @@ export function AnalysisDetailClient({ analysis }: { analysis: AnalysisDetail })
                 <CardTitle>Hooks & rehooks</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 text-sm">
+                {result.hookWindows.length > 0 ? (
+                  <div>
+                    <p className="font-semibold">Opening windows</p>
+                    <p className="text-xs text-secondary">
+                      Multiple windows are inspected; FormCraft does not impose one universal hook length.
+                    </p>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      {result.hookWindows.map((window) => (
+                        <div
+                          key={window.window}
+                          className="rounded-lg border border-outline-variant/15 p-3"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-medium">
+                              {window.window.replace(/_/g, " ")}
+                            </p>
+                            <Badge variant={window.available ? "primary" : "default"}>
+                              {window.available ? "available" : "unavailable"}
+                            </Badge>
+                          </div>
+                          <p className="mt-1 text-xs text-secondary">{window.question}</p>
+                          {window.excerpt ? (
+                            <p className="mt-2 line-clamp-3 text-xs">“{window.excerpt}”</p>
+                          ) : null}
+                          <p className="mt-2 text-xs text-secondary">{window.assessment}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {result.hookDiagnostics ? (
+                  <div className="rounded-lg border border-outline-variant/20 bg-surface-container-lowest p-3">
+                    <p className="font-semibold">Hook diagnostic</p>
+                    <dl className="mt-2 grid gap-x-4 gap-y-2 text-xs sm:grid-cols-2">
+                      {[
+                        ["Audience", result.hookDiagnostics.audience],
+                        ["Claim", result.hookDiagnostics.claim],
+                        ["Promise", result.hookDiagnostics.promise],
+                        ["Open question", result.hookDiagnostics.openQuestion],
+                        ["Stakes", result.hookDiagnostics.stakes],
+                        ["Specificity", result.hookDiagnostics.specificity],
+                        ["Novelty", result.hookDiagnostics.novelty],
+                        ["Answer leakage", result.hookDiagnostics.answerLeakage],
+                        ["Hook stacking", result.hookDiagnostics.stacking],
+                        [
+                          "Proof proximity",
+                          result.hookDiagnostics.proofProximitySeconds != null
+                            ? `${result.hookDiagnostics.proofProximitySeconds.toFixed(1)} seconds`
+                            : "No transcript proof cue detected",
+                        ],
+                      ].map(([label, value]) => (
+                        <div key={label}>
+                          <dt className="font-semibold text-on-background">{label}</dt>
+                          <dd className="mt-0.5 text-secondary">{value || "Unavailable"}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                ) : null}
                 {result.hookStack ? (
                   <div className="rounded-lg bg-surface-container-lowest p-3">
                     <p className="font-semibold">
@@ -572,11 +708,17 @@ export function AnalysisDetailClient({ analysis }: { analysis: AnalysisDetail })
               <CardContent className="space-y-3 text-sm">
                 {result.psychology.map((p, i) => (
                   <div key={i} className="rounded-lg border border-outline-variant/15 p-3">
-                    <p className="font-semibold">{p.mechanism}</p>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-semibold">{p.mechanism}</p>
+                      <Badge variant="default">psychological hypothesis</Badge>
+                    </div>
                     <p className="text-secondary">{p.evidence}</p>
                     <p className="mt-1 text-xs">{p.interpretation}</p>
                   </div>
                 ))}
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/psychology">View research sources and limitations</Link>
+                </Button>
               </CardContent>
             </Card>
           ) : null}
@@ -603,6 +745,83 @@ export function AnalysisDetailClient({ analysis }: { analysis: AnalysisDetail })
                     hypotheses only.
                   </p>
                 )}
+                {result.attentionSupport.length > 0 ? (
+                  <div>
+                    <p className="font-semibold">Attention Support</p>
+                    <p className="text-xs text-secondary">
+                      Interpretable support dimensions, not a claim to measure human attention.
+                    </p>
+                    <ul className="mt-2 space-y-2">
+                      {result.attentionSupport.map((item) => (
+                        <li
+                          key={item.dimension}
+                          className="rounded-lg border border-outline-variant/15 p-3"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-medium">
+                              {item.dimension.replace(/_/g, " ")}
+                            </span>
+                            <Badge variant={item.status === "supportive" ? "primary" : "default"}>
+                              {item.status}
+                            </Badge>
+                          </div>
+                          <p className="mt-1 text-xs text-secondary">{item.evidence}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                <div className="rounded-lg border border-outline-variant/20 bg-surface-container-lowest p-3">
+                  <p className="font-semibold">Attach observed retention curve</p>
+                  <p className="mt-1 text-xs text-secondary">
+                    Paste CSV as time,retention. Time may be seconds or 0–1 progress;
+                    retention may be 72 or 0.72. Replay values above 100% are preserved.
+                  </p>
+                  <form
+                    className="mt-3 space-y-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const formData = new FormData(event.currentTarget);
+                      setRetentionMessage(null);
+                      startTransition(async () => {
+                        const response = await attachRetentionCurveAction(formData);
+                        setRetentionMessage(
+                          response.error
+                            ? { kind: "error", text: response.error }
+                            : {
+                                kind: "success",
+                                text: response.success ?? "Retention curve saved.",
+                              },
+                        );
+                        if (!response.error) router.refresh();
+                      });
+                    }}
+                  >
+                    <input type="hidden" name="analysisId" value={analysis.id} />
+                    <Input name="sourceLabel" defaultValue="Manual analytics export" />
+                    <textarea
+                      name="retentionCurve"
+                      required
+                      rows={5}
+                      placeholder={"0,100\n3,82\n6,74\n9,69"}
+                      className="w-full rounded-lg border border-outline-variant/30 bg-surface px-3 py-2 font-mono text-xs outline-none focus:border-primary"
+                    />
+                    <Button type="submit" size="sm" disabled={isPending}>
+                      Save observed curve
+                    </Button>
+                    {retentionMessage ? (
+                      <p
+                        className={
+                          retentionMessage.kind === "error"
+                            ? "text-xs text-error"
+                            : "text-xs text-primary"
+                        }
+                      >
+                        {retentionMessage.text}
+                      </p>
+                    ) : null}
+                  </form>
+                </div>
                 <div>
                   <p className="font-semibold">Devices</p>
                   <ul className="mt-1 list-disc pl-5 text-secondary">
@@ -652,6 +871,70 @@ export function AnalysisDetailClient({ analysis }: { analysis: AnalysisDetail })
             </Card>
           ) : null}
 
+          {tab === "Evidence" ? (
+            <Card className="border-outline-variant/20">
+              <CardHeader>
+                <CardTitle>Why is FormCraft saying this?</CardTitle>
+                <CardDescription>
+                  Observed behavior, content observations, psychology hypotheses, and personal evidence stay separate.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                {result.evidenceFindings.length === 0 ? (
+                  <p className="text-secondary">No evidence findings were generated.</p>
+                ) : (
+                  result.evidenceFindings.map((finding) => (
+                    <div
+                      key={finding.id}
+                      className="rounded-lg border border-outline-variant/15 p-3"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge
+                          variant={
+                            finding.evidenceClass === "observed" ? "primary" : "default"
+                          }
+                        >
+                          {finding.evidenceClass.replace(/_/g, " ")}
+                        </Badge>
+                        <Badge variant="default">{finding.confidence} confidence</Badge>
+                        {finding.startSeconds != null ? (
+                          <button
+                            type="button"
+                            className="text-xs text-primary hover:underline"
+                            onClick={() => seek(finding.startSeconds!)}
+                          >
+                            {formatClock(finding.startSeconds)}
+                            {finding.endSeconds != null
+                              ? `–${formatClock(finding.endSeconds)}`
+                              : ""}
+                          </button>
+                        ) : null}
+                      </div>
+                      <p className="mt-2 font-semibold">{finding.title}</p>
+                      <p className="mt-1 text-secondary">{finding.statement}</p>
+                      <p className="mt-2 text-xs text-secondary">
+                        Uncertainty: {finding.uncertainty}
+                      </p>
+                      {finding.psychologyPrincipleNames.length > 0 ? (
+                        <p className="mt-1 text-xs text-secondary">
+                          Research context: {finding.psychologyPrincipleNames.join(", ")}.{" "}
+                          <Link href="/psychology" className="text-primary hover:underline">
+                            View sources
+                          </Link>
+                        </p>
+                      ) : null}
+                      {finding.suggestedExperiment ? (
+                        <p className="mt-2 rounded-md bg-surface-container-lowest p-2 text-xs">
+                          Test: {finding.suggestedExperiment}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+
           {tab === "Proof" ? (
             <Card className="border-outline-variant/20">
               <CardHeader>
@@ -673,6 +956,29 @@ export function AnalysisDetailClient({ analysis }: { analysis: AnalysisDetail })
                     ) : null}
                   </div>
                 ))}
+                {result.claimEvidenceMap.length > 0 ? (
+                  <div>
+                    <p className="font-semibold">Claim → evidence timing</p>
+                    <ul className="mt-2 space-y-2">
+                      {result.claimEvidenceMap.map((item, index) => (
+                        <li
+                          key={`${item.claimTimestamp}-${index}`}
+                          className="rounded-lg bg-surface-container-lowest p-3"
+                        >
+                          <button
+                            type="button"
+                            className="text-xs text-primary hover:underline"
+                            onClick={() => seek(item.claimTimestamp)}
+                          >
+                            Claim at {formatClock(item.claimTimestamp)}
+                          </button>
+                          <p className="mt-1 font-medium">{item.claim}</p>
+                          <p className="mt-1 text-xs text-secondary">{item.assessment}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           ) : null}

@@ -51,10 +51,18 @@ describe("Growth J Pre-Publish Lab + Editing Copilot", () => {
       parsed.data.findings.every((f) =>
         [
           "observation",
+          "structural_observation",
+          "psychology",
+          "personal_evidence",
           "creative_suggestion",
           "performance_evidence",
           "current_experiment",
         ].includes(f.evidenceKind),
+      ),
+    ).toBe(true);
+    expect(
+      parsed.data.findings.every(
+        (f) => f.evidenceRefs.length > 0 && f.uncertainty.length > 0,
       ),
     ).toBe(true);
     expect(parsed.data.checklist.ready.length).toBeGreaterThan(0);

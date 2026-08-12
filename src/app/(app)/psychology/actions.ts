@@ -131,14 +131,17 @@ export async function installPsychologyStarterLibraryAction() {
       .upsert(
         {
           user_id: user.id,
-          source_type: "doi",
+          source_type: starter.source.sourceType ?? "doi",
+          source_provider: "formcraft_starter",
+          source_provider_id:
+            starter.source.providerId ?? `DOI:${starter.source.doi}`,
           title: starter.source.title,
           url: starter.source.url,
-          doi: starter.source.doi,
+          doi: starter.source.doi ?? null,
           citation: starter.source.citation,
           notes: "Curated FormCraft starter source. Review the original paper before making high-stakes claims.",
         },
-        { onConflict: "user_id,doi" },
+        { onConflict: "user_id,source_provider,source_provider_id" },
       )
       .select("id")
       .single();

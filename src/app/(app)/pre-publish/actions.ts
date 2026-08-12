@@ -149,6 +149,16 @@ export async function createPrePublishReview(
           .slice(0, 3)
           .map((i) => i.issue)
           .join("; ")}`,
+        `Evidence findings: ${normalized.evidenceFindings
+          .slice(0, 6)
+          .map(
+            (finding) =>
+              `[${finding.evidenceClass}] ${finding.id}: ${finding.statement} (confidence ${finding.confidence}; uncertainty: ${finding.uncertainty})`,
+          )
+          .join(" | ")}`,
+        normalized.personalComparison
+          ? `Personal evidence: n=${normalized.personalComparison.sampleSize}, ${normalized.personalComparison.confidence}, ${normalized.personalComparison.note}`
+          : "Personal evidence: unavailable",
       ]
         .filter(Boolean)
         .join("\n");

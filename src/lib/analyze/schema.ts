@@ -30,6 +30,15 @@ export const qualitativeRatings = [
 
 export const improvementPriorities = ["high", "medium", "optional"] as const;
 
+export const evidenceClasses = [
+  "observed",
+  "content_observation",
+  "psychological_hypothesis",
+  "personal_evidence",
+] as const;
+
+export const findingConfidenceLevels = ["low", "medium", "high"] as const;
+
 export const overviewSchema = z.object({
   topic: z.string(),
   intendedAudience: z.string().nullable(),
@@ -161,6 +170,108 @@ export const editingMapEntrySchema = z.object({
   observation: z.string(),
 });
 
+export const evidenceFindingSchema = z.object({
+  id: z.string(),
+  evidenceClass: z.enum(evidenceClasses),
+  title: z.string(),
+  statement: z.string(),
+  startSeconds: z.number().nonnegative().nullable(),
+  endSeconds: z.number().nonnegative().nullable(),
+  evidenceIds: z.array(z.string()).min(1),
+  psychologyPrincipleNames: z.array(z.string()).default([]),
+  confidence: z.enum(findingConfidenceLevels),
+  uncertainty: z.string(),
+  suggestedExperiment: z.string().nullable(),
+});
+
+export const progressEventSchema = z.object({
+  id: z.string(),
+  timestamp: z.number().nonnegative(),
+  endSeconds: z.number().nonnegative().nullable(),
+  type: z.enum([
+    "hook",
+    "question",
+    "claim",
+    "example",
+    "proof",
+    "contradiction",
+    "escalation",
+    "rehook",
+    "partial_payoff",
+    "payoff",
+    "cta",
+  ]),
+  text: z.string(),
+  informationalValue: z.enum(["low", "medium", "high"]),
+  evidenceId: z.string(),
+});
+
+export const hookWindowSchema = z.object({
+  window: z.enum([
+    "first_frame",
+    "first_second",
+    "first_three_seconds",
+    "opening_ten_percent",
+  ]),
+  startSeconds: z.number().nonnegative(),
+  endSeconds: z.number().nonnegative(),
+  available: z.boolean(),
+  excerpt: z.string().nullable(),
+  question: z.string(),
+  assessment: z.string(),
+});
+
+export const hookDiagnosticsSchema = z.object({
+  hookText: z.string().nullable(),
+  audience: z.string().nullable(),
+  claim: z.string().nullable(),
+  promise: z.string().nullable(),
+  openQuestion: z.string().nullable(),
+  stakes: z.string().nullable(),
+  specificity: z.string(),
+  novelty: z.string(),
+  proofProximitySeconds: z.number().nonnegative().nullable(),
+  answerLeakage: z.string(),
+  stacking: z.string(),
+});
+
+export const claimEvidenceMapSchema = z.object({
+  claim: z.string(),
+  claimTimestamp: z.number().nonnegative(),
+  proofTimestamp: z.number().nonnegative().nullable(),
+  proofLatencySeconds: z.number().nonnegative().nullable(),
+  assessment: z.string(),
+});
+
+export const attentionSupportSchema = z.object({
+  dimension: z.enum([
+    "hook_relevance",
+    "semantic_progress",
+    "proof_alignment",
+    "coherence",
+    "meaningful_visual_support",
+    "observed_retention",
+  ]),
+  status: z.enum(["supportive", "mixed", "risk", "unavailable"]),
+  evidence: z.string(),
+});
+
+export const personalComparisonSchema = z.object({
+  sampleSize: z.number().int().nonnegative(),
+  confidence: z.enum(["descriptive_only", "very_limited", "low", "medium", "high"]),
+  comparableRule: z.string(),
+  metrics: z.array(
+    z.object({
+      metric: z.string(),
+      current: z.number().nullable(),
+      median: z.number().nullable(),
+      ratio: z.number().nullable(),
+    }),
+  ),
+  winnerPostIds: z.array(z.string()).default([]),
+  note: z.string(),
+});
+
 export const analysisResultSchema = z.object({
   overview: overviewSchema,
   timeline: z.array(timelineEntrySchema),
@@ -199,6 +310,22 @@ export const analysisResultSchema = z.object({
     })
     .optional(),
   rewrittenScript: z.string().nullable().optional(),
+  evidenceFindings: z.array(evidenceFindingSchema).default([]),
+  progressEvents: z.array(progressEventSchema).default([]),
+  hookWindows: z.array(hookWindowSchema).default([]),
+  hookDiagnostics: hookDiagnosticsSchema.nullable().default(null),
+  progressDeserts: z
+    .array(
+      z.object({
+        startSeconds: z.number().nonnegative(),
+        endSeconds: z.number().nonnegative(),
+        reason: z.string(),
+      }),
+    )
+    .default([]),
+  claimEvidenceMap: z.array(claimEvidenceMapSchema).default([]),
+  attentionSupport: z.array(attentionSupportSchema).default([]),
+  personalComparison: personalComparisonSchema.nullable().default(null),
 });
 
 export const createAnalysisInputSchema = z.object({
@@ -469,6 +596,14 @@ export function normalizeAnalysisResult(raw: unknown): AnalysisResult {
       : [],
     hookStack: r.hookStack,
     rewrittenScript: r.rewrittenScript ?? null,
+    evidenceFindings: Array.isArray(r.evidenceFindings) ? r.evidenceFindings : [],
+    progressEvents: Array.isArray(r.progressEvents) ? r.progressEvents : [],
+    hookWindows: Array.isArray(r.hookWindows) ? r.hookWindows : [],
+    hookDiagnostics: r.hookDiagnostics ?? null,
+    progressDeserts: Array.isArray(r.progressDeserts) ? r.progressDeserts : [],
+    claimEvidenceMap: Array.isArray(r.claimEvidenceMap) ? r.claimEvidenceMap : [],
+    attentionSupport: Array.isArray(r.attentionSupport) ? r.attentionSupport : [],
+    personalComparison: r.personalComparison ?? null,
   });
 }
 
