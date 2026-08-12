@@ -12,6 +12,8 @@ describe("Hook Machine prompt", () => {
     expect(HOOK_MACHINE_SYSTEM_PROMPT).toContain("Throat-clearing openers");
     expect(HOOK_MACHINE_SYSTEM_PROMPT).toMatch(/em-dash/i);
     expect(HOOK_MACHINE_SYSTEM_PROMPT).toContain("B+");
+    expect(HOOK_MACHINE_SYSTEM_PROMPT).toContain("Hook + Story Script Engine");
+    expect(HOOK_MACHINE_SYSTEM_PROMPT).toContain("Retention means progression");
   });
 
   it("turns numbers into mad-lib slots", () => {

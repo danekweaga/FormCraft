@@ -6,6 +6,7 @@ import {
   contextToPromptBlock,
 } from "@/lib/ai/context/formcraft-context";
 import { HOOK_MACHINE_SYSTEM_PROMPT } from "@/lib/hooks/hook-machine";
+import { buildHookStoryPromptContext } from "@/lib/hooks/starter-library";
 
 export const researchIdeaSchema = z.object({
   title: z.string(),
@@ -81,7 +82,7 @@ export async function generateIdeasFromOutlier(params: {
   };
 
   const cacheKey = hashAiInput([
-    "research-ideas-hook-machine-v1",
+    "research-ideas-hook-story-library-v2",
     item.id,
     item.title,
     item.analysis,
@@ -95,7 +96,7 @@ export async function generateIdeasFromOutlier(params: {
       userId: params.userId,
       taskType: "idea_generation",
       role: "standard",
-      promptVersion: "research-ideas-hook-machine-v1",
+      promptVersion: "research-ideas-hook-story-library-v2",
       cacheKey,
       maxOutputTokens: 1800,
       schema: ideasSchema,
@@ -106,6 +107,12 @@ export async function generateIdeasFromOutlier(params: {
             "Generate ORIGINAL content ideas from an external outlier. Never paraphrase the source. Transform via different claim, personal story, audience problem, proof, structure, or conclusion.",
             "The `hook` field is spoken-hook copy. Apply the Hook Machine rules below. Internally iterate until each hook is B+ or above. Never use an em-dash.",
             HOOK_MACHINE_SYSTEM_PROMPT,
+            buildHookStoryPromptContext({
+              objective: "awareness",
+              format: "short-form video",
+              query: `${item.topic ?? ""} ${item.title ?? ""}`,
+              proofAvailable: Boolean(item.analysis),
+            }),
             "Return JSON { ideas: [...] } matching the schema. Separate external patterns from personal fit. Do not claim the outlier caused virality.",
           ].join("\n\n"),
         },

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { hashAiInput, tryStructuredAI } from "@/lib/ai/client";
+import { buildHookStoryPromptContext, getHookStorySystemPrompt } from "./starter-library";
 
 /**
  * FormCraft adaptation of Kallaway's Hook Machine (research + generate + grade + revise).
@@ -37,7 +38,10 @@ A+: all applicable principles firing. A: nearly all strong. A-: one identifiable
 GENERATION
 - Format-matched: adapt winning mad-lib formulas from the source hook/title only when the structure, tone, and word substitution still sound like a human would say them out loud. Cut bad fits. Do not pad.
 - Original: write from scratch using the principles above. Channel-agnostic. Different approaches, not minor variations.
-- Each rewrite of a user hook should take a different approach (structure vs value promise vs specificity).`;
+- Each rewrite of a user hook should take a different approach (structure vs value promise vs specificity).
+
+FORMCRAFT HOOK + STORY ENGINE
+${getHookStorySystemPrompt()}`;
 
 export const hookPackItemSchema = z.object({
   text: z.string().min(8).max(280),
@@ -141,9 +145,9 @@ export async function generateHookPackFromResearch(params: {
       userId: params.userId,
       taskType: "idea_generation",
       role: "standard",
-      promptVersion: "hook-machine-content-intelligence-v2",
+      promptVersion: "hook-machine-story-library-v3",
       cacheKey: hashAiInput([
-        "hook-machine-content-intelligence-v2",
+        "hook-machine-story-library-v3",
         item.id,
         topic,
         sourceHook,
@@ -157,6 +161,12 @@ export async function generateHookPackFromResearch(params: {
           role: "system",
           content: [
             HOOK_MACHINE_SYSTEM_PROMPT,
+            buildHookStoryPromptContext({
+              objective: "awareness",
+              format: "short-form video",
+              query: topic,
+              proofAvailable: Boolean(sourceHook),
+            }),
             "For every hook return: text (same as spokenHook), textHook for the cover, spokenHook, visualHook for the first frame, and an alignmentNote. Transfer mechanisms from research, never wording or creator identity.",
           ].join("\n\n"),
         },

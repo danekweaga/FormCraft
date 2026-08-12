@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import type { HookLibraryItem } from "@/lib/library/hook-library";
 
 function metric(item: HookLibraryItem): string {
+  if (item.sourceKind === "starter") return "Reusable template · no performance claim";
   if (item.sourceKind === "my_content") {
     if (item.relativePerformance != null) return `${item.relativePerformance.toFixed(1)}x personal baseline`;
     if (item.views != null) return `${item.views.toLocaleString()} views`;
@@ -19,18 +20,35 @@ function metric(item: HookLibraryItem): string {
 
 export function HooksLibrary({ items }: { items: HookLibraryItem[] }) {
   const [query, setQuery] = useState("");
-  const [source, setSource] = useState<"all" | "my_content" | "research" | "analysis" | "canvas">("all");
+  const [source, setSource] = useState<"all" | "starter" | "my_content" | "research" | "analysis" | "canvas">("all");
+  const [visibleCount, setVisibleCount] = useState(30);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return items.filter((item) => {
       const matchesSource = source === "all" || item.sourceKind === source;
-      const haystack = [item.hook, item.topic, item.creator, item.hookType, ...item.mechanisms]
+      const haystack = [
+        item.hook,
+        item.topic,
+        item.creator,
+        item.hookType,
+        item.assessment,
+        ...item.mechanisms,
+        ...(item.requirements ?? []),
+      ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
       return matchesSource && (!normalized || haystack.includes(normalized));
     });
   }, [items, query, source]);
+  const visible = filtered.slice(0, visibleCount);
+
+  async function copyTemplate(item: HookLibraryItem) {
+    await navigator.clipboard.writeText(item.hook);
+    setCopiedId(item.id);
+    window.setTimeout(() => setCopiedId((current) => (current === item.id ? null : current)), 1600);
+  }
 
   return (
     <div className="space-y-5">
@@ -47,7 +65,7 @@ export function HooksLibrary({ items }: { items: HookLibraryItem[] }) {
           />
         </label>
         <div className="flex flex-wrap gap-2">
-          {(["all", "my_content", "research", "analysis", "canvas"] as const).map((value) => (
+          {(["all", "starter", "my_content", "research", "analysis", "canvas"] as const).map((value) => (
             <Button
               key={value}
               type="button"
@@ -67,7 +85,7 @@ export function HooksLibrary({ items }: { items: HookLibraryItem[] }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((item) => (
+          {visible.map((item) => (
             <article key={item.id} className="rounded-xl border border-outline-variant/20 bg-surface-primary p-4 paper-shadow">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0 flex-1">
@@ -86,11 +104,22 @@ export function HooksLibrary({ items }: { items: HookLibraryItem[] }) {
                     {[item.creator, item.topic, item.sourceLabel].filter(Boolean).join(" · ")}
                   </p>
                   {item.explanation ? <p className="mt-3 text-sm leading-relaxed text-secondary">{item.explanation}</p> : null}
+                  {item.assessment ? <p className="mt-2 text-xs leading-relaxed text-secondary">{item.assessment}</p> : null}
                   {item.mechanisms.length ? (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {item.mechanisms.map((mechanism) => (
                         <Badge key={mechanism} variant="primary">{mechanism}</Badge>
                       ))}
+                    </div>
+                  ) : null}
+                  {item.requirements?.length ? (
+                    <div className="mt-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-secondary">Requirements</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {item.requirements.map((requirement) => (
+                          <Badge key={requirement} variant="default">{requirement.replaceAll("_", " ")}</Badge>
+                        ))}
+                      </div>
                     </div>
                   ) : null}
                   {item.ratings.length ? (
@@ -103,16 +132,22 @@ export function HooksLibrary({ items }: { items: HookLibraryItem[] }) {
                         </div>
                       ))}
                     </dl>
-                  ) : (
+                  ) : item.sourceKind !== "starter" ? (
                     <p className="mt-3 text-xs text-secondary">Qualitative dimensions have not been evaluated for this hook yet.</p>
-                  )}
+                  ) : null}
                 </div>
                 <div className="shrink-0 lg:text-right">
                   <p className="text-sm font-semibold text-on-background">{metric(item)}</p>
                   <div className="mt-3 flex gap-2 lg:justify-end">
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={item.sourceHref}>Open evidence</Link>
-                    </Button>
+                    {item.sourceKind === "starter" ? (
+                      <Button type="button" size="sm" variant="outline" onClick={() => void copyTemplate(item)}>
+                        {copiedId === item.id ? "Copied" : "Copy template"}
+                      </Button>
+                    ) : (
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={item.sourceHref}>Open evidence</Link>
+                      </Button>
+                    )}
                     {item.researchItemId ? (
                       <Button asChild size="sm">
                         <Link href={`/create?researchItem=${encodeURIComponent(item.researchItemId)}`}>Create my version</Link>
@@ -123,6 +158,13 @@ export function HooksLibrary({ items }: { items: HookLibraryItem[] }) {
               </div>
             </article>
           ))}
+          {visible.length < filtered.length ? (
+            <div className="flex justify-center pt-2">
+              <Button type="button" variant="outline" onClick={() => setVisibleCount((count) => count + 30)}>
+                Show 30 more ({filtered.length - visible.length} remaining)
+              </Button>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

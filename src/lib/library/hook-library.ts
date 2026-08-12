@@ -1,9 +1,10 @@
 import { normalizeAnalysisResult } from "@/lib/analyze/schema";
+import { getCanonicalHookTemplates } from "@/lib/hooks/starter-library";
 
 export type HookLibraryItem = {
   id: string;
   hook: string;
-  sourceKind: "my_content" | "research" | "analysis" | "canvas";
+  sourceKind: "starter" | "my_content" | "research" | "analysis" | "canvas";
   sourceLabel: string;
   sourceHref: string;
   researchItemId: string | null;
@@ -19,6 +20,9 @@ export type HookLibraryItem = {
   outlierScore: number | null;
   relativePerformance: number | null;
   ratings: Array<{ category: string; rating: string; explanation: string }>;
+  templateId?: string;
+  requirements?: string[];
+  riskFlags?: string[];
 };
 
 type PostRow = {
@@ -72,6 +76,32 @@ function relativeValue(value: unknown): number | null {
     if (typeof candidate === "number" && Number.isFinite(candidate)) return candidate;
   }
   return null;
+}
+
+export function buildStarterHookLibrary(): HookLibraryItem[] {
+  return getCanonicalHookTemplates().map((template) => ({
+    id: `starter:${template.canonical_id}`,
+    hook: template.template,
+    sourceKind: "starter",
+    sourceLabel: "FormCraft Hook + Story Script Library",
+    sourceHref: "/hooks",
+    researchItemId: null,
+    platform: "short-form",
+    creator: null,
+    topic: null,
+    format: null,
+    hookType: template.family,
+    mechanisms: template.jobs,
+    explanation: template.notes.join(" ") || null,
+    assessment: "Creator framework template. Test it against your own evidence; it is not a performance guarantee.",
+    views: null,
+    outlierScore: null,
+    relativePerformance: null,
+    ratings: [],
+    templateId: template.canonical_id,
+    requirements: template.requires,
+    riskFlags: template.risk_flags,
+  }));
 }
 
 export function buildHookLibrary(params: {

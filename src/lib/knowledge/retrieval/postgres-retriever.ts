@@ -75,9 +75,14 @@ export class PostgresKnowledgeRetriever implements KnowledgeRetriever {
                 chunk_index: 0,
               },
             ];
+      const rankedCandidates = candidates
+        .map((chunk) => ({ chunk, keywordHits: countKeywordHits(chunk.content, query) }))
+        .sort(
+          (a, b) =>
+            b.keywordHits - a.keywordHits || a.chunk.chunk_index - b.chunk.chunk_index,
+        );
 
-      for (const chunk of candidates.slice(0, 2)) {
-        const keywordHits = countKeywordHits(chunk.content, query);
+      for (const { chunk, keywordHits } of rankedCandidates.slice(0, 2)) {
         const ageDays =
           (now - new Date(doc.created_at).getTime()) / (1000 * 60 * 60 * 24);
         const recency = Math.max(0.5, 1.2 - ageDays / 180);

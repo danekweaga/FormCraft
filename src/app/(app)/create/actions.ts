@@ -14,6 +14,7 @@ import {
   toDbRecommendation,
 } from "@/lib/growth/idea-gate-intelligence";
 import { HOOK_MACHINE_SYSTEM_PROMPT } from "@/lib/hooks/hook-machine";
+import { buildHookStoryPromptContext } from "@/lib/hooks/starter-library";
 import { createClient } from "@/lib/supabase/server";
 
 const contentDirectionSchema = z.object({
@@ -197,9 +198,9 @@ export async function createMyVersionAction(
       userId: user.id,
       taskType: "idea_generation",
       role: "standard",
-      promptVersion: "create-my-version-content-intelligence-v3",
+      promptVersion: "create-my-version-hook-story-library-v4",
       modelName: context.modelName,
-      cacheKey: hashAiInput(["create-my-version-content-intelligence-v3", source.id, parsed.data.spin, context.provenance]),
+      cacheKey: hashAiInput(["create-my-version-hook-story-library-v4", source.id, parsed.data.spin, context.provenance]),
       maxOutputTokens: 1800,
       temperature: 0.35,
       schema: contentDirectionSchema,
@@ -216,6 +217,12 @@ export async function createMyVersionAction(
             "Return a complete direction: objective, audience level, format and reason, aligned text/spoken/visual hooks, progression, proof plan, payoff, CTA, claim flags, and one experiment variable.",
             "suggestedHook and spokenHook should match. Apply the Hook Machine rules. Internally iterate until it is B+ or above. Never use an em-dash.",
             HOOK_MACHINE_SYSTEM_PROMPT,
+            buildHookStoryPromptContext({
+              objective: "trust",
+              format: "talking head",
+              query: `${source.topic ?? ""} ${source.title ?? ""} ${parsed.data.spin}`,
+              proofAvailable: false,
+            }),
             contextToPromptBlock(context),
           ].join("\n\n"),
         },
@@ -402,9 +409,9 @@ export async function generateScriptFromDirectionAction(
       userId: user.id,
       taskType: "script_generation",
       role: "standard",
-      promptVersion: "script-studio-content-intelligence-v3",
+      promptVersion: "script-studio-hook-story-library-v4",
       modelName: context.modelName,
-      cacheKey: hashAiInput(["script-studio-content-intelligence-v3", evaluation.id, direction, userSpin, context.provenance]),
+      cacheKey: hashAiInput(["script-studio-hook-story-library-v4", evaluation.id, direction, userSpin, context.provenance]),
       maxOutputTokens: 2600,
       temperature: 0.5,
       schema: scriptPackageSchema,
@@ -418,6 +425,13 @@ export async function generateScriptFromDirectionAction(
             "Do not invent achievements, experiences, or proof. Use an explicit bracketed placeholder when proof is missing.",
             "Keep packaging in the same result. Hashtags and search terms must be relevant, not spammy.",
             "Return the opening visual, planned rehooks, proof beats, fulfilled payoff, primary CTA, and a 14-part quality-gate summary. Use Verify if any factual or personal claim still needs evidence.",
+            HOOK_MACHINE_SYSTEM_PROMPT,
+            buildHookStoryPromptContext({
+              objective: direction.objective,
+              format: direction.suggestedFormat,
+              query: `${direction.topic} ${direction.coreArgument}`,
+              proofAvailable: direction.relevantProof.length > 0 || direction.proofPlan.length > 0,
+            }),
             contextToPromptBlock(context),
           ].join("\n\n"),
         },

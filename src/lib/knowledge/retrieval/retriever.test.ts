@@ -26,10 +26,16 @@ describe("PostgresKnowledgeRetriever", () => {
     ];
     const chunks = [
       {
+        id: "chunk-0",
+        document_id: "doc-1",
+        content: "General introduction with no task-specific language.",
+        chunk_index: 0,
+      },
+      {
         id: "chunk-1",
         document_id: "doc-1",
         content: "Contrarian hooks create tension for CS students.",
-        chunk_index: 0,
+        chunk_index: 1,
       },
     ];
 
@@ -61,6 +67,7 @@ describe("PostgresKnowledgeRetriever", () => {
     });
 
     expect(results[0]?.title).toBe("Hook Frameworks");
+    expect(results[0]?.chunkId).toBe("chunk-1");
     expect(results[0]?.provenance.sourceTitle).toBe("Hook Frameworks");
     expect(results[0]?.score).toBeGreaterThan(0);
   });
