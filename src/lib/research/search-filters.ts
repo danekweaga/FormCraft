@@ -14,6 +14,28 @@ export type NormalizedSearchFilters = {
 
 const ALLOWED: ResearchPlatform[] = ["youtube", "instagram", "tiktok", "other"];
 
+const QUERY_STOPWORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "your",
+  "this",
+  "that",
+  "into",
+  "about",
+]);
+
+/** TikTok search ranks better on 1–3 keywords than a long niche sentence. */
+export function compactDiscoveryQuery(query: string, maxTerms = 3): string {
+  const terms = query
+    .toLowerCase()
+    .split(/\W+/)
+    .filter((t) => t.length >= 2 && !QUERY_STOPWORDS.has(t));
+  return (terms.slice(0, maxTerms).join(" ") || query.trim()).slice(0, 80);
+}
+
 /**
  * Default platforms for discovery: all configured searchable sources.
  * YouTube is included when YOUTUBE_DATA_API_KEY is present (users can uncheck).
@@ -75,7 +97,7 @@ export function normalizeSearchFilters(input: {
   const lookbackDays = clampInt(input.lookbackDays, 1, 90, 30);
   const minViews = clampInt(input.minViews, 0, 10_000_000, 0);
   const minOutlierScore = clampFloat(input.minOutlierScore, 0, 50, 0);
-  const maxResults = clampInt(input.maxResults, 1, 50, 25);
+  const maxResults = clampInt(input.maxResults, 1, 50, 50);
   const language =
     typeof input.language === "string" && input.language.trim()
       ? input.language.trim().slice(0, 16)

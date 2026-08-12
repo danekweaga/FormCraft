@@ -55,10 +55,14 @@ export async function searchYoutubeResearch(params: {
   // Niche discovery targets short-form; without this, long uploads dominate
   // and then get dropped by the short-form filter → empty results.
   searchUrl.searchParams.set("videoDuration", "short");
-  searchUrl.searchParams.set("order", "viewCount");
+  // Relevance, not raw viewCount — viewCount+short was returning junk spam.
+  searchUrl.searchParams.set("order", "relevance");
   searchUrl.searchParams.set("q", params.query);
   searchUrl.searchParams.set("publishedAfter", publishedAfter);
-  searchUrl.searchParams.set("maxResults", String(params.maxResults));
+  searchUrl.searchParams.set(
+    "maxResults",
+    String(Math.min(50, Math.max(1, params.maxResults))),
+  );
 
   const search = await youtubeGet<{
     items?: Array<{

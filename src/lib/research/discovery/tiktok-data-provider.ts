@@ -1,3 +1,4 @@
+import { compactDiscoveryQuery } from "../search-filters";
 import type {
   ContentDiscoveryProvider,
   CreatorPostsInput,
@@ -278,16 +279,19 @@ export const tiktokDataDiscoveryProvider: ContentDiscoveryProvider = {
     if (input.platforms && !input.platforms.includes("tiktok")) return [];
 
     const retrievedAt = new Date().toISOString();
-    const count = String(Math.min(30, Math.max(1, input.maxResults ?? 20)));
+    const count = String(Math.min(30, Math.max(1, input.maxResults ?? 30)));
     const maxResults = input.maxResults ?? 25;
     const minViews = input.minViews ?? 0;
     const lookbackMs = (input.lookbackDays ?? 30) * 86_400_000;
     const cutoff = Date.now() - lookbackMs;
-    const q = input.query.trim();
+    const q = compactDiscoveryQuery(input.query);
 
     // Few attempts: Hobby timeouts kill long fallback chains. Continue when the
     // first non-empty search is all older than lookback (common for keyword rank).
-    const attempts = [
+    const attempts: Array<{
+      path: string;
+      params: Record<string, string>;
+    }> = [
       { path: "/search/videos", params: { keyword: q, count } },
       { path: "/search/video", params: { keyword: q, count } },
       { path: "/feed/trending", params: { region: "US", count } },

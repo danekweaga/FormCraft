@@ -34,7 +34,7 @@ export const youtubeDiscoveryProvider: ContentDiscoveryProvider = {
     const posts = await searchYoutubeResearch({
       query: input.query,
       lookbackDays: input.lookbackDays ?? 30,
-      maxResults: input.maxResults ?? 25,
+      maxResults: input.maxResults ?? 50,
     });
     return posts
       .filter((p) => (p.views ?? 0) >= (input.minViews ?? 0))

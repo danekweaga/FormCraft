@@ -223,7 +223,7 @@ export async function runResearchScan(params: {
             >,
             lookbackDays: scan.lookback_days,
             maxResults,
-            minViews: scan.min_views,
+            minViews: 0,
           });
           return { provider, posts };
         }),
@@ -273,8 +273,8 @@ export async function runResearchScan(params: {
       posts: eligiblePosts,
       query: scan.query,
       researchScanId: scan.id,
-      minViews: scan.min_views,
-      minOutlierScore: Number(scan.min_outlier_score),
+      minViews: 0,
+      minOutlierScore: 0,
       retrievedAt,
     });
 

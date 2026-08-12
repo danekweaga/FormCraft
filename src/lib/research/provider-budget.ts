@@ -11,7 +11,7 @@ export function getDiscoveryBudgets(): DiscoveryBudgets {
     dailyCalls: Number(process.env.DISCOVERY_DAILY_CALL_BUDGET ?? "50") || 50,
     monthlyCalls: Number(process.env.DISCOVERY_MONTHLY_CALL_BUDGET ?? "500") || 500,
     maxResultsPerQuery:
-      Number(process.env.DISCOVERY_MAX_RESULTS_PER_QUERY ?? "25") || 25,
+      Number(process.env.DISCOVERY_MAX_RESULTS_PER_QUERY ?? "50") || 50,
     maxTrackedCreators:
       Number(process.env.DISCOVERY_MAX_TRACKED_CREATORS ?? "50") || 50,
     autoDeepAnalysis: process.env.DISCOVERY_AUTO_DEEP_ANALYSIS === "1",

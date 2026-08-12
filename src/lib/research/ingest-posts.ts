@@ -3,7 +3,6 @@ import type { SearchPostResult } from "./discovery/types";
 import { scoreResearchOutliers } from "./outliers";
 import {
   classifyCheapRelevance,
-  classifyCheapRelevanceBatch,
   type CheapRelevanceResult,
 } from "./cheap-relevance";
 import type { ScoredResearchVideo } from "./types";
@@ -67,22 +66,9 @@ export function passesOutlierMinFilter(
   return outlierScore >= minOutlierScore;
 }
 
-/** Keep a platform's posts unless that platform itself has enough lexical hits. */
-export function retainByRelevance<
-  T extends { video: { platform: string }; relevance: { relevant: boolean } },
->(rows: T[]): T[] {
-  const byPlatform = new Map<string, T[]>();
-  for (const row of rows) {
-    const list = byPlatform.get(row.video.platform) ?? [];
-    list.push(row);
-    byPlatform.set(row.video.platform, list);
-  }
-  const kept: T[] = [];
-  for (const platformRows of byPlatform.values()) {
-    const relevant = platformRows.filter((r) => r.relevance.relevant);
-    kept.push(...(relevant.length >= 3 ? relevant : platformRows));
-  }
-  return kept;
+/** Relevance is ranking metadata only — never drop a live pull down to 3 hits. */
+export function retainByRelevance<T>(rows: T[]): T[] {
+  return rows;
 }
 
 export async function ingestScoredPosts(params: {
@@ -104,18 +90,9 @@ export async function ingestScoredPosts(params: {
     return passesOutlierMinFilter(video.outlierScore, minOutlierScore);
   });
 
-  const relevanceById = await classifyCheapRelevanceBatch({
-    supabase: params.supabase,
-    userId: params.userId,
-    query: params.query,
-    items: scored,
-  });
-
   const withRelevance = scored.map((video) => ({
     video,
-    relevance:
-      relevanceById.get(`${video.platform}:${video.externalId}`) ??
-      classifyCheapRelevance(video, params.query),
+    relevance: classifyCheapRelevance(video, params.query),
   }));
   const retained = retainByRelevance(withRelevance);
 

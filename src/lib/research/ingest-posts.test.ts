@@ -18,16 +18,15 @@ describe("passesOutlierMinFilter", () => {
 });
 
 describe("retainByRelevance", () => {
-  it("does not drop TikTok when YouTube already has enough lexical hits", () => {
+  it("keeps the full pull instead of collapsing to three relevant hits", () => {
     const rows = [
       { video: { platform: "youtube", id: "a" }, relevance: { relevant: true } },
       { video: { platform: "youtube", id: "b" }, relevance: { relevant: true } },
       { video: { platform: "youtube", id: "c" }, relevance: { relevant: true } },
+      { video: { platform: "youtube", id: "d" }, relevance: { relevant: false } },
       { video: { platform: "tiktok", id: "t1" }, relevance: { relevant: false } },
       { video: { platform: "tiktok", id: "t2" }, relevance: { relevant: false } },
     ];
-    const kept = retainByRelevance(rows);
-    expect(kept.filter((r) => r.video.platform === "tiktok")).toHaveLength(2);
-    expect(kept.filter((r) => r.video.platform === "youtube")).toHaveLength(3);
+    expect(retainByRelevance(rows)).toHaveLength(6);
   });
 });

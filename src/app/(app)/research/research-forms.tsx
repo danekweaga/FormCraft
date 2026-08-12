@@ -93,14 +93,13 @@ export function ResearchScanForm({
           Platforms
         </legend>
         <p className="text-xs text-secondary">
-          Select a live discovery source. TikTok Login only syncs your own
-          account; public TikTok niche search needs TIKTOK_DATA_API_KEY.
+          Pulls live YouTube Shorts and TikTok. Instagram has no public search
+          API yet — paste a URL under Manual reference.
           {hasYoutube
-            ? " YouTube is available — include it to search Shorts."
-            : null}{" "}
-          Instagram public search is not available via its official API, so use
-          Manual reference for Instagram links.
+            ? " Leave YouTube checked to include Shorts."
+            : ""}
         </p>
+        <input type="hidden" name="maxResults" value="50" />
         <div className="flex flex-wrap gap-4">
           {platforms.map((p) => {
             const isYoutube = p.platform === "youtube";
@@ -192,7 +191,7 @@ export function ResearchScanForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor="min-views">Minimum views</Label>
-          <Input id="min-views" name="minViews" type="number" min="0" defaultValue="100" />
+          <Input id="min-views" name="minViews" type="number" min="0" defaultValue="0" />
         </div>
         <div className="space-y-2">
           <Label htmlFor="outlier-score">Minimum outlier (optional)</Label>
@@ -210,7 +209,7 @@ export function ResearchScanForm({
         </div>
       </div>
       <Button type="submit" disabled={pending || !configured}>
-        {pending ? "Searching public videos…" : "Search public videos"}
+        {pending ? "Pulling YouTube + TikTok…" : "Pull YouTube + TikTok"}
       </Button>
       {!configured ? (
         <p className="text-sm text-secondary">

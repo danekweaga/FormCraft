@@ -1,7 +1,5 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-
-export const maxDuration = 60;
 import { IntelligenceExplanation } from "@/components/intelligence/intelligence-explanation";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +37,8 @@ import {
   WatchlistRefreshForm,
   AddCreatorToWatchlistForm,
 } from "./watchlist-form";
+
+export const maxDuration = 60;
 
 const MODES = [
   { id: "for-you", label: "For You" },
@@ -111,7 +111,7 @@ export default async function ResearchPage({
       .eq("user_id", user.id)
       .eq("hidden", false)
       .order("outlier_score", { ascending: false, nullsFirst: false })
-      .limit(80),
+      .limit(120),
     supabase
       .from("research_scans")
       .select(
@@ -255,13 +255,15 @@ export default async function ResearchPage({
     };
   });
 
-  const forYou = [...enriched].sort(
-    (a, b) => (b.personalScore ?? 0) - (a.personalScore ?? 0),
-  );
-  // Null scores are first-pull / no-baseline — keep them visible so TikTok
-  // (and other) discoveries aren't hidden until a cohort exists.
-  const outliers = enriched.filter(
-    (i) => i.outlier_score == null || i.outlier_score >= 1.5,
+  const forYou = [...enriched].sort((a, b) => {
+    const viewDelta = (b.views ?? 0) - (a.views ?? 0);
+    if (viewDelta !== 0) return viewDelta;
+    const outlierDelta = (b.outlier_score ?? -1) - (a.outlier_score ?? -1);
+    if (outlierDelta !== 0) return outlierDelta;
+    return (b.personalScore ?? 0) - (a.personalScore ?? 0);
+  });
+  const outliers = [...enriched].sort(
+    (a, b) => (b.outlier_score ?? -1) - (a.outlier_score ?? -1),
   );
   const watchlistCreatorIds = new Set(
     (watchlistMembers ?? [])
@@ -318,7 +320,7 @@ export default async function ResearchPage({
     <div>
       <PageHeader
         title="Research"
-        description="Niche discovery and watchlists. Outlier scores are creator-relative when possible — never fake viral trends."
+        description="Live pull from YouTube + TikTok. Instagram comes later (paste a URL). Outlier scores are relative, not fake trends."
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
@@ -345,13 +347,36 @@ export default async function ResearchPage({
       </div>
 
       <p className="mb-6 text-xs text-secondary">
-        Searchable now: {platformLine(platforms)}. Official TikTok Login Kit
-        cannot niche-search
-        {tiktokConfigured
-          ? "; TikTok results use TikTokAPI.store (third-party)."
-          : "; add TIKTOK_DATA_API_KEY for TikTok discovery."}{" "}
-        Instagram niche search remains manual URL save.
+        Live sources: {platformLine(platforms)}. Instagram is not searchable yet
+        — save a public URL on Discover.
       </p>
+
+      {isFeedMode && enriched.length < 8 ? (
+        <div className="mb-6 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm">
+          <p className="font-semibold text-on-background">
+            Only {enriched.length} video{enriched.length === 1 ? "" : "s"} in
+            your feed.
+          </p>
+          <p className="mt-1 text-secondary">
+            Pull YouTube + TikTok for your niche. Old scans kept 3 “relevant”
+            hits and threw the rest away.
+          </p>
+          <Button asChild size="sm" className="mt-3">
+            <Link
+              href={`/research?mode=discover&q=${encodeURIComponent(
+                (
+                  nicheProfile?.main_niche ||
+                  primaryAuto?.query ||
+                  params.q ||
+                  ""
+                ).toString(),
+              )}`}
+            >
+              Pull YouTube + TikTok
+            </Link>
+          </Button>
+        </div>
+      ) : null}
 
       {(mode === "discover" || mode === "watchlists") &&
       (creators?.length ?? 0) < CREATOR_CATALOG.length ? (

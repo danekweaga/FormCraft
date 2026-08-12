@@ -10,8 +10,6 @@ import { normalizeSearchFilters } from "@/lib/research/search-filters";
 import type { ResearchPlatform, ScoredResearchVideo } from "@/lib/research/types";
 import { createClient } from "@/lib/supabase/server";
 
-export const maxDuration = 60;
-
 export type ResearchActionState = {
   error?: string;
   success?: string;
@@ -46,7 +44,7 @@ export async function runResearchScanAction(
     lookbackDays: formData.get("lookbackDays"),
     minViews: formData.get("minViews"),
     minOutlierScore: formData.get("minOutlierScore"),
-    maxResults: formData.get("maxResults") ?? 25,
+    maxResults: formData.get("maxResults") ?? 50,
     allowedPlatforms: allowed.length ? allowed : ["youtube"],
     creatorIds: formData.getAll("creatorIds"),
     channelHandles: formData.get("channelHandles"),

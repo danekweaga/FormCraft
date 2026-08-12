@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  compactDiscoveryQuery,
   defaultDiscoveryPlatforms,
   normalizeSearchFilters,
 } from "./search-filters";
@@ -51,6 +52,13 @@ describe("normalizeSearchFilters", () => {
       allowedPlatforms: ["tiktok"],
     });
     expect(filters.minOutlierScore).toBe(0);
+    expect(filters.maxResults).toBe(50);
+  });
+
+  it("compacts long niche sentences for TikTok search", () => {
+    expect(compactDiscoveryQuery("AI for CS students internships")).toBe(
+      "ai cs students",
+    );
   });
 
   it("parses channel handles and creator ids", () => {
