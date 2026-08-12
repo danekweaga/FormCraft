@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -85,14 +85,18 @@ export function CreatorSuggestionsPanel({
     findSimilarCreatorsAction,
     initial,
   );
-  const activePlatforms = new Set(
-    state.selectedPlatforms?.length
-      ? state.selectedPlatforms
-      : availablePlatforms,
-  );
+  const [selectedPlatforms, setSelectedPlatforms] = useState(availablePlatforms);
+  const activePlatforms = new Set(selectedPlatforms);
   const visibleSuggestions = suggestions.filter((suggestion) =>
     activePlatforms.has(suggestion.platform),
   );
+  const togglePlatform = (platform: string, checked: boolean) => {
+    setSelectedPlatforms((current) =>
+      checked
+        ? Array.from(new Set([...current, platform]))
+        : current.filter((entry) => entry !== platform),
+    );
+  };
 
   if (watchlists.length === 0) return null;
 
@@ -132,7 +136,7 @@ export function CreatorSuggestionsPanel({
             <Button
               type="submit"
               size="sm"
-              disabled={pending || availablePlatforms.length === 0}
+              disabled={pending || selectedPlatforms.length === 0}
             >
               {pending ? "Ranking creators…" : "Find similar creators"}
             </Button>
@@ -151,7 +155,10 @@ export function CreatorSuggestionsPanel({
                     type="checkbox"
                     name="platforms"
                     value={platform}
-                    defaultChecked
+                    checked={selectedPlatforms.includes(platform)}
+                    onChange={(event) =>
+                      togglePlatform(platform, event.currentTarget.checked)
+                    }
                     className="size-3.5 accent-primary"
                   />
                   <span className="capitalize">{platform}</span>
@@ -178,6 +185,12 @@ export function CreatorSuggestionsPanel({
         {availablePlatforms.length === 0 ? (
           <p className="text-xs text-error">
             Add creators and pull their posts before asking for similar accounts.
+          </p>
+        ) : null}
+        {availablePlatforms.length > 0 && visibleSuggestions.length === 0 ? (
+          <p className="text-xs text-secondary">
+            No saved suggestions match {selectedPlatforms.join(" + ") || "the selected platforms"} yet.
+            Refresh those watchlist creators or use the optional live-provider search.
           </p>
         ) : null}
       </div>

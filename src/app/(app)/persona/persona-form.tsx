@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,8 @@ type PersonaValues = {
   my_audience: string;
   content_style: string;
   script_style: string;
+  social_bio: string;
+  content_pillars: string;
 };
 
 const fields: Array<{
@@ -58,11 +60,87 @@ const fields: Array<{
   },
 ];
 
-export function PersonaForm({ values }: { values: PersonaValues }) {
+export function PersonaForm({
+  values,
+  suggestedBio,
+}: {
+  values: PersonaValues;
+  suggestedBio: string | null;
+}) {
   const [state, action, pending] = useActionState(saveCreatorProfile, initialState);
+  const [socialBio, setSocialBio] = useState(values.social_bio);
 
   return (
     <form action={action} className="space-y-5">
+      <section className="overflow-hidden rounded-xl border border-primary-container/30 bg-surface-primary paper-shadow">
+        <div className="border-b border-outline-variant/15 px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-headline text-lg font-semibold text-on-background">
+                Public profile direction
+              </h2>
+              <p className="mt-1 text-sm text-secondary">
+                Save your current bio and intended pillars. FormCraft audits
+                them, but never edits Instagram automatically.
+              </p>
+            </div>
+            <Badge variant="primary">Positioning</Badge>
+          </div>
+        </div>
+        <div className="grid gap-5 p-5 lg:grid-cols-2">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="social_bio">Current or proposed social bio</Label>
+              <span className="text-xs text-secondary">{socialBio.length}/150</span>
+            </div>
+            <Textarea
+              id="social_bio"
+              name="social_bio"
+              rows={5}
+              value={socialBio}
+              onChange={(event) => setSocialBio(event.currentTarget.value)}
+              maxLength={150}
+              placeholder="What should someone immediately understand about following you?"
+            />
+            {suggestedBio ? (
+              <div className="rounded-lg bg-surface-container-lowest p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-secondary">
+                  Strategy-based draft
+                </p>
+                <p className="mt-2 whitespace-pre-line text-sm text-on-background">
+                  {suggestedBio}
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={() => setSocialBio(suggestedBio)}
+                >
+                  Use this draft
+                </Button>
+              </div>
+            ) : null}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="content_pillars">Content pillars</Label>
+            <Textarea
+              id="content_pillars"
+              name="content_pillars"
+              rows={5}
+              defaultValue={values.content_pillars}
+              maxLength={500}
+              required
+              placeholder="Portfolio projects, AI for students, internships, honest CS student life"
+            />
+            <p className="text-xs leading-relaxed text-secondary">
+              Separate 2–8 pillars with commas or new lines. The audit checks
+              recent posts against these pillars.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {fields.map((field) => (
         <section
           key={field.key}

@@ -144,7 +144,9 @@ export async function buildFormCraftContext(
   // above inferred performance patterns but below the current entity.
   const { data: creatorProfile } = await supabase
     .from("profiles")
-    .select("what_i_make, my_audience, content_style, script_style")
+    .select(
+      "what_i_make, my_audience, content_style, script_style, social_bio, content_pillars",
+    )
     .eq("id", input.userId)
     .maybeSingle();
 
@@ -152,6 +154,12 @@ export async function buildFormCraftContext(
     const profileText = [
       creatorProfile.what_i_make ? `What I make:\n${creatorProfile.what_i_make}` : null,
       creatorProfile.my_audience ? `My audience:\n${creatorProfile.my_audience}` : null,
+      creatorProfile.social_bio
+        ? `Saved social bio reference (do not claim it is already published):\n${creatorProfile.social_bio}`
+        : null,
+      creatorProfile.content_pillars?.length
+        ? `Creator-approved content pillars:\n${creatorProfile.content_pillars.join("\n")}`
+        : null,
       creatorProfile.content_style ? `My content style:\n${creatorProfile.content_style}` : null,
       creatorProfile.script_style ? `My script style:\n${creatorProfile.script_style}` : null,
     ]

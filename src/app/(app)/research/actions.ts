@@ -663,6 +663,12 @@ export async function findSimilarCreatorsAction(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "You must be signed in." };
+  console.info("[creator-suggestions] request", {
+    userId: user.id,
+    watchlistId,
+    selectedPlatforms,
+    refreshProviders,
+  });
 
   const {
     getWatchlistRecommendationSeed,
