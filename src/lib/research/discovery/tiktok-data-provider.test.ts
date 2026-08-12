@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  isPublicTiktokVideoUrl,
   normalizeTiktokDurationSeconds,
   normalizeTiktokVideo,
+  resolveTiktokPublicVideo,
   tiktokDataDiscoveryProvider,
 } from "./tiktok-data-provider";
 
@@ -77,6 +79,75 @@ describe("normalizeTiktokVideo", () => {
     );
     expect(post?.externalId).toBe("7636532436318407949");
     expect(post?.views).toBe(17_277);
+  });
+
+  it("prefers the public video id over a provider-internal aweme id", () => {
+    const post = normalizeTiktokVideo(
+      {
+        aweme_id: "v1c044g50000providerinternalid",
+        video_id: "7636532436318407949",
+        desc: "public URL test",
+        author: { unique_id: "creator" },
+      },
+      "2026-08-12T12:00:00.000Z",
+    );
+
+    expect(post?.externalId).toBe("7636532436318407949");
+    expect(post?.externalUrl).toBe(
+      "https://www.tiktok.com/@creator/video/7636532436318407949",
+    );
+  });
+
+  it("recognizes only public numeric TikTok post URLs", () => {
+    expect(
+      isPublicTiktokVideoUrl(
+        "https://www.tiktok.com/@creator/video/7636532436318407949",
+      ),
+    ).toBe(true);
+    expect(
+      isPublicTiktokVideoUrl(
+        "https://www.tiktok.com/@creator/video/v1c044g50000providerinternalid",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("resolveTiktokPublicVideo", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("repairs an internal aweme id using an exact public search result", async () => {
+    vi.stubEnv("TIKTOK_DATA_API_KEY", "test-key");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              videos: [
+                {
+                  aweme_id: "v1c044g50000providerinternalid",
+                  video_id: "7636532436318407949",
+                  title: "The exact spoken video",
+                  author: { unique_id: "creator" },
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const repaired = await resolveTiktokPublicVideo({
+      title: "The exact spoken video",
+      creatorName: "creator",
+    });
+    expect(repaired?.externalUrl).toBe(
+      "https://www.tiktok.com/@creator/video/7636532436318407949",
+    );
   });
 });
 

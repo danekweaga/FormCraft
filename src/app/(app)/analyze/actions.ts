@@ -19,6 +19,10 @@ import {
 import { normalizeTranscriptText } from "@/lib/analyze/transcription/types";
 import { getDefaultTranscriptionProvider } from "@/lib/analyze/transcription/whisper-provider";
 import { getAnalyzeLimits } from "@/lib/analyze/limits";
+import {
+  isPublicTiktokVideoUrl,
+  resolveTiktokPublicVideo,
+} from "@/lib/research/discovery/tiktok-data-provider";
 import { createClient } from "@/lib/supabase/server";
 
 export type AnalyzeActionState = {
@@ -641,7 +645,7 @@ export async function breakDownResearchItemAction(
   const { data: item } = await auth.supabase
     .from("research_items")
     .select(
-      "id, title, description, platform, external_id, external_url, hook_text, outlier_score, transcript, transcript_provider, transcript_language, transcript_segments",
+      "id, title, description, platform, external_id, external_url, creator_name, hook_text, outlier_score, transcript, transcript_provider, transcript_language, transcript_segments",
     )
     .eq("id", researchItemId)
     .eq("user_id", auth.user.id)
@@ -669,9 +673,45 @@ export async function breakDownResearchItemAction(
     | "social_url"
     | "formcraft_source" =
     previous?.input_type === "youtube_url" ? "youtube_url" : "formcraft_source";
+  let transcriptFailure: { reason: string; suggestion: string } | null = null;
 
-  if (!transcript && item.external_url) {
-    const ingested = await ingestPublicVideoUrl(item.external_url);
+  let sourceUrl = item.external_url;
+  if (
+    !transcript &&
+    item.platform === "tiktok" &&
+    !isPublicTiktokVideoUrl(sourceUrl)
+  ) {
+    try {
+      const repaired = await resolveTiktokPublicVideo({
+        title: item.title,
+        creatorName: item.creator_name,
+      });
+      if (repaired) {
+        sourceUrl = repaired.externalUrl;
+        await auth.supabase
+          .from("research_items")
+          .update({ external_url: sourceUrl })
+          .eq("id", item.id)
+          .eq("user_id", auth.user.id);
+      } else {
+        transcriptFailure = {
+          reason: "The saved TikTok link used a provider-internal ID and could not be repaired automatically.",
+          suggestion: "Refresh TikTok discovery, then analyze the newly imported result.",
+        };
+      }
+    } catch (error) {
+      transcriptFailure = {
+        reason:
+          error instanceof Error
+            ? error.message
+            : "TikTok link repair failed.",
+        suggestion: "Refresh TikTok discovery and retry.",
+      };
+    }
+  }
+
+  if (!transcript && sourceUrl && !transcriptFailure) {
+    const ingested = await ingestPublicVideoUrl(sourceUrl);
     if (ingested.ok) {
       transcript = ingested.transcript;
       provider = ingested.transcriptProvider;
@@ -697,13 +737,24 @@ export async function breakDownResearchItemAction(
         billableRequests: ingested.billableRequests,
         source: "research_breakdown",
       });
+    } else {
+      transcriptFailure = {
+        reason: ingested.reason,
+        suggestion: ingested.suggestion,
+      };
+      console.warn("[research:transcript] retrieval failed", {
+        researchItemId: item.id,
+        platform: item.platform,
+        reason: ingested.reason,
+      });
     }
   }
 
   if (transcript.length < 20) {
     return {
-      error:
-        "A spoken transcript could not be retrieved from this public link. Paste or upload the transcript in Analyze. FormCraft will not use the title or caption as the spoken hook.",
+      error: transcriptFailure
+        ? `Transcript unavailable: ${transcriptFailure.reason} ${transcriptFailure.suggestion}`
+        : "This video has no saved transcript or public video link. Paste or upload its transcript in Analyze. FormCraft will not use the title or caption as the spoken hook.",
     };
   }
 
@@ -715,13 +766,12 @@ export async function breakDownResearchItemAction(
     sourceType: "external_research",
     researchItemId: item.id,
     inputType,
-    sourceUrl: item.external_url,
+    sourceUrl,
     transcriptProvider: provider,
     transcriptLanguage: language,
     timestampedTranscript,
     hasAudioEvidence: true,
   });
-  if (result.analysisId) redirect(`/analyze/${result.analysisId}`);
   return result;
 }
 

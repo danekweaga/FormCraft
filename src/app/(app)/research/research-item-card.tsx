@@ -2,12 +2,12 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { outlierLabelDisplay } from "@/lib/research/outliers";
 import type { OutlierLabel } from "@/lib/research/outliers";
 import {
-  analyzeResearchItemAction,
   addResearchItemToCanvasAction,
   generateHookMachineAction,
   generateIdeasFromResearchAction,
@@ -101,6 +101,7 @@ export function ResearchItemCard({
   item: ResearchCardItem;
   watchlists?: Array<{ id: string; name: string }>;
 }) {
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [showMore, setShowMore] = useState(false);
   const [thumbIndex, setThumbIndex] = useState(0);
@@ -386,37 +387,18 @@ export function ResearchItemCard({
                 onClick={() =>
                   start(async () => {
                     setActionMessage(null);
-                    const result = await analyzeResearchItemAction(
-                      (() => {
-                        const fd = new FormData();
-                        fd.set("id", item.id);
-                        return fd;
-                      })(),
-                    );
-                    setActionMessage({
-                      kind: result.error ? "error" : "success",
-                      text: result.error ?? result.success ?? "Analysis complete.",
-                    });
-                  })
-                }
-              >
-                Analyze
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={pending}
-                onClick={() =>
-                  start(async () => {
-                    setActionMessage(null);
                     const result = await breakDownResearchItemAction(item.id);
-                    if (result?.error) {
+                    if (result.error) {
                       setActionMessage({ kind: "error", text: result.error });
+                      return;
+                    }
+                    if (result.analysisId) {
+                      router.push(`/analyze/${result.analysisId}`);
                     }
                   })
                 }
               >
-                Break Down
+                {pending ? "Getting transcript..." : "Analyze transcript"}
               </Button>
               <form action={saveEditingPatternFromAnalysisAction}>
                 <input type="hidden" name="researchItemId" value={item.id} />

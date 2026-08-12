@@ -13,6 +13,19 @@ export function isTiktokDataApiConfigured(): boolean {
   return Boolean(process.env.TIKTOK_DATA_API_KEY?.trim());
 }
 
+export function isPublicTiktokVideoUrl(sourceUrl: string | null): boolean {
+  if (!sourceUrl) return false;
+  try {
+    const url = new URL(sourceUrl);
+    return (
+      (url.hostname === "tiktok.com" || url.hostname.endsWith(".tiktok.com")) &&
+      /\/video\/\d{15,24}(?:\/|$)/.test(url.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 function apiKey(): string {
   const key = process.env.TIKTOK_DATA_API_KEY?.trim();
   if (!key) throw new Error("TIKTOK_DATA_API_KEY is not configured.");
@@ -170,13 +183,20 @@ export function normalizeTiktokVideo(
     {};
   const video = pickRecord(item.video) ?? {};
 
+  // TikTokAPI.store can expose a provider-internal `id` alongside the real
+  // numeric TikTok post id. Prefer the public post identifiers so links remain
+  // usable by browsers and transcript providers such as Supadata.
+  const idCandidates = [
+    asString(item.video_id),
+    asString(item.videoId),
+    asString(item.aweme_id),
+    asString(wrapped.aweme_id),
+    asString(video.id),
+    asString(item.id),
+  ].filter((candidate): candidate is string => Boolean(candidate));
   const id =
-    asString(item.id) ??
-    asString(item.aweme_id) ??
-    asString(item.video_id) ??
-    asString(item.videoId) ??
-    asString(video.id) ??
-    asString(wrapped.aweme_id);
+    idCandidates.find((candidate) => /^\d{15,24}$/.test(candidate)) ??
+    idCandidates[0];
   if (!id) return null;
 
   const handle =
@@ -268,6 +288,48 @@ export function normalizeTiktokVideo(
       asNumber(author.followerCount) ??
       null,
   };
+}
+
+function normalizeMatchText(value: string | null | undefined): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * Repair older TikTok research rows that stored TikTokAPI.store's internal
+ * aweme id instead of the public video_id. Only exact title matches are used;
+ * creator identity breaks ties so FormCraft never transcribes a fuzzy match.
+ */
+export async function resolveTiktokPublicVideo(input: {
+  title: string | null;
+  creatorName: string | null;
+}): Promise<SearchPostResult | null> {
+  if (!isTiktokDataApiConfigured() || !input.title?.trim()) return null;
+
+  const body = await tiktokGet("/search/video", {
+    search_term: input.title.trim().slice(0, 120),
+    count: "20",
+  });
+  const retrievedAt = new Date().toISOString();
+  const candidates = extractList(body)
+    .map((raw) => normalizeTiktokVideo(raw, retrievedAt))
+    .filter((post): post is SearchPostResult => Boolean(post))
+    .filter((post) => isPublicTiktokVideoUrl(post.externalUrl));
+  const targetTitle = normalizeMatchText(input.title);
+  const targetCreator = normalizeMatchText(input.creatorName);
+  const exactTitle = candidates.filter(
+    (post) => normalizeMatchText(post.title) === targetTitle,
+  );
+  if (exactTitle.length === 1) return exactTitle[0]!;
+  if (targetCreator) {
+    const exactCreator = exactTitle.filter(
+      (post) => normalizeMatchText(post.creatorName) === targetCreator,
+    );
+    if (exactCreator.length === 1) return exactCreator[0]!;
+  }
+  return null;
 }
 
 export const tiktokDataDiscoveryProvider: ContentDiscoveryProvider = {

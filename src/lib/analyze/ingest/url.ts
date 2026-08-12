@@ -80,6 +80,33 @@ export async function ingestPublicVideoUrl(
     };
   }
 
+  // YouTube captions are frequently available without a paid transcription
+  // request. Use that path first and reserve Supadata credits for videos that
+  // need generated speech-to-text (especially TikTok and Instagram).
+  if (platform === "youtube") {
+    const videoId = extractYouTubeId(trimmed);
+    const transcript = videoId
+      ? await fetchYouTubeTranscript(videoId)
+      : null;
+    if (transcript) {
+      return {
+        ok: true,
+        platform,
+        videoId,
+        transcript,
+        rawTranscript: transcript,
+        transcriptProvider: "youtube_captions",
+        transcriptLanguage: null,
+        timestampedTranscript: [],
+        billableRequests: 0,
+        thumbnailUrl: videoId
+          ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+          : null,
+        sourceUrl: trimmed,
+      };
+    }
+  }
+
   if (isSupadataConfigured()) {
     try {
       const transcript = await fetchSupadataTranscript(trimmed);
@@ -112,31 +139,8 @@ export async function ingestPublicVideoUrl(
           suggestion: platformSuggestion(platform),
         };
       }
-      // Preserve the free YouTube caption path if Supadata is temporarily down.
-    }
-  }
-
-  if (platform === "youtube") {
-    const videoId = extractYouTubeId(trimmed);
-    const transcript = videoId
-      ? await fetchYouTubeTranscript(videoId)
-      : null;
-    if (transcript) {
-      return {
-        ok: true,
-        platform,
-        videoId,
-        transcript,
-        rawTranscript: transcript,
-        transcriptProvider: "youtube_captions",
-        transcriptLanguage: null,
-        timestampedTranscript: [],
-        billableRequests: 0,
-        thumbnailUrl: videoId
-          ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
-          : null,
-        sourceUrl: trimmed,
-      };
+      // The final response below explains that neither captions nor Supadata
+      // produced usable spoken evidence.
     }
   }
 
