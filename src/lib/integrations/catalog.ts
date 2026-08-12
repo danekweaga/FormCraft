@@ -1,6 +1,7 @@
 import { isLlmConfigured } from "@/lib/ai/models/router";
 import { isSupadataConfigured } from "@/lib/analyze/transcription/supadata-provider";
 import { openAlexProvider } from "@/lib/psychology/providers/openalex";
+import { getMetaInstagramDiscoveryStatus } from "@/lib/research/discovery/meta-instagram-provider";
 import { isScrapeCreatorsConfigured } from "@/lib/research/discovery/scrapecreators-client";
 import { isTiktokDataApiConfigured } from "@/lib/research/discovery/tiktok-data-provider";
 import { isYoutubeDiscoveryConfigured } from "@/lib/research/discovery/youtube-provider";
@@ -25,6 +26,7 @@ function envOn(name: string): boolean {
 
 export function listAppIntegrations(): AppIntegration[] {
   const scrapeOn = isScrapeCreatorsConfigured();
+  const metaInstagramDiscovery = getMetaInstagramDiscoveryStatus();
   const youtubeSearchOn = isYoutubeDiscoveryConfigured();
   const tiktokStoreOn = isTiktokDataApiConfigured();
   const openrouterOn = isLlmConfigured();
@@ -45,6 +47,26 @@ export function listAppIntegrations(): AppIntegration[] {
       detail: supabaseOn ? "Project URL is set." : "Add NEXT_PUBLIC_SUPABASE_URL.",
     },
     {
+      id: "meta-instagram-discovery",
+      name: "Instagram Business Discovery",
+      category: "research",
+      purpose:
+        "Official Meta pull for recent Reels from public professional accounts in your watchlists.",
+      envVars: [
+        "META_BUSINESS_DISCOVERY_ACCESS_TOKEN",
+        "META_BUSINESS_DISCOVERY_IG_USER_ID",
+        "META_BUSINESS_DISCOVERY_TOKEN_EXPIRES_AT",
+      ],
+      docsUrl:
+        "https://developers.facebook.com/documentation/instagram-platform/instagram-graph-api/reference/ig-user/business_discovery",
+      status: metaInstagramDiscovery.configured ? "connected" : "optional",
+      detail: metaInstagramDiscovery.configured
+        ? metaInstagramDiscovery.expired
+          ? "The saved Meta token has expired. Generate and save a new long-lived token."
+          : `Official Instagram watchlist pulls are enabled${metaInstagramDiscovery.expiresAt ? `; token expires ${metaInstagramDiscovery.expiresAt}` : ""}. Public likes and comments are available; competitor Reel views are not exposed by this API.`
+        : "Optional official source for Instagram watchlists. Add the Meta Business Discovery token and connected Instagram user ID.",
+    },
+    {
       id: "scrapecreators",
       name: "ScrapeCreators",
       category: "research",
@@ -54,8 +76,8 @@ export function listAppIntegrations(): AppIntegration[] {
       docsUrl: "https://docs.scrapecreators.com",
       status: scrapeOn ? "connected" : "missing",
       detail: scrapeOn
-        ? "Used for TikTok + Instagram discovery (YouTube stays on the official API when that key is set)."
-        : "Add SCRAPECREATORS_API_KEY to pull TikTok and Instagram.",
+        ? "Used for broad TikTok/Instagram search and as the paid Instagram alternative (YouTube stays on the official API when that key is set)."
+        : "Add SCRAPECREATORS_API_KEY for broad TikTok and Instagram keyword search.",
     },
     {
       id: "youtube-data",

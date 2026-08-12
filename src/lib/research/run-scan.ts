@@ -81,7 +81,7 @@ export async function runResearchScan(params: {
 
   if (!targetCreators && searchProviders.length === 0) {
     throw new Error(
-      "No configured discovery provider supports the selected platforms. Set SCRAPECREATORS_API_KEY (TikTok + Instagram), YOUTUBE_DATA_API_KEY, and/or TIKTOK_DATA_API_KEY, or enable RESEARCH_ENABLE_DEMO.",
+      "No configured discovery provider supports the selected platforms. Set the official platform key, META_BUSINESS_DISCOVERY_ACCESS_TOKEN + META_BUSINESS_DISCOVERY_IG_USER_ID for Instagram watchlists, SCRAPECREATORS_API_KEY for broad TikTok/Instagram search, or enable RESEARCH_ENABLE_DEMO.",
     );
   }
 

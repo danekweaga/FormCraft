@@ -1,4 +1,5 @@
 import { demoDiscoveryProvider } from "./demo-provider";
+import { metaInstagramDiscoveryProvider } from "./meta-instagram-provider";
 import { scrapeCreatorsDiscoveryProvider } from "./scrapecreators-provider";
 import { tiktokDataDiscoveryProvider } from "./tiktok-data-provider";
 import { youtubeDiscoveryProvider } from "./youtube-provider";
@@ -7,6 +8,7 @@ import type { ContentDiscoveryProvider, DiscoveryCapabilities } from "./types";
 export function listDiscoveryProviders(): ContentDiscoveryProvider[] {
   return [
     youtubeDiscoveryProvider,
+    metaInstagramDiscoveryProvider,
     scrapeCreatorsDiscoveryProvider,
     tiktokDataDiscoveryProvider,
     demoDiscoveryProvider,

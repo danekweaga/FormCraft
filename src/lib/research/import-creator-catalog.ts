@@ -72,7 +72,7 @@ export async function importCreatorCatalog(params: {
         trackable
           ? "Rolling 30-day short-form scan enabled."
           : entry.platform === "instagram"
-            ? "Instagram pull needs SCRAPECREATORS_API_KEY."
+            ? "Instagram pull needs Meta Business Discovery or SCRAPECREATORS_API_KEY."
             : "Provider access is not configured."
       }`,
     };

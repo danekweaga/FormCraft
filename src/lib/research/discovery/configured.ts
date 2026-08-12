@@ -1,3 +1,4 @@
+import { isMetaInstagramDiscoveryConfigured } from "./meta-instagram-provider";
 import { isScrapeCreatorsConfigured } from "./scrapecreators-client";
 import { isTiktokDataApiConfigured } from "./tiktok-data-provider";
 import { isYoutubeDiscoveryConfigured } from "./youtube-provider";
@@ -10,7 +11,9 @@ export function canDiscoverPlatform(platform: string): boolean {
     return isScrapeCreatorsConfigured() || isTiktokDataApiConfigured();
   }
   if (platform === "instagram") {
-    return isScrapeCreatorsConfigured();
+    return (
+      isMetaInstagramDiscoveryConfigured() || isScrapeCreatorsConfigured()
+    );
   }
   return false;
 }

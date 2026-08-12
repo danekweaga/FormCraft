@@ -154,8 +154,9 @@ export function AddCreatorToWatchlistForm({
       </Button>
       {!tiktokConfigured && !youtubeConfigured && !instagramConfigured ? (
         <p className="text-xs text-secondary">
-          Set SCRAPECREATORS_API_KEY (TikTok + Instagram) or YOUTUBE_DATA_API_KEY
-          to pull posts.
+          Set Meta Business Discovery (Instagram watchlists),
+          SCRAPECREATORS_API_KEY (TikTok/Instagram), or YOUTUBE_DATA_API_KEY to
+          pull posts.
         </p>
       ) : null}
       {state.error ? <p className="text-sm text-error">{state.error}</p> : null}

@@ -264,7 +264,7 @@ export async function refreshSingleCreatorPosts(params: {
   if (!provider?.getCreatorPosts || !provider.capabilities().getCreatorPosts) {
     throw new Error(
       creator.platform === "instagram"
-        ? "Instagram auto-pull needs SCRAPECREATORS_API_KEY."
+        ? "Instagram auto-pull needs Meta Business Discovery or SCRAPECREATORS_API_KEY."
         : `No post provider configured for ${creator.platform}.`,
     );
   }

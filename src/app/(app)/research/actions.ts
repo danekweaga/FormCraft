@@ -499,7 +499,7 @@ export async function addCreatorToWatchlistAction(
     return {
       error:
         platform === "instagram"
-          ? "Instagram pull needs SCRAPECREATORS_API_KEY."
+          ? "Instagram pull needs Meta Business Discovery or SCRAPECREATORS_API_KEY."
           : platform === "youtube"
             ? "YouTube pull needs YOUTUBE_DATA_API_KEY (or SCRAPECREATORS_API_KEY)."
             : "TikTok pull needs SCRAPECREATORS_API_KEY or TIKTOK_DATA_API_KEY.",
