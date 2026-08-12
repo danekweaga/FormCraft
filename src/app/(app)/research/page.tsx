@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+
+export const maxDuration = 60;
 import { IntelligenceExplanation } from "@/components/intelligence/intelligence-explanation";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";

@@ -10,6 +10,8 @@ import { normalizeSearchFilters } from "@/lib/research/search-filters";
 import type { ResearchPlatform, ScoredResearchVideo } from "@/lib/research/types";
 import { createClient } from "@/lib/supabase/server";
 
+export const maxDuration = 60;
+
 export type ResearchActionState = {
   error?: string;
   success?: string;

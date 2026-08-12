@@ -100,18 +100,36 @@ async function tiktokGetFirst(
   throw lastError ?? new Error("TikTokAPI.store request failed.");
 }
 
+const LIST_KEYS = [
+  "videos",
+  "aweme_list",
+  "item_list",
+  "video_list",
+  "items",
+  "list",
+  "results",
+  "search_item_list",
+] as const;
+
 function extractList(body: Record<string, unknown>): unknown[] {
   if (Array.isArray(body.data)) return body.data;
   const data = pickRecord(body.data);
   if (data) {
-    for (const key of ["videos", "aweme_list", "items", "list", "results"]) {
+    for (const key of LIST_KEYS) {
       const value = data[key];
-      if (Array.isArray(value)) return value;
+      if (Array.isArray(value) && value.length > 0) return value;
+    }
+    const nested = pickRecord(data.data);
+    if (nested) {
+      for (const key of LIST_KEYS) {
+        const value = nested[key];
+        if (Array.isArray(value) && value.length > 0) return value;
+      }
     }
   }
-  for (const key of ["videos", "aweme_list", "items", "list", "results"]) {
+  for (const key of LIST_KEYS) {
     const value = body[key];
-    if (Array.isArray(value)) return value;
+    if (Array.isArray(value) && value.length > 0) return value;
   }
   return [];
 }
@@ -121,8 +139,13 @@ export function normalizeTiktokVideo(
   raw: unknown,
   retrievedAt: string,
 ): SearchPostResult | null {
-  const item = pickRecord(raw);
-  if (!item) return null;
+  const wrapped = pickRecord(raw);
+  if (!wrapped) return null;
+  const item =
+    pickRecord(wrapped.aweme_info) ??
+    pickRecord(wrapped.aweme) ??
+    pickRecord(wrapped.item) ??
+    wrapped;
   const stats =
     pickRecord(item.stats) ??
     pickRecord(item.statistics) ??
@@ -139,7 +162,9 @@ export function normalizeTiktokVideo(
     asString(item.id) ??
     asString(item.aweme_id) ??
     asString(item.video_id) ??
-    asString(item.videoId);
+    asString(item.videoId) ??
+    asString(video.id) ??
+    asString(wrapped.aweme_id);
   if (!id) return null;
 
   const handle =
@@ -206,7 +231,9 @@ export function normalizeTiktokVideo(
       asNumber(stats.playCount) ??
       asNumber(stats.views) ??
       asNumber(item.play_count) ??
-      asNumber(item.views),
+      asNumber(item.playCount) ??
+      asNumber(item.views) ??
+      asNumber(wrapped.play_count),
     likes:
       asNumber(stats.digg_count) ??
       asNumber(stats.diggCount) ??
@@ -252,38 +279,63 @@ export const tiktokDataDiscoveryProvider: ContentDiscoveryProvider = {
 
     const retrievedAt = new Date().toISOString();
     const count = String(Math.min(30, Math.max(1, input.maxResults ?? 20)));
-
-    // TikTokAPI.store documents /search/videos?keyword=… (not query).
-    // Keep legacy param variants, then trending fallbacks. Empty 200s continue.
-    const q = input.query.trim();
-    const { items } = await tiktokGetFirst([
-      { path: "/search/videos", params: { keyword: q, count } },
-      { path: "/search/videos", params: { query: q, count } },
-      { path: "/search/video", params: { keyword: q, count } },
-      { path: "/search/video", params: { search_term: q, count } },
-      { path: "/hashtag/posts", params: { name: q.replace(/^#/, ""), count } },
-      { path: "/hashtag/videos", params: { name: q.replace(/^#/, ""), count } },
-      { path: "/feed/trending", params: { region: "US", count } },
-      { path: "/feed", params: { region: "US", count } },
-    ]);
-
+    const maxResults = input.maxResults ?? 25;
+    const minViews = input.minViews ?? 0;
     const lookbackMs = (input.lookbackDays ?? 30) * 86_400_000;
     const cutoff = Date.now() - lookbackMs;
+    const q = input.query.trim();
 
-    return items
-      .map((raw) => normalizeTiktokVideo(raw, retrievedAt))
-      .filter((post): post is SearchPostResult => Boolean(post))
-      .filter((post) => (post.views ?? 0) >= (input.minViews ?? 0))
-      .filter((post) => {
-        if (!post.publishedAt) return true;
-        const t = new Date(post.publishedAt).getTime();
-        return Number.isFinite(t) ? t >= cutoff : true;
-      })
-      .map((post) => ({
-        ...post,
-        collectionMethod: "third_party_search",
-      }))
-      .slice(0, input.maxResults ?? 25);
+    // Few attempts: Hobby timeouts kill long fallback chains. Continue when the
+    // first non-empty search is all older than lookback (common for keyword rank).
+    const attempts = [
+      { path: "/search/videos", params: { keyword: q, count } },
+      { path: "/search/video", params: { keyword: q, count } },
+      { path: "/feed/trending", params: { region: "US", count } },
+    ];
+
+    let lastUsable: SearchPostResult[] = [];
+    let lastError: Error | null = null;
+    for (const attempt of attempts) {
+      try {
+        const body = await tiktokGet(attempt.path, attempt.params);
+        const items = extractList(body);
+        if (items.length === 0) {
+          lastError = new Error(`Empty response from ${attempt.path}`);
+          continue;
+        }
+        const posts = items
+          .map((raw) => normalizeTiktokVideo(raw, retrievedAt))
+          .filter((post): post is SearchPostResult => Boolean(post))
+          .filter((post) => post.views == null || post.views >= minViews)
+          .map((post) => ({
+            ...post,
+            collectionMethod: "third_party_search" as const,
+          }));
+        if (posts.length === 0) {
+          lastError = new Error(`Unusable payload from ${attempt.path}`);
+          continue;
+        }
+        lastUsable = posts;
+        const recent = posts.filter((post) => {
+          if (!post.publishedAt) return true;
+          const t = new Date(post.publishedAt).getTime();
+          return Number.isFinite(t) ? t >= cutoff : true;
+        });
+        if (recent.length > 0) {
+          console.info("[tiktokapi_store] using endpoint", {
+            path: attempt.path,
+            count: recent.length,
+          });
+          return recent.slice(0, maxResults);
+        }
+        lastError = new Error(`No recent posts from ${attempt.path}`);
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+      }
+    }
+
+    if (lastUsable.length > 0) return lastUsable.slice(0, maxResults);
+    throw lastError ?? new Error("TikTokAPI.store request failed.");
   },
 
   async getCreatorPosts(input: CreatorPostsInput): Promise<SearchPostResult[]> {

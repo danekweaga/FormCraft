@@ -24,12 +24,15 @@ export function isRecentShortForm(
 ): boolean {
   const now = options.now ?? Date.now();
   const lookbackDays = options.lookbackDays ?? DEFAULT_DISCOVERY_LOOKBACK_DAYS;
+  // TikTok keyword search often ranks older viral hits; keep a 90-day window.
+  const effectiveLookback =
+    post.platform === "tiktok" ? Math.max(lookbackDays, 90) : lookbackDays;
 
   if (post.publishedAt) {
     const published = new Date(post.publishedAt).getTime();
     if (!Number.isFinite(published)) return false;
     if (
-      published < now - lookbackDays * 86_400_000 ||
+      published < now - effectiveLookback * 86_400_000 ||
       published > now + 3_600_000
     ) {
       return false;

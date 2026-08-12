@@ -47,6 +47,21 @@ describe("normalizeTiktokVideo", () => {
       ),
     ).toBeNull();
   });
+
+  it("maps mint-style payloads with top-level play_count and aweme_id", () => {
+    const post = normalizeTiktokVideo(
+      {
+        aweme_id: "7636532436318407949",
+        title: "good eatin",
+        play_count: 17_277,
+        create_time: Math.floor(Date.now() / 1000) - 86_400,
+        author: { unique_id: "chef", nickname: "Chef" },
+      },
+      new Date().toISOString(),
+    );
+    expect(post?.externalId).toBe("7636532436318407949");
+    expect(post?.views).toBe(17_277);
+  });
 });
 
 describe("tiktokDataDiscoveryProvider", () => {
@@ -174,6 +189,61 @@ describe("tiktokDataDiscoveryProvider", () => {
     });
 
     expect(results.map((r) => r.externalId)).toEqual(["from-trend"]);
+  });
+
+  it("skips old keyword hits and uses trending instead", async () => {
+    vi.stubEnv("TIKTOK_DATA_API_KEY", "test-key");
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const oldCreate = Math.floor(Date.now() / 1000) - 200 * 86_400;
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo) => {
+      const path = new URL(String(input)).pathname;
+      if (path.includes("/feed/trending")) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              videos: [
+                {
+                  id: "fresh-tt",
+                  desc: "today",
+                  create_time: Math.floor(Date.now() / 1000) - 86_400,
+                  author: { unique_id: "u" },
+                  stats: { play_count: 900 },
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          data: {
+            videos: [
+              {
+                id: "old-viral",
+                desc: "old hit",
+                create_time: oldCreate,
+                author: { unique_id: "v" },
+                stats: { play_count: 5_000_000 },
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const results = await tiktokDataDiscoveryProvider.searchPosts!({
+      query: "coding",
+      platforms: ["tiktok"],
+      lookbackDays: 30,
+      maxResults: 10,
+      minViews: 0,
+    });
+
+    expect(results.map((r) => r.externalId)).toEqual(["fresh-tt"]);
   });
 
   it("normalizes millisecond durations", () => {

@@ -87,7 +87,7 @@ export function calculateVelocityLabel(
   return "stable";
 }
 
-export function scoreResearchOutliers(
+function scoreCohort(
   candidates: ResearchVideoCandidate[],
 ): ScoredResearchVideo[] {
   const cohortViews = candidates
@@ -104,36 +104,51 @@ export function scoreResearchOutliers(
     ]);
   }
 
-  return candidates
-    .map((candidate) => {
-      const creatorViews = candidate.creatorId
-        ? (byCreator.get(candidate.creatorId) ?? [])
-        : [];
-      const useCreatorBaseline = creatorViews.length >= 3;
-      const sampleSize = useCreatorBaseline
-        ? creatorViews.length
-        : cohortViews.length;
-      const baseline = useCreatorBaseline ? median(creatorViews) : cohortMedian;
-      const outlierScore =
-        typeof candidate.views === "number" && baseline && baseline > 0
-          ? candidate.views / baseline
-          : null;
-      const confidence = baselineConfidence(sampleSize);
+  return candidates.map((candidate) => {
+    const creatorViews = candidate.creatorId
+      ? (byCreator.get(candidate.creatorId) ?? [])
+      : [];
+    const useCreatorBaseline = creatorViews.length >= 3;
+    const sampleSize = useCreatorBaseline
+      ? creatorViews.length
+      : cohortViews.length;
+    const baseline = useCreatorBaseline ? median(creatorViews) : cohortMedian;
+    const outlierScore =
+      typeof candidate.views === "number" && baseline && baseline > 0
+        ? candidate.views / baseline
+        : null;
+    const confidence = baselineConfidence(sampleSize);
 
-      return {
-        ...candidate,
-        baselineViews: baseline,
-        outlierScore,
-        scoreBasis: baseline
-          ? useCreatorBaseline
-            ? ("creator_median" as const)
-            : ("niche_cohort_median" as const)
-          : ("unavailable" as const),
-        baselineSampleSize: sampleSize,
-        baselineConfidence: confidence,
-        outlierLabel: outlierLabel(outlierScore),
-      };
-    })
+    return {
+      ...candidate,
+      baselineViews: baseline,
+      outlierScore,
+      scoreBasis: baseline
+        ? useCreatorBaseline
+          ? ("creator_median" as const)
+          : ("niche_cohort_median" as const)
+        : ("unavailable" as const),
+      baselineSampleSize: sampleSize,
+      baselineConfidence: confidence,
+      outlierLabel: outlierLabel(outlierScore),
+    };
+  });
+}
+
+export function scoreResearchOutliers(
+  candidates: ResearchVideoCandidate[],
+): ScoredResearchVideo[] {
+  // Never score TikTok against YouTube medians — that made every TikTok look
+  // "below baseline" and hid them from the Outliers tab.
+  const byPlatform = new Map<string, ResearchVideoCandidate[]>();
+  for (const candidate of candidates) {
+    const list = byPlatform.get(candidate.platform) ?? [];
+    list.push(candidate);
+    byPlatform.set(candidate.platform, list);
+  }
+
+  return [...byPlatform.values()]
+    .flatMap((group) => scoreCohort(group))
     .sort((a, b) => (b.outlierScore ?? -1) - (a.outlierScore ?? -1));
 }
 

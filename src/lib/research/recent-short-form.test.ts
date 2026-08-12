@@ -42,6 +42,19 @@ describe("recent short-form filter", () => {
     ).toBe(true);
   });
 
+  it("keeps TikTok posts within 90 days even if scan lookback is 30", () => {
+    expect(
+      isRecentShortForm(
+        {
+          platform: "tiktok",
+          publishedAt: new Date(now - 60 * 86_400_000).toISOString(),
+          durationSeconds: 40,
+        },
+        { now, lookbackDays: 30 },
+      ),
+    ).toBe(true);
+  });
+
   it("rejects YouTube posts with unknown publish date", () => {
     expect(
       isRecentShortForm(

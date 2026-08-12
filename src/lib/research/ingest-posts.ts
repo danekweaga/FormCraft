@@ -67,6 +67,24 @@ export function passesOutlierMinFilter(
   return outlierScore >= minOutlierScore;
 }
 
+/** Keep a platform's posts unless that platform itself has enough lexical hits. */
+export function retainByRelevance<
+  T extends { video: { platform: string }; relevance: { relevant: boolean } },
+>(rows: T[]): T[] {
+  const byPlatform = new Map<string, T[]>();
+  for (const row of rows) {
+    const list = byPlatform.get(row.video.platform) ?? [];
+    list.push(row);
+    byPlatform.set(row.video.platform, list);
+  }
+  const kept: T[] = [];
+  for (const platformRows of byPlatform.values()) {
+    const relevant = platformRows.filter((r) => r.relevance.relevant);
+    kept.push(...(relevant.length >= 3 ? relevant : platformRows));
+  }
+  return kept;
+}
+
 export async function ingestScoredPosts(params: {
   supabase: SupabaseClient;
   userId: string;
@@ -82,7 +100,7 @@ export async function ingestScoredPosts(params: {
   const minViews = params.minViews ?? 0;
   const minOutlierScore = params.minOutlierScore ?? 0;
   const scored = scoreResearchOutliers(unique).filter((video) => {
-    if ((video.views ?? 0) < minViews) return false;
+    if (video.views != null && video.views < minViews) return false;
     return passesOutlierMinFilter(video.outlierScore, minOutlierScore);
   });
 
@@ -99,11 +117,7 @@ export async function ingestScoredPosts(params: {
       relevanceById.get(`${video.platform}:${video.externalId}`) ??
       classifyCheapRelevance(video, params.query),
   }));
-  const relevantCount = withRelevance.filter((r) => r.relevance.relevant).length;
-  const retained =
-    relevantCount >= 3
-      ? withRelevance.filter((r) => r.relevance.relevant)
-      : withRelevance;
+  const retained = retainByRelevance(withRelevance);
 
   for (const { video, relevance } of retained) {
     const providerMeta = unique.find((u) => u.externalId === video.externalId);

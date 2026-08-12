@@ -56,6 +56,32 @@ describe("scoreResearchOutliers", () => {
     expect(outlier?.scoreBasis).toBe("niche_cohort_median");
     expect(outlier?.outlierScore).toBe(4.5);
   });
+
+  it("scores TikTok against TikTok, not YouTube medians", () => {
+    const scored = scoreResearchOutliers([
+      video("yt-a", "yt1", 100_000),
+      video("yt-b", "yt2", 200_000),
+      video("yt-c", "yt3", 300_000),
+      {
+        ...video("tt-hot", "tt1", 8_000),
+        platform: "tiktok",
+        externalUrl: "https://tiktok.test/tt-hot",
+      },
+      {
+        ...video("tt-mid", "tt2", 1_000),
+        platform: "tiktok",
+        externalUrl: "https://tiktok.test/tt-mid",
+      },
+      {
+        ...video("tt-low", "tt3", 1_000),
+        platform: "tiktok",
+        externalUrl: "https://tiktok.test/tt-low",
+      },
+    ]);
+    const tiktokHot = scored.find((item) => item.externalId === "tt-hot");
+    expect(tiktokHot?.outlierScore).toBe(8);
+    expect(tiktokHot?.outlierLabel).toBe("exceptional");
+  });
 });
 
 describe("baseline confidence and labels", () => {

@@ -35,12 +35,16 @@ export async function ensureNicheAutoScan(params: {
         )
       : [];
   const fallback = defaultDiscoveryPlatforms(configured);
-  const platforms =
+  let platforms =
     profilePlatforms.length > 0
       ? profilePlatforms
       : fallback.length > 0
         ? fallback
         : configured;
+  // Older niche profiles opted YouTube-only; still pull TikTok when keyed.
+  if (configured.includes("tiktok") && !platforms.includes("tiktok")) {
+    platforms = [...platforms, "tiktok"];
+  }
 
   if (platforms.length === 0) return null;
 
