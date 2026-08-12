@@ -45,6 +45,8 @@ export type AITextResult = {
 export type StructuredAIResult<T> = AITextResult & {
   data: T;
   validationState: "valid" | "fallback" | "failed";
+  /** Safe provider/budget reason for UI diagnostics; never contains prompts. */
+  fallbackReason?: string;
 };
 
 export type BudgetCheckResult =

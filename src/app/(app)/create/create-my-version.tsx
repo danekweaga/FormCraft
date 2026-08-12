@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,14 +28,39 @@ export function CreateMyVersion({
     platform: string;
     hook: string | null;
     outlierScore: number | null;
+    externalId: string;
+    externalUrl: string;
+    thumbnailUrl: string | null;
   };
 }) {
   const [directionState, directionAction, directionPending] = useActionState(createMyVersionAction, initialDirection);
   const [scriptState, scriptAction, scriptPending] = useActionState(generateScriptFromDirectionAction, initialScript);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const previewUrl =
+    source.thumbnailUrl ||
+    (source.platform === "youtube"
+      ? `https://i.ytimg.com/vi/${source.externalId}/hqdefault.jpg`
+      : null);
 
   return (
     <div className="space-y-6">
       <Card className="border-outline-variant/20 bg-surface-primary paper-shadow">
+        <div className="relative aspect-video overflow-hidden bg-on-background">
+          {previewUrl && !previewFailed ? (
+            <Image
+              src={previewUrl}
+              alt={`Preview for ${source.title}`}
+              fill
+              sizes="(max-width: 1024px) 100vw, 900px"
+              className="object-cover"
+              onError={() => setPreviewFailed(true)}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center px-4 text-center text-sm text-white/60">
+              Preview unavailable. Open the original video below.
+            </div>
+          )}
+        </div>
         <CardHeader>
           <div className="flex flex-wrap gap-2">
             <Badge variant="primary">Source research</Badge>
@@ -43,6 +69,13 @@ export function CreateMyVersion({
           </div>
           <CardTitle className="pt-2">{source.title}</CardTitle>
           <CardDescription>{source.creator ?? "Unknown creator"}{source.hook ? ` · Hook: “${source.hook}”` : ""}</CardDescription>
+          <div className="pt-2">
+            <Button asChild size="sm" variant="outline">
+              <a href={source.externalUrl} target="_blank" rel="noopener noreferrer">
+                Open original video
+              </a>
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <form action={directionAction} className="space-y-4">
@@ -69,6 +102,11 @@ export function CreateMyVersion({
             <CardDescription>{directionState.direction.coreArgument}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
+            {!directionState.usedLlm && directionState.fallbackReason ? (
+              <p className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-on-background">
+                AI was unavailable: {directionState.fallbackReason}
+              </p>
+            ) : null}
             <div className="grid gap-3 md:grid-cols-2">
               {[
                 ["Audience problem", directionState.direction.audienceProblem],
@@ -118,6 +156,12 @@ export function CreateMyVersion({
                 {directionState.direction.originalityChanges.map((change) => <li key={change}>{change}</li>)}
               </ul>
             </div>
+            <div className="rounded-lg border border-primary-container/25 bg-primary-container/5 p-4">
+              <p className="text-sm font-semibold text-on-background">How to make this idea stronger</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-secondary">
+                {directionState.direction.improvementSuggestions.map((suggestion) => <li key={suggestion}>{suggestion}</li>)}
+              </ul>
+            </div>
             <form action={scriptAction}>
               <input type="hidden" name="ideaGateEvaluationId" value={directionState.ideaGateEvaluationId} />
               <input type="hidden" name="ideaNodeId" value={directionState.ideaNodeId} />
@@ -139,6 +183,11 @@ export function CreateMyVersion({
             <CardTitle className="pt-2">{scriptState.package.title}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
+            {!scriptState.usedLlm && scriptState.fallbackReason ? (
+              <p className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-on-background">
+                AI was unavailable: {scriptState.fallbackReason}
+              </p>
+            ) : null}
             <pre className="whitespace-pre-wrap rounded-lg bg-surface-container-lowest p-5 font-sans text-sm leading-relaxed text-on-background">{scriptState.package.script}</pre>
             <div className="flex flex-wrap gap-2">
               <Badge variant={scriptState.package.qualityGateStatus === "Ready" ? "success" : scriptState.package.qualityGateStatus === "Verify" ? "warning" : "default"}>

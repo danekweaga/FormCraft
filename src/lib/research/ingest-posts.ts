@@ -7,6 +7,7 @@ import {
 } from "./cheap-relevance";
 import type { NicheUniverseContext } from "./content-universe";
 import type { ScoredResearchVideo } from "./types";
+import { cacheResearchThumbnail } from "./thumbnail-cache";
 
 export function dedupeSearchPosts(posts: SearchPostResult[]): SearchPostResult[] {
   const seen = new Set<string>();
@@ -116,6 +117,26 @@ export async function ingestScoredPosts(params: {
   }));
   const retained = retainByRelevance(withRelevance);
 
+  const durableThumbnails = new Map<string, string | null>();
+  const socialRows = retained.filter(
+    ({ video }) => video.platform === "tiktok" || video.platform === "instagram",
+  );
+  for (let index = 0; index < socialRows.length; index += 6) {
+    const batch = socialRows.slice(index, index + 6);
+    await Promise.all(
+      batch.map(async ({ video }) => {
+        const thumbnail = await cacheResearchThumbnail({
+          supabase: params.supabase,
+          userId: params.userId,
+          platform: video.platform,
+          externalId: video.externalId,
+          thumbnailUrl: video.thumbnailUrl,
+        });
+        durableThumbnails.set(`${video.platform}:${video.externalId}`, thumbnail);
+      }),
+    );
+  }
+
   for (const { video, relevance } of retained) {
     const providerMeta = unique.find((u) => u.externalId === video.externalId);
     const creatorId = await upsertExternalCreator(params.supabase, params.userId, {
@@ -141,7 +162,9 @@ export async function ingestScoredPosts(params: {
           external_creator_id: creatorId,
           title: video.title,
           description: video.description,
-          thumbnail_url: video.thumbnailUrl,
+          thumbnail_url:
+            durableThumbnails.get(`${video.platform}:${video.externalId}`) ??
+            video.thumbnailUrl,
           published_at: video.publishedAt,
           duration_seconds: video.durationSeconds,
           views: video.views,

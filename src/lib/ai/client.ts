@@ -370,6 +370,14 @@ export async function tryStructuredAI<T>(params: {
       params.input,
     );
   } catch (error) {
+    const fallbackReason =
+      error instanceof Error ? error.message : "AI generation failed.";
+    console.error("[ai:fallback] structured generation unavailable", {
+      taskType: params.input.taskType,
+      role: params.input.role,
+      modelName: params.input.modelName ?? null,
+      reason: fallbackReason,
+    });
     if (error instanceof AiBudgetError) {
       return {
         text: "",
@@ -386,6 +394,7 @@ export async function tryStructuredAI<T>(params: {
         usedLlm: false,
         data: params.fallback,
         validationState: "fallback",
+        fallbackReason,
       };
     }
     return {
@@ -403,6 +412,7 @@ export async function tryStructuredAI<T>(params: {
       usedLlm: false,
       data: params.fallback,
       validationState: "fallback",
+      fallbackReason,
     };
   }
 }

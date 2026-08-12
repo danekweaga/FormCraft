@@ -19,6 +19,7 @@ import {
   scrapeCreatorsCreditWarning,
 } from "@/lib/research/discovery/scrapecreators-client";
 import { scorePersonalRelevance } from "@/lib/research/relevance";
+import { normalizeResearchFeedFilters } from "@/lib/research/feed-filters";
 import type { NicheBrief } from "@/lib/research/niche-brief";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -170,7 +171,7 @@ export default async function ResearchPage({
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
-      .limit(12),
+      .limit(100),
     supabase
       .from("research_watchlists")
       .select("id, name, description, paused")
@@ -328,6 +329,20 @@ export default async function ResearchPage({
       (i.outlier_score == null || i.outlier_score >= 1.5),
   );
   const saved = enriched.filter((i) => i.saved);
+  const savedFilterOptions = (scans ?? []).flatMap((scan) => {
+    const parameters =
+      scan.parameters && typeof scan.parameters === "object"
+        ? (scan.parameters as Record<string, unknown>)
+        : null;
+    if (!parameters || !("savedFilter" in parameters)) return [];
+    return [
+      {
+        id: scan.id,
+        name: (scan.name || scan.query || "Saved filter").replace(/^Filter:\s*/i, ""),
+        filters: normalizeResearchFeedFilters(parameters.savedFilter),
+      },
+    ];
+  });
 
   const autoScans = (scans ?? []).filter(
     (s) =>
@@ -683,6 +698,7 @@ export default async function ResearchPage({
           <ResearchFeedWithFilters
             items={outliers}
             watchlists={watchlistOptions}
+            savedFilters={savedFilterOptions}
           />
         </section>
       ) : null}

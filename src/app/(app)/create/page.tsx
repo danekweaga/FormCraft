@@ -23,7 +23,7 @@ export default async function CreatePage({
   const { data: source } = researchItem
     ? await supabase
         .from("research_items")
-        .select("id, title, creator_name, platform, hook_text, outlier_score")
+        .select("id, title, creator_name, platform, hook_text, outlier_score, external_id, external_url, thumbnail_url")
         .eq("id", researchItem)
         .eq("user_id", user.id)
         .maybeSingle()
@@ -45,6 +45,9 @@ export default async function CreatePage({
             platform: source.platform,
             hook: source.hook_text,
             outlierScore: source.outlier_score == null ? null : Number(source.outlier_score),
+            externalId: source.external_id,
+            externalUrl: source.external_url,
+            thumbnailUrl: source.thumbnail_url,
           }}
         />
       ) : (

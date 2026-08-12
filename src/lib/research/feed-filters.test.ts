@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_RESEARCH_FILTERS,
   filterResearchItems,
+  normalizeResearchFeedFilters,
 } from "./feed-filters";
 
 const now = new Date("2026-08-10T12:00:00.000Z");
@@ -51,5 +52,45 @@ describe("filterResearchItems", () => {
     );
     expect(result).toHaveLength(1);
     expect(result[0]?.outlier_score).toBe(4);
+  });
+
+  it("restores every persisted saved-filter value", () => {
+    expect(
+      normalizeResearchFeedFilters({
+        keywords: "student projects",
+        minOutlier: 2.5,
+        maxOutlier: 12,
+        minViews: 5000,
+        maxViews: 250000,
+        minEngagement: 3,
+        maxEngagement: 20,
+        postedWithinValue: 30,
+        postedWithinUnit: "days",
+        platform: "tiktok",
+        creator: "Demo CS",
+      }),
+    ).toEqual({
+      keywords: "student projects",
+      minOutlier: 2.5,
+      maxOutlier: 12,
+      minViews: 5000,
+      maxViews: 250000,
+      minEngagement: 3,
+      maxEngagement: 20,
+      postedWithinValue: 30,
+      postedWithinUnit: "days",
+      platform: "tiktok",
+      creator: "Demo CS",
+    });
+  });
+
+  it("excludes videos with unknown publish dates from a time-bounded filter", () => {
+    expect(
+      filterResearchItems(
+        [item({ published_at: null })],
+        DEFAULT_RESEARCH_FILTERS,
+        now,
+      ),
+    ).toHaveLength(0);
   });
 });

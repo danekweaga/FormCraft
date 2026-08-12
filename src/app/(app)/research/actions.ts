@@ -8,6 +8,7 @@ import { searchablePlatforms } from "@/lib/research/discovery/registry";
 import { runResearchScan } from "@/lib/research/run-scan";
 import { importCreatorCatalog } from "@/lib/research/import-creator-catalog";
 import { normalizeSearchFilters } from "@/lib/research/search-filters";
+import { normalizeResearchFeedFilters } from "@/lib/research/feed-filters";
 import type { ResearchPlatform, ScoredResearchVideo } from "@/lib/research/types";
 import { createClient } from "@/lib/supabase/server";
 
@@ -1061,36 +1062,61 @@ export async function saveResearchFilterAction(
   } = await supabase.auth.getUser();
   if (!user) return { error: "You must be signed in." };
 
-  const filters = {
+  const filters = normalizeResearchFeedFilters({
     keywords: String(formData.get("keywords") ?? ""),
     minOutlier: Number(formData.get("minOutlier") ?? 0),
-    maxOutlier: Number(formData.get("maxOutlier") ?? 100),
+    maxOutlier: Number(formData.get("maxOutlier") ?? 100_000),
     minViews: Number(formData.get("minViews") ?? 0),
-    maxViews: Number(formData.get("maxViews") ?? 10_000_000),
+    maxViews: Number(formData.get("maxViews") ?? 1_000_000_000),
     minEngagement: Number(formData.get("minEngagement") ?? 0),
     maxEngagement: Number(formData.get("maxEngagement") ?? 100),
     postedWithinValue: Number(formData.get("postedWithinValue") ?? 30),
     postedWithinUnit: String(formData.get("postedWithinUnit") ?? "days"),
     platform: String(formData.get("platform") ?? "all"),
     creator: String(formData.get("creator") ?? "all"),
-  };
+  });
 
-  const { error } = await supabase.from("research_scans").insert({
+  const postedWithinDays =
+    filters.postedWithinUnit === "months"
+      ? filters.postedWithinValue * 30
+      : filters.postedWithinUnit === "weeks"
+        ? filters.postedWithinValue * 7
+        : filters.postedWithinValue;
+  const allowedPlatforms = searchablePlatforms()
+    .map((entry) => entry.platform)
+    .filter((platform) => platform !== "other");
+  const scanName = `Filter: ${name.slice(0, 60)}`;
+  const payload = {
     user_id: user.id,
-    name: `Filter: ${name.slice(0, 60)}`,
+    name: scanName,
     query: filters.keywords || name,
     platforms:
-      filters.platform === "all" ? ["youtube", "tiktok"] : [filters.platform],
-    lookback_days: 30,
-    min_views: Number.isFinite(filters.minViews) ? filters.minViews : 0,
-    min_outlier_score: Number.isFinite(filters.minOutlier)
-      ? filters.minOutlier
-      : 0,
-    max_results: 25,
+      filters.platform === "all"
+        ? allowedPlatforms
+        : [filters.platform],
+    lookback_days: Math.min(365, postedWithinDays),
+    min_views: filters.minViews,
+    min_outlier_score: filters.minOutlier,
+    max_results: 50,
     auto_scan_enabled: false,
     status: "paused",
     parameters: { savedFilter: filters },
-  });
+  };
+
+  const { data: existing } = await supabase
+    .from("research_scans")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("name", scanName)
+    .limit(1)
+    .maybeSingle();
+  const { error } = existing
+    ? await supabase
+        .from("research_scans")
+        .update(payload)
+        .eq("id", existing.id)
+        .eq("user_id", user.id)
+    : await supabase.from("research_scans").insert(payload);
   if (error) return { error: error.message };
   revalidatePath("/research");
   return { success: `Saved filter “${name}”.` };

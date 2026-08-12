@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -128,22 +129,28 @@ export function ResearchItemCard({
       : null;
   const outlierScore = outlierScoreLabel(item.outlier_score);
   const title = item.title || item.hook_text || "Untitled reference";
+  const originalLinkAvailable =
+    item.platform !== "tiktok" ||
+    /\/video\/\d{15,24}(?:\/|$)/.test(item.external_url);
 
   return (
     <article className="group flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-outline-variant/20 bg-surface-primary paper-shadow transition-[transform,border-color] duration-200 hover:-translate-y-0.5 hover:border-primary-container/35">
       <div className="relative aspect-video overflow-hidden bg-on-background">
         <a
-          href={item.external_url}
+          href={originalLinkAvailable ? item.external_url : undefined}
           target="_blank"
           rel="noreferrer"
-          className="absolute inset-0 block"
+          aria-disabled={!originalLinkAvailable}
+          className={`absolute inset-0 block ${originalLinkAvailable ? "" : "cursor-default"}`}
           aria-label={`Open original: ${title}`}
         >
           {preview ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <Image
+              key={preview}
               src={preview}
-              alt=""
+              alt={`Preview for ${title}`}
+              fill
+              sizes="(max-width: 1024px) 100vw, 50vw"
               referrerPolicy="no-referrer"
               onError={() => setThumbIndex((index) => index + 1)}
               className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
@@ -248,11 +255,17 @@ export function ResearchItemCard({
           >
             {pending ? "Writing hooks…" : "Hook Machine"}
           </Button>
-          <Button asChild size="sm" variant="outline">
-            <a href={item.external_url} target="_blank" rel="noreferrer">
-              Open original
-            </a>
-          </Button>
+          {originalLinkAvailable ? (
+            <Button asChild size="sm" variant="outline">
+              <a href={item.external_url} target="_blank" rel="noopener noreferrer">
+                Open original
+              </a>
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" disabled>
+              Original link unavailable
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"

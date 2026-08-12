@@ -29,9 +29,9 @@ export type FilterableResearchItem = {
 export const DEFAULT_RESEARCH_FILTERS: ResearchFeedFilters = {
   keywords: "",
   minOutlier: 0,
-  maxOutlier: 100,
+  maxOutlier: 100_000,
   minViews: 0,
-  maxViews: 10_000_000,
+  maxViews: 1_000_000_000,
   minEngagement: 0,
   maxEngagement: 100,
   postedWithinValue: 12,
@@ -39,6 +39,40 @@ export const DEFAULT_RESEARCH_FILTERS: ResearchFeedFilters = {
   platform: "all",
   creator: "all",
 };
+
+function finiteNumber(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export function normalizeResearchFeedFilters(
+  value: unknown,
+): ResearchFeedFilters {
+  const raw =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
+  const unit = raw.postedWithinUnit;
+  return {
+    keywords: typeof raw.keywords === "string" ? raw.keywords.slice(0, 200) : "",
+    minOutlier: Math.max(0, finiteNumber(raw.minOutlier, 0)),
+    maxOutlier: Math.max(0, finiteNumber(raw.maxOutlier, 100_000)),
+    minViews: Math.max(0, finiteNumber(raw.minViews, 0)),
+    maxViews: Math.max(0, finiteNumber(raw.maxViews, 1_000_000_000)),
+    minEngagement: Math.max(0, finiteNumber(raw.minEngagement, 0)),
+    maxEngagement: Math.max(0, finiteNumber(raw.maxEngagement, 100)),
+    postedWithinValue: Math.max(
+      1,
+      Math.round(finiteNumber(raw.postedWithinValue, 12)),
+    ),
+    postedWithinUnit:
+      unit === "days" || unit === "weeks" || unit === "months"
+        ? unit
+        : "months",
+    platform: typeof raw.platform === "string" ? raw.platform : "all",
+    creator: typeof raw.creator === "string" ? raw.creator : "all",
+  };
+}
 
 function engagementRate(item: FilterableResearchItem): number | null {
   if (item.views == null || item.views <= 0) return null;
@@ -94,10 +128,9 @@ export function filterResearchItems<T extends FilterableResearchItem>(
       return false;
     }
 
-    if (item.published_at) {
-      const published = new Date(item.published_at).getTime();
-      if (Number.isFinite(published) && published < cutoff) return false;
-    }
+    if (!item.published_at) return false;
+    const published = new Date(item.published_at).getTime();
+    if (!Number.isFinite(published) || published < cutoff) return false;
 
     if (keywords.length > 0) {
       const hay =

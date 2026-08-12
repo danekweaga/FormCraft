@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useActionState } from "react";
+import { useEffect, useMemo, useState, useActionState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,13 +19,22 @@ import {
 
 const initialState: ResearchActionState = {};
 
+export type SavedResearchFilterOption = {
+  id: string;
+  name: string;
+  filters: ResearchFeedFilters;
+};
+
 export function ResearchFeedWithFilters({
   items,
   watchlists,
+  savedFilters = [],
 }: {
   items: ResearchCardItem[];
   watchlists: Array<{ id: string; name: string }>;
+  savedFilters?: SavedResearchFilterOption[];
 }) {
+  const router = useRouter();
   const [filters, setFilters] = useState<ResearchFeedFilters>(
     DEFAULT_RESEARCH_FILTERS,
   );
@@ -32,6 +42,11 @@ export function ResearchFeedWithFilters({
     saveResearchFilterAction,
     initialState,
   );
+  const [selectedSavedFilter, setSelectedSavedFilter] = useState("");
+
+  useEffect(() => {
+    if (saveState.success) router.refresh();
+  }, [router, saveState.success]);
 
   const creators = useMemo(() => {
     const names = Array.from(
@@ -67,6 +82,32 @@ export function ResearchFeedWithFilters({
           scan. They do not search YouTube or TikTok.
         </p>
         <div className="space-y-4">
+          {savedFilters.length > 0 ? (
+            <div className="space-y-1.5 rounded-lg border border-primary-container/25 bg-primary-container/5 p-3">
+              <Label htmlFor="saved-research-filter">Load saved filter</Label>
+              <select
+                id="saved-research-filter"
+                className="h-10 w-full rounded-md border border-outline-variant/30 bg-surface-container-lowest px-3 text-sm"
+                value={selectedSavedFilter}
+                onChange={(event) => {
+                  const id = event.target.value;
+                  setSelectedSavedFilter(id);
+                  const saved = savedFilters.find((option) => option.id === id);
+                  if (saved) setFilters(saved.filters);
+                }}
+              >
+                <option value="">Choose a saved filter</option>
+                {savedFilters.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-secondary">
+                Loading a filter restores every saved limit exactly.
+              </p>
+            </div>
+          ) : null}
           <div className="space-y-1.5">
             <Label>All channels</Label>
             <select
