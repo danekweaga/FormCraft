@@ -14,7 +14,7 @@ Audited against `deep-research-report.md` on 2026-08-12. This document uses four
 | Provider abstraction and capability-driven connection UI | Complete | Social providers expose configuration and capability checks; credentials remain server-side. |
 | Owned Instagram, TikTok, and YouTube account connections | Complete when provider-approved | OAuth, encrypted token persistence, sync routes, and connection health exist. Provider scopes and app review still control the data returned. |
 | External YouTube creator discovery | Complete | Watchlists scan imported channels and persist canonical posts and snapshots. |
-| External TikTok creator discovery | Blocked by provider contract | The adapter is implemented for TikTokAPI.store. It only works with an active compatible API key/plan and valid creator handles. |
+| External TikTok creator discovery | Complete with provider key | The TikTokAPI.store adapter supports niche search and creator-post pulls, persists third-party provenance, and has verified production result events. It still depends on an active compatible key/plan and valid creator handles. |
 | External Instagram competitor discovery | Blocked | Meta's owned-account API is not a general public-creator search API. No compliant third-party discovery provider is configured. Instagram creator references remain manual. |
 | Canonical content records and metric snapshots | Complete | Research posts, owned content, provider IDs, deduplication, and time-series snapshots are persisted. |
 | Creator-relative outlier scoring | Complete | Each candidate uses the median of its 5–30 prior same-platform creator posts; the scored post is excluded. A disclosed same-platform cohort fallback is used when creator history is insufficient. |

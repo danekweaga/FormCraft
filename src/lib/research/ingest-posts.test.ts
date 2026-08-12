@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { passesOutlierMinFilter, retainByRelevance } from "./ingest-posts";
+import {
+  passesOutlierMinFilter,
+  retainByRelevance,
+  sourceLabel,
+} from "./ingest-posts";
+
+describe("research source provenance", () => {
+  it("labels TikTokAPI.store rows as third-party API data", () => {
+    expect(sourceLabel("tiktokapi_store")).toBe("third_party_api");
+    expect(sourceLabel("youtube_data_api")).toBe("official_api");
+    expect(sourceLabel("demo")).toBe("manual_reference");
+  });
+});
 
 describe("passesOutlierMinFilter", () => {
   it("keeps null outlier scores when a minimum is set", () => {
