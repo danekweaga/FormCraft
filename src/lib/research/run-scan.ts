@@ -294,8 +294,8 @@ export async function runResearchScan(params: {
       posts: eligiblePosts,
       query: scan.query,
       researchScanId: scan.id,
-      minViews: 0,
-      minOutlierScore: 0,
+      minViews: scan.min_views,
+      minOutlierScore: scan.min_outlier_score,
       retrievedAt,
     });
 

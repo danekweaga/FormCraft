@@ -5,6 +5,7 @@ import {
   classifyCheapRelevance,
   type CheapRelevanceResult,
 } from "./cheap-relevance";
+import type { NicheUniverseContext } from "./content-universe";
 import type { ScoredResearchVideo } from "./types";
 
 export function dedupeSearchPosts(posts: SearchPostResult[]): SearchPostResult[] {
@@ -66,9 +67,11 @@ export function passesOutlierMinFilter(
   return outlierScore >= minOutlierScore;
 }
 
-/** Relevance is ranking metadata only — never drop a live pull down to 3 hits. */
-export function retainByRelevance<T>(rows: T[]): T[] {
-  return rows;
+/** Only persist videos inside the saved student-tech/developer universe. */
+export function retainByRelevance<
+  T extends { relevance: Pick<CheapRelevanceResult, "relevant"> },
+>(rows: T[]): T[] {
+  return rows.filter((row) => row.relevance.relevant);
 }
 
 export async function ingestScoredPosts(params: {
@@ -85,6 +88,18 @@ export async function ingestScoredPosts(params: {
   const unique = dedupeSearchPosts(params.posts);
   const minViews = params.minViews ?? 0;
   const minOutlierScore = params.minOutlierScore ?? 0;
+  const { data: profile } = await params.supabase
+    .from("niche_profiles")
+    .select("main_niche, topics, keywords, excluded_topics, target_audience")
+    .eq("user_id", params.userId)
+    .maybeSingle();
+  const nicheContext: NicheUniverseContext = {
+    mainNiche: profile?.main_niche,
+    topics: profile?.topics,
+    keywords: profile?.keywords,
+    excludedTopics: profile?.excluded_topics,
+    targetAudience: profile?.target_audience,
+  };
   const scored = scoreResearchOutliers(unique).filter((video) => {
     if (video.views != null && video.views < minViews) return false;
     return passesOutlierMinFilter(video.outlierScore, minOutlierScore);
@@ -92,7 +107,7 @@ export async function ingestScoredPosts(params: {
 
   const withRelevance = scored.map((video) => ({
     video,
-    relevance: classifyCheapRelevance(video, params.query),
+    relevance: classifyCheapRelevance(video, params.query, nicheContext),
   }));
   const retained = retainByRelevance(withRelevance);
 

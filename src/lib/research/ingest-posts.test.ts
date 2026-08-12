@@ -30,7 +30,7 @@ describe("passesOutlierMinFilter", () => {
 });
 
 describe("retainByRelevance", () => {
-  it("keeps the full pull instead of collapsing to three relevant hits", () => {
+  it("keeps only videos that pass the niche gate", () => {
     const rows = [
       { video: { platform: "youtube", id: "a" }, relevance: { relevant: true } },
       { video: { platform: "youtube", id: "b" }, relevance: { relevant: true } },
@@ -39,6 +39,6 @@ describe("retainByRelevance", () => {
       { video: { platform: "tiktok", id: "t1" }, relevance: { relevant: false } },
       { video: { platform: "tiktok", id: "t2" }, relevance: { relevant: false } },
     ];
-    expect(retainByRelevance(rows)).toHaveLength(6);
+    expect(retainByRelevance(rows)).toHaveLength(3);
   });
 });

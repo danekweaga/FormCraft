@@ -1,6 +1,10 @@
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { hashAiInput, tryStructuredAI } from "@/lib/ai/client";
+import {
+  classifyCreatorContentUniverse,
+  type NicheUniverseContext,
+} from "./content-universe";
 import type { ScoredResearchVideo } from "./types";
 
 export type CheapRelevanceResult = {
@@ -25,14 +29,9 @@ const cheapRelevanceSchema = z.object({
 export function classifyCheapRelevance(
   item: ScoredResearchVideo & { topic?: string | null },
   query: string,
+  context?: NicheUniverseContext,
 ): CheapRelevanceResult {
-  const hay = `${item.title ?? ""} ${item.description ?? ""}`.toLowerCase();
-  const terms = query
-    .toLowerCase()
-    .split(/\W+/)
-    .filter((t) => t.length > 2);
-  const hits = terms.filter((t) => hay.includes(t)).length;
-  const relevant = hits >= Math.min(2, Math.max(1, terms.length));
+  const universe = classifyCreatorContentUniverse(item, query, context);
   const seconds = item.durationSeconds;
   const format =
     seconds == null
@@ -44,11 +43,9 @@ export function classifyCheapRelevance(
           : "long_form";
 
   return {
-    relevant,
-    relevanceReason: relevant
-      ? `Title/description matches ${hits} query term(s)`
-      : "Weak lexical overlap with search query",
-    topic: item.topic ?? query,
+    relevant: universe.relevant,
+    relevanceReason: universe.reason,
+    topic: item.topic ?? universe.category ?? query,
     format,
     audience: null,
   };

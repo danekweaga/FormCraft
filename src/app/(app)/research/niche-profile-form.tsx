@@ -63,6 +63,11 @@ export function NicheProfileForm({
           defaultValue={values.keywords}
           placeholder="leetcode, openai, hackathon"
         />
+        <p className="text-xs text-secondary">
+          Discover now rejects videos outside your saved student-tech,
+          developer, AI, student-life, career, project, and build-in-public
+          universe before saving them. A high view count cannot bypass this gate.
+        </p>
       </div>
 
       <fieldset className="space-y-2 md:col-span-2">
