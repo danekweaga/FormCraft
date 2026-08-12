@@ -28,8 +28,19 @@ describe("classifyCreatorContentUniverse", () => {
     "Easy pasta recipe in ten minutes",
     "Celebrity relationship drama explained",
     "Five exercises for bigger shoulders",
+    "Admissions Open 2026 | Shape Your Future",
+    "11th Chemistry Quarterly Exam Questions",
   ])("drops an unrelated video: %s", (title) => {
     expect(classify(title).relevant).toBe(false);
+  });
+
+  it("does not accept an unrelated title because its description mentions LinkedIn", () => {
+    const result = classifyCreatorContentUniverse({
+      title: "A qualification gives you more than a certificate",
+      description: "Follow our university on LinkedIn and enroll today.",
+      creatorName: "Generic Learning",
+    });
+    expect(result.relevant).toBe(false);
   });
 
   it("accepts a specific topic saved in the niche profile", () => {

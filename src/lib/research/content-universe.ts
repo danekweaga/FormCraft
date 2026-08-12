@@ -26,8 +26,7 @@ const CATEGORIES: Category[] = [
     terms: [
       "computer science", "cs student", "software engineering student",
       "student developer", "coding student", "cs degree", "college coding",
-      "university coding", "campus life", "student life", "professor",
-      "office hours", "group project", "gpa", "exam", "assignment",
+      "university coding", "campus life", "student life",
     ],
   },
   {
@@ -154,6 +153,7 @@ const OFF_NICHE_TERMS = [
   "basketball highlights", "sports betting", "crypto trading signal", "forex signal",
   "weight loss diet", "bodybuilding workout", "recipe", "cooking tutorial",
   "fashion haul", "relationship drama", "prank compilation", "dance challenge",
+  "admissions open", "enroll today",
 ];
 
 const STOPWORDS = new Set([
@@ -202,13 +202,16 @@ export function classifyCreatorContentUniverse(
   query = "",
   context?: NicheUniverseContext,
 ): ContentUniverseResult {
-  const haystack = normalize(
+  const primaryHaystack = normalize(
+    `${item.title ?? ""} ${item.creatorName ?? ""}`,
+  );
+  const detailHaystack = normalize(
     `${item.title ?? ""} ${item.description ?? ""} ${item.creatorName ?? ""}`,
   );
 
   const explicitlyExcluded = (context?.excludedTopics ?? [])
     .map((term) => term.toLowerCase())
-    .filter((term) => includesTerm(haystack, term));
+    .filter((term) => includesTerm(detailHaystack, term));
   if (explicitlyExcluded.length > 0) {
     return {
       relevant: false,
@@ -219,20 +222,8 @@ export function classifyCreatorContentUniverse(
   }
 
   const excluded = OFF_NICHE_TERMS.filter((term) =>
-    includesTerm(haystack, term),
+    includesTerm(detailHaystack, term),
   );
-
-  for (const category of CATEGORIES) {
-    const matched = category.terms.filter((term) => includesTerm(haystack, term));
-    if (matched.length > 0) {
-      return {
-        relevant: true,
-        category: category.name,
-        reason: `Matches the allowed ${category.name.toLowerCase()} universe`,
-        matchedTerms: matched.slice(0, 5),
-      };
-    }
-  }
 
   if (excluded.length > 0) {
     return {
@@ -243,8 +234,26 @@ export function classifyCreatorContentUniverse(
     };
   }
 
+  for (const category of CATEGORIES) {
+    const primaryMatches = category.terms.filter((term) =>
+      includesTerm(primaryHaystack, term),
+    );
+    const detailMatches = category.terms.filter((term) =>
+      includesTerm(detailHaystack, term),
+    );
+    if (primaryMatches.length > 0 || detailMatches.length >= 2) {
+      const matched = primaryMatches.length > 0 ? primaryMatches : detailMatches;
+      return {
+        relevant: true,
+        category: category.name,
+        reason: `Matches the allowed ${category.name.toLowerCase()} universe`,
+        matchedTerms: matched.slice(0, 5),
+      };
+    }
+  }
+
   const customMatches = profileTerms(context).filter((term) =>
-    includesTerm(haystack, term),
+    includesTerm(primaryHaystack, term),
   );
   if (customMatches.length > 0) {
     return {
@@ -256,7 +265,7 @@ export function classifyCreatorContentUniverse(
   }
 
   const queryMatches = queryTerms(query).filter((term) =>
-    includesTerm(haystack, term),
+    includesTerm(primaryHaystack, term),
   );
   if (queryMatches.length >= 2) {
     return {
