@@ -32,6 +32,38 @@ function durationSeconds(value: string | undefined): number | null {
   );
 }
 
+/** YouTube exposes a channel's self-declared ISO country in snippet.country. */
+export function isExcludedYoutubeChannelCountry(
+  country: string | null | undefined,
+): boolean {
+  return country?.trim().toUpperCase() === "IN";
+}
+
+async function getYoutubeChannelCountries(
+  apiKey: string,
+  channelIds: Array<string | undefined>,
+): Promise<Map<string, string | null>> {
+  const ids = Array.from(
+    new Set(channelIds.filter((id): id is string => Boolean(id))),
+  );
+  if (ids.length === 0) return new Map();
+
+  const url = new URL("https://www.googleapis.com/youtube/v3/channels");
+  url.searchParams.set("key", apiKey);
+  url.searchParams.set("part", "snippet");
+  url.searchParams.set("id", ids.join(","));
+
+  const response = await youtubeGet<{
+    items?: Array<{ id: string; snippet?: { country?: string } }>;
+  }>(url);
+  return new Map(
+    (response.items ?? []).map((channel) => [
+      channel.id,
+      channel.snippet?.country ?? null,
+    ]),
+  );
+}
+
 export async function searchYoutubeResearch(params: {
   query: string;
   lookbackDays: number;
@@ -120,7 +152,19 @@ export async function searchYoutubeResearch(params: {
     }>;
   }>(detailsUrl);
 
-  return (details.items ?? []).map((item) => ({
+  const channelCountries = await getYoutubeChannelCountries(
+    apiKey,
+    (details.items ?? []).map((item) => item.snippet?.channelId),
+  );
+
+  return (details.items ?? [])
+    .filter(
+      (item) =>
+        !isExcludedYoutubeChannelCountry(
+          channelCountries.get(item.snippet?.channelId ?? ""),
+        ),
+    )
+    .map((item) => ({
     platform: "youtube" as const,
     externalId: item.id,
     externalUrl: `https://www.youtube.com/watch?v=${item.id}`,
@@ -139,7 +183,7 @@ export async function searchYoutubeResearch(params: {
     likes: numberOrNull(item.statistics?.likeCount),
     comments: numberOrNull(item.statistics?.commentCount),
     shares: null,
-  }));
+    }));
 }
 
 /** Recent public uploads for a channel (watchlist monitoring). */
@@ -159,10 +203,14 @@ export async function getYoutubeChannelPosts(params: {
 
   const channel = await youtubeGet<{
     items?: Array<{
-      snippet?: { title?: string };
+      snippet?: { title?: string; country?: string };
       contentDetails?: { relatedPlaylists?: { uploads?: string } };
     }>;
   }>(channelUrl);
+
+  if (isExcludedYoutubeChannelCountry(channel.items?.[0]?.snippet?.country)) {
+    return [];
+  }
 
   const uploadsId =
     channel.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
