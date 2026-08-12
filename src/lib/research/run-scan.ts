@@ -109,7 +109,7 @@ export async function runResearchScan(params: {
     const retrievedAt = new Date().toISOString();
     const maxResults = Math.min(scan.max_results, budgets.maxResultsPerQuery);
     const usedProviders = new Set<string>();
-    let discovered: SearchPostResult[] = [];
+    const discovered: SearchPostResult[] = [];
     const providerErrors: string[] = [];
 
     if (targetCreators) {
@@ -163,16 +163,28 @@ export async function runResearchScan(params: {
         new Map(
           targets.map((t) => [`${t.platform}:${t.platformCreatorId}`, t]),
         ).values(),
-      ).slice(0, budgets.maxTrackedCreators);
+      )
+        .filter((target) => {
+          if (
+            scan.platforms.length > 0 &&
+            !scan.platforms.includes(target.platform)
+          ) {
+            return false;
+          }
+          const provider = getProviderForPlatform(target.platform);
+          return Boolean(
+            provider?.getCreatorPosts &&
+              provider.capabilities().getCreatorPosts,
+          );
+        });
+
+      if (uniqueTargets.length === 0) {
+        throw new Error(
+          "No supported YouTube or TikTok creators were selected for this pull.",
+        );
+      }
 
       for (const target of uniqueTargets) {
-        // Honor opted-in platforms (esp. YouTube — skip unless included)
-        if (
-          scan.platforms.length > 0 &&
-          !scan.platforms.includes(target.platform)
-        ) {
-          continue;
-        }
         const provider = getProviderForPlatform(target.platform);
         if (
           !provider?.getCreatorPosts ||
@@ -202,6 +214,11 @@ export async function runResearchScan(params: {
               platformCreatorId: target.platformCreatorId,
             },
           });
+          if (posts.length === 0) {
+            providerErrors.push(
+              `${provider.providerName}: 0 results for ${target.platformCreatorId}`,
+            );
+          }
         } catch (error) {
           const message =
             error instanceof Error ? error.message : String(error);
@@ -212,6 +229,10 @@ export async function runResearchScan(params: {
             message,
           });
         }
+      }
+
+      if (discovered.length === 0 && providerErrors.length > 0) {
+        throw new Error(providerErrors.join(" · "));
       }
     } else {
       const settled = await Promise.allSettled(

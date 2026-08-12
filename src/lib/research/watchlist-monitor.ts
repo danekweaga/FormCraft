@@ -22,12 +22,15 @@ export async function runWatchlistMonitor(params: {
   discovered: number;
   retained: number;
   providers: string[];
+  byPlatform: Record<string, number>;
+  failedCreators: number;
+  errors: string[];
 }> {
   const budgets = getDiscoveryBudgets();
-  const maxCreators = Math.min(
-    params.maxCreators ?? budgets.maxTrackedCreators,
-    budgets.maxTrackedCreators,
-  );
+  const maxCreators =
+    params.maxCreators != null && params.maxCreators > 0
+      ? Math.floor(params.maxCreators)
+      : null;
 
   const dayStart = new Date();
   dayStart.setUTCHours(0, 0, 0, 0);
@@ -56,10 +59,8 @@ export async function runWatchlistMonitor(params: {
   let creatorIds: string[];
 
   if (params.externalCreatorIds?.length) {
-    creatorIds = Array.from(new Set(params.externalCreatorIds)).slice(
-      0,
-      maxCreators,
-    );
+    const uniqueIds = Array.from(new Set(params.externalCreatorIds));
+    creatorIds = maxCreators == null ? uniqueIds : uniqueIds.slice(0, maxCreators);
   } else {
     const { data: watchlists } = await params.supabase
       .from("research_watchlists")
@@ -69,7 +70,15 @@ export async function runWatchlistMonitor(params: {
 
     const watchlistIds = (watchlists ?? []).map((w) => w.id);
     if (watchlistIds.length === 0) {
-      return { creatorsChecked: 0, discovered: 0, retained: 0, providers: [] };
+      return {
+        creatorsChecked: 0,
+        discovered: 0,
+        retained: 0,
+        providers: [],
+        byPlatform: {},
+        failedCreators: 0,
+        errors: [],
+      };
     }
 
     const { data: members } = await params.supabase
@@ -87,21 +96,32 @@ export async function runWatchlistMonitor(params: {
   }
 
   if (creatorIds.length === 0) {
-    return { creatorsChecked: 0, discovered: 0, retained: 0, providers: [] };
+    return {
+      creatorsChecked: 0,
+      discovered: 0,
+      retained: 0,
+      providers: [],
+      byPlatform: {},
+      failedCreators: 0,
+      errors: [],
+    };
   }
 
-  const { data: creators } = await params.supabase
+  let creatorsQuery = params.supabase
     .from("external_creators")
     .select("id, platform, platform_creator_id, handle, display_name, tracking_paused")
     .eq("user_id", params.userId)
     .in("id", creatorIds)
     .eq("tracking_paused", false)
-    .order("data_freshness_at", { ascending: true, nullsFirst: true })
-    .limit(maxCreators);
+    .order("data_freshness_at", { ascending: true, nullsFirst: true });
+  if (maxCreators != null) creatorsQuery = creatorsQuery.limit(maxCreators);
+  const { data: creators } = await creatorsQuery;
 
   const retrievedAt = new Date().toISOString();
   const allPosts = [];
   const usedProviders = new Set<string>();
+  const byPlatform: Record<string, number> = {};
+  const providerErrors: string[] = [];
 
   for (const creator of creators ?? []) {
     const provider = getProviderForPlatform(creator.platform);
@@ -117,6 +137,8 @@ export async function runWatchlistMonitor(params: {
       usedProviders.add(provider.providerName);
       const recentShorts = filterRecentShortForm(posts, { lookbackDays: 30 });
       allPosts.push(...recentShorts);
+      byPlatform[creator.platform] =
+        (byPlatform[creator.platform] ?? 0) + recentShorts.length;
 
       await params.supabase.from("provider_usage_events").insert({
         user_id: params.userId,
@@ -137,13 +159,21 @@ export async function runWatchlistMonitor(params: {
         .eq("id", creator.id)
         .eq("user_id", params.userId);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      providerErrors.push(
+        `${creator.platform} @${creator.handle || creator.platform_creator_id}: ${message}`,
+      );
       console.error("[watchlist-monitor] creator pull failed", {
         creatorId: creator.id,
         platform: creator.platform,
         provider: provider.providerName,
-        message: error instanceof Error ? error.message : String(error),
+        message,
       });
     }
+  }
+
+  if (allPosts.length === 0 && providerErrors.length > 0) {
+    throw new Error(providerErrors.slice(0, 3).join(" · "));
   }
 
   const niche = await params.supabase
@@ -173,6 +203,9 @@ export async function runWatchlistMonitor(params: {
     discovered: ingested.discovered,
     retained: ingested.retained,
     providers: [...usedProviders],
+    byPlatform,
+    failedCreators: providerErrors.length,
+    errors: providerErrors.slice(0, 5),
   };
 }
 

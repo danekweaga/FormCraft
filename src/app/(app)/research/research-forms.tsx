@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -69,8 +69,13 @@ export function ResearchScanForm({
     runResearchScanAction,
     initialState,
   );
+  const [selectedCreatorIds, setSelectedCreatorIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const hasYoutube = platforms.some((p) => p.platform === "youtube");
+  const allCreatorsSelected =
+    creators.length > 0 && selectedCreatorIds.size === creators.length;
 
   return (
     <form action={action} className="space-y-4">
@@ -139,24 +144,65 @@ export function ResearchScanForm({
           <p className="text-xs text-secondary">
             When you select tracked creators or paste handles, FormCraft pulls
             those channels&apos; posts via getCreatorPosts instead of a broad
-            niche search — fewer irrelevant results, lower API spend.
+            niche search. Select all scans every supported creator shown; the
+            outlier filters decide which videos stay.
           </p>
           {creators.length > 0 ? (
-            <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto">
-              {creators.map((c) => (
-                <label
-                  key={c.id}
-                  className="flex items-center gap-2 rounded-full border border-outline-variant/30 px-3 py-1 text-xs"
-                >
-                  <input
-                    type="checkbox"
-                    name="creatorIds"
-                    value={c.id}
-                    className="size-3.5"
-                  />
-                  {c.label} · {c.platform}
-                </label>
-              ))}
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-secondary">
+                  {selectedCreatorIds.size} of {creators.length} selected
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={allCreatorsSelected}
+                    onClick={() =>
+                      setSelectedCreatorIds(
+                        new Set(creators.map((creator) => creator.id)),
+                      )
+                    }
+                  >
+                    Select all
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={selectedCreatorIds.size === 0}
+                    onClick={() => setSelectedCreatorIds(new Set())}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+              <div className="flex max-h-40 flex-wrap gap-2 overflow-y-auto">
+                {creators.map((c) => (
+                  <label
+                    key={c.id}
+                    className="flex items-center gap-2 rounded-full border border-outline-variant/30 px-3 py-1 text-xs"
+                  >
+                    <input
+                      type="checkbox"
+                      name="creatorIds"
+                      value={c.id}
+                      checked={selectedCreatorIds.has(c.id)}
+                      onChange={(event) =>
+                        setSelectedCreatorIds((current) => {
+                          const next = new Set(current);
+                          if (event.target.checked) next.add(c.id);
+                          else next.delete(c.id);
+                          return next;
+                        })
+                      }
+                      className="size-3.5"
+                    />
+                    {c.label} · {c.platform}
+                  </label>
+                ))}
+              </div>
             </div>
           ) : null}
           <div className="space-y-2">

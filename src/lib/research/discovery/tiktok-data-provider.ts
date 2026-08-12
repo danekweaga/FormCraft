@@ -7,7 +7,7 @@ import type {
   SearchPostsInput,
 } from "./types";
 
-const BASE = "https://api.tiktokapi.store/api/v1";
+const BASE = "https://tiktokapi.store/api/v1";
 
 export function isTiktokDataApiConfigured(): boolean {
   return Boolean(process.env.TIKTOK_DATA_API_KEY?.trim());
@@ -292,9 +292,8 @@ export const tiktokDataDiscoveryProvider: ContentDiscoveryProvider = {
       path: string;
       params: Record<string, string>;
     }> = [
-      { path: "/search/videos", params: { keyword: q, count } },
-      { path: "/search/video", params: { keyword: q, count } },
-      { path: "/feed/trending", params: { region: "US", count } },
+      { path: "/search/video", params: { search_term: q, count } },
+      { path: "/feed", params: { region: "US", count } },
     ];
 
     let lastUsable: SearchPostResult[] = [];

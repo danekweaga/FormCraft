@@ -71,7 +71,7 @@ describe("tiktokDataDiscoveryProvider", () => {
     vi.restoreAllMocks();
   });
 
-  it("uses documented search paths and falls back across variants", async () => {
+  it("uses the documented search endpoint and parameters", async () => {
     vi.stubEnv("TIKTOK_DATA_API_KEY", "test-key");
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
@@ -102,19 +102,20 @@ describe("tiktokDataDiscoveryProvider", () => {
 
     const [requestUrl, init] = fetchMock.mock.calls[0]!;
     const url = new URL(String(requestUrl));
-    expect(url.pathname).toBe("/api/v1/search/videos");
-    expect(url.searchParams.get("keyword")).toBe("coding");
+    expect(url.hostname).toBe("tiktokapi.store");
+    expect(url.pathname).toBe("/api/v1/search/video");
+    expect(url.searchParams.get("search_term")).toBe("coding");
     expect(init?.headers).toEqual({ Authorization: "Bearer test-key" });
     expect(results).toHaveLength(1);
   });
 
-  it("falls back to trending feed when search endpoints fail", async () => {
+  it("falls back to the feed when search fails", async () => {
     vi.stubEnv("TIKTOK_DATA_API_KEY", "test-key");
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo) => {
       const path = new URL(String(input)).pathname;
-      if (path.includes("/feed/trending")) {
+      if (path.endsWith("/feed")) {
         return new Response(
           JSON.stringify({
             data: {
@@ -156,7 +157,7 @@ describe("tiktokDataDiscoveryProvider", () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo) => {
       const path = new URL(String(input)).pathname;
-      if (path.includes("/feed/trending")) {
+      if (path.endsWith("/feed")) {
         return new Response(
           JSON.stringify({
             data: {
@@ -198,7 +199,7 @@ describe("tiktokDataDiscoveryProvider", () => {
     const oldCreate = Math.floor(Date.now() / 1000) - 200 * 86_400;
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo) => {
       const path = new URL(String(input)).pathname;
-      if (path.includes("/feed/trending")) {
+      if (path.endsWith("/feed")) {
         return new Response(
           JSON.stringify({
             data: {

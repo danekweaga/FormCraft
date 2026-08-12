@@ -2,7 +2,6 @@ export type DiscoveryBudgets = {
   dailyCalls: number;
   monthlyCalls: number;
   maxResultsPerQuery: number;
-  maxTrackedCreators: number;
   autoDeepAnalysis: boolean;
 };
 
@@ -12,8 +11,6 @@ export function getDiscoveryBudgets(): DiscoveryBudgets {
     monthlyCalls: Number(process.env.DISCOVERY_MONTHLY_CALL_BUDGET ?? "500") || 500,
     maxResultsPerQuery:
       Number(process.env.DISCOVERY_MAX_RESULTS_PER_QUERY ?? "50") || 50,
-    maxTrackedCreators:
-      Number(process.env.DISCOVERY_MAX_TRACKED_CREATORS ?? "50") || 50,
     autoDeepAnalysis: process.env.DISCOVERY_AUTO_DEEP_ANALYSIS === "1",
   };
 }

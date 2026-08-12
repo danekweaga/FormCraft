@@ -848,7 +848,9 @@ export async function refreshWatchlistMonitoringAction(
       };
     }
     return {
-      success: `Synced ${catalog.imported} creator sources (${catalog.trackable} currently API-trackable). Checked ${result.creatorsChecked} supported creator channels, found ${result.discovered} recent short-form posts, and kept ${result.retained}.`,
+      success: `Synced ${catalog.imported} creator sources (${catalog.trackable} currently API-trackable). Checked ${result.creatorsChecked} supported creator channels, found ${result.discovered} recent short-form posts, and kept ${result.retained}. By platform: ${Object.entries(result.byPlatform)
+        .map(([platform, count]) => `${platform} ${count}`)
+        .join(", ") || "none"}.${result.failedCreators > 0 ? ` ${result.failedCreators} creator pulls failed: ${result.errors.join(" · ")}` : ""}`,
     };
   } catch (error) {
     return {

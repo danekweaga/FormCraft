@@ -147,7 +147,6 @@ describe("provider budget", () => {
         dailyCalls: 50,
         monthlyCalls: 500,
         maxResultsPerQuery: 25,
-        maxTrackedCreators: 50,
         autoDeepAnalysis: false,
       },
     });

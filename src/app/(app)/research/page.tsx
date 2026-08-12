@@ -305,11 +305,18 @@ export default async function ResearchPage({
     name: w.name,
   }));
 
-  const creatorOptions = (creators ?? []).map((c) => ({
-    id: c.id,
-    label: c.display_name || c.handle || "Creator",
-    platform: c.platform,
-  }));
+  const searchablePlatformIds = new Set(platforms.map((p) => p.platform));
+  const creatorOptions = (creators ?? [])
+    .filter(
+      (creator) =>
+        !creator.tracking_paused &&
+        searchablePlatformIds.has(creator.platform),
+    )
+    .map((c) => ({
+      id: c.id,
+      label: c.display_name || c.handle || "Creator",
+      platform: c.platform,
+    }));
 
   const feedList =
     mode === "saved" ? saved : mode === "outliers" ? outliers : forYou;
@@ -586,6 +593,24 @@ export default async function ResearchPage({
             </div>
           ) : null}
         </div>
+      ) : null}
+
+      {mode === "discover" ? (
+        <section className="mb-8 space-y-4">
+          <div>
+            <h2 className="text-xl font-semibold text-on-background">
+              Filter collected outliers
+            </h2>
+            <p className="mt-1 text-sm text-secondary">
+              Change channel, keywords, outlier score, views, engagement,
+              posting date, and platform without running another API pull.
+            </p>
+          </div>
+          <ResearchFeedWithFilters
+            items={outliers}
+            watchlists={watchlistOptions}
+          />
+        </section>
       ) : null}
 
       {mode === "watchlists" ? (
