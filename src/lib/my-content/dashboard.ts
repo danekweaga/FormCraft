@@ -82,7 +82,11 @@ export function buildTopicPerformance(
     const topic = postTopic(post);
     groups.set(topic, [...(groups.get(topic) ?? []), post]);
   }
+  const hasClassifiedTopic = [...groups.keys()].some(
+    (topic) => topic !== "Unclassified",
+  );
   return [...groups.entries()]
+    .filter(([topic]) => !hasClassifiedTopic || topic !== "Unclassified")
     .map(([topic, topicPosts]) => ({
       topic,
       postCount: topicPosts.length,

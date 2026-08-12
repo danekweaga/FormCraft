@@ -327,6 +327,22 @@ export async function runResearchScan(params: {
       retrievedAt,
     });
 
+    // Re-rank the user's pending creator recommendations whenever the real
+    // discovery library changes. This does not spend another provider credit.
+    try {
+      const { refreshCreatorSuggestionsFromLibrary } = await import(
+        "./creator-suggestions"
+      );
+      await refreshCreatorSuggestionsFromLibrary({
+        supabase: params.supabase,
+        userId: params.userId,
+      });
+    } catch (error) {
+      console.error(
+        `[research-scan] creator recommendation refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
     const now = new Date();
     const nextRun = new Date(now.getTime() + 86_400_000);
     const byPlatform = discovered.reduce<Record<string, number>>((acc, post) => {

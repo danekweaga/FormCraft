@@ -28,13 +28,118 @@ export const postClassificationSchema = z.object({
 
 export type PostClassification = z.infer<typeof postClassificationSchema>;
 
+const TOPIC_RULES: Array<{
+  topic: string;
+  contentPillar: string;
+  pattern: RegExp;
+}> = [
+  {
+    topic: "Developer security & secrets",
+    contentPillar: "developer_education",
+    pattern: /(?:\.env|api key|secret credential|leaked? key|environment variable)/i,
+  },
+  {
+    topic: "AI tool comparisons",
+    contentPillar: "ai_tools",
+    pattern: /(?:chatgpt\s+(?:vs|or)\s+claude|claude\s+(?:vs|or)\s+chatgpt|ai tool comparison)/i,
+  },
+  {
+    topic: "LeetCode & interview prep",
+    contentPillar: "career_growth",
+    pattern: /(?:leetcode|coding interview|technical interview|data structures?|algorithms?)/i,
+  },
+  {
+    topic: "Tutorial dependency & self-learning",
+    contentPillar: "learning_strategy",
+    pattern: /(?:tutorial hell|depending on tutorials?|stop tutorials?|self[- ]taught|learning to code)/i,
+  },
+  {
+    topic: "CS careers & internships",
+    contentPillar: "career_growth",
+    pattern: /(?:internships?|résumés?|resumes?|job search|computer science career|software engineering career)/i,
+  },
+  {
+    topic: "Projects & portfolios",
+    contentPillar: "project_building",
+    pattern: /(?:portfolio|side projects?|github|building projects?|project ideas?)/i,
+  },
+  {
+    topic: "Hackathons",
+    contentPillar: "project_building",
+    pattern: /(?:hackathons?|devpost)/i,
+  },
+  {
+    topic: "AI-assisted coding",
+    contentPillar: "ai_tools",
+    pattern: /(?:vibe ?cod(?:e|er|ing)|ai cod(?:e|ing)|cursor ai|github copilot|lovable|bolt\.new|replit agent)/i,
+  },
+  {
+    topic: "Coding & debugging",
+    contentPillar: "developer_education",
+    pattern: /(?:debugg?ing|html|css|javascript|typescript|python|coding mistake|programming)/i,
+  },
+  {
+    topic: "CS student life",
+    contentPillar: "student_life",
+    pattern: /(?:computer science|cs students?|csstudents|college coder|university student)/i,
+  },
+];
+
+function titleCaseHashtag(value: string): string {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function inferTopic(text: string): {
+  topic: string | null;
+  contentPillar: string | null;
+  confidence: number;
+} {
+  const rule = TOPIC_RULES.find((candidate) => candidate.pattern.test(text));
+  if (rule) {
+    return {
+      topic: rule.topic,
+      contentPillar: rule.contentPillar,
+      confidence: 0.72,
+    };
+  }
+
+  const ignoredTags = new Set([
+    "fyp",
+    "viral",
+    "reels",
+    "shorts",
+    "coding",
+    "programming",
+    "computerscience",
+    "csstudents",
+  ]);
+  const hashtag = [...text.matchAll(/#([a-z][a-z0-9_-]{2,30})/gi)]
+    .map((match) => match[1]!.toLowerCase())
+    .find((tag) => !ignoredTags.has(tag));
+  return hashtag
+    ? {
+        topic: titleCaseHashtag(hashtag),
+        contentPillar: "niche_topic",
+        confidence: 0.55,
+      }
+    : { topic: null, contentPillar: null, confidence: 0.35 };
+}
+
 export function classifyPostHeuristic(input: {
   caption: string | null;
   title: string | null;
+  transcript?: string | null;
   format: string | null;
   durationSeconds: number | null;
 }): PostClassification {
-  const text = `${input.title ?? ""}\n${input.caption ?? ""}`.toLowerCase();
+  const suppliedTranscript = input.transcript?.trim() ?? "";
+  const text = [suppliedTranscript, input.title, input.caption]
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase();
+  const topic = inferTopic(text);
   const personal =
     /\b(i |my |me |i'm|i’ve|i've|when i|last week|internship|my team)\b/.test(
       text,
@@ -46,7 +151,7 @@ export function classifyPostHeuristic(input: {
   const educational =
     /\b(how to|guide|tips|learn|framework|step|why you should)\b/.test(text);
   const questionHook = /^\s*(why|what|how|do you|are you|is your)/i.test(
-    input.caption ?? input.title ?? "",
+    suppliedTranscript || input.caption || input.title || "",
   );
   const contrarian = /\b(stop|don't|never|wrong|myth|lie)\b/i.test(text);
 
@@ -57,12 +162,10 @@ export function classifyPostHeuristic(input: {
   else if (opinion) content_mode = "opinion";
 
   return {
-    topic: null,
-    content_pillar: personal
-      ? "personal_story"
-      : educational
-        ? "education"
-        : null,
+    topic: topic.topic,
+    content_pillar:
+      topic.contentPillar ??
+      (personal ? "personal_story" : educational ? "education" : null),
     format:
       input.format ??
       (input.durationSeconds && input.durationSeconds <= 90 ? "short" : null),
@@ -85,7 +188,7 @@ export function classifyPostHeuristic(input: {
       : educational
         ? "claim_then_steps"
         : null,
-    confidence: 0.45,
+    confidence: Math.max(topic.confidence, suppliedTranscript ? 0.58 : 0.45),
   };
 }
 
@@ -94,6 +197,7 @@ const PROMPT_VERSION = "classify-post-v2";
 export async function classifyPost(input: {
   caption: string | null;
   title: string | null;
+  transcript?: string | null;
   format: string | null;
   durationSeconds: number | null;
   modelName?: string;
@@ -112,6 +216,7 @@ export async function classifyPost(input: {
     PROMPT_VERSION,
     input.title,
     input.caption,
+    input.transcript,
     input.format,
     input.durationSeconds,
   ]);
@@ -140,6 +245,7 @@ export async function classifyPost(input: {
             content: JSON.stringify({
               title: input.title,
               caption: input.caption,
+              transcript: input.transcript,
               format: input.format,
               durationSeconds: input.durationSeconds,
             }),
@@ -172,6 +278,7 @@ export async function classifyPost(input: {
           content: JSON.stringify({
             title: input.title,
             caption: input.caption,
+            transcript: input.transcript,
             format: input.format,
             durationSeconds: input.durationSeconds,
           }),

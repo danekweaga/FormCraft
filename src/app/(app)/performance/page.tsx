@@ -34,6 +34,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ContentRemix } from "./content-remix";
 import { GrowthChart } from "./growth-chart";
 import { ImpressionsHeatmap } from "./impressions-heatmap";
+import { TopicClassificationButton } from "./topic-classification-button";
 import { GenerateWeeklyReviewButton } from "./weekly-actions";
 
 type SearchParams = Promise<{ range?: string }>;
@@ -94,6 +95,10 @@ export default async function PerformancePage({
   );
   const summary = summarizeAccountPerformance(selectedPosts);
   const topics = buildTopicPerformance(selectedPosts).slice(0, 8);
+  const specificallyClassifiedCount = selectedPosts.filter((post) =>
+    Boolean(post.topic?.trim()),
+  ).length;
+  const missingTopicCount = selectedPosts.length - specificallyClassifiedCount;
   const remix = buildRemixIngredients(selectedPosts);
   const report = (latest?.report ?? null) as Record<string, unknown> | null;
   const maxTopViews = Math.max(
@@ -227,9 +232,26 @@ export default async function PerformancePage({
             <Card className="border-outline-variant/20 bg-surface-primary paper-shadow">
               <CardHeader>
                 <CardTitle>Topics that perform</CardTitle>
-                <CardDescription>Average views by classified topic or content pillar.</CardDescription>
+                <CardDescription>
+                  Average views by reusable topic. Classification uses a stored
+                  transcript when available, otherwise the existing title and caption.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="rounded-lg border border-outline-variant/20 bg-surface-container-lowest p-3">
+                  <p className="text-sm font-semibold text-on-background">
+                    {specificallyClassifiedCount}/{selectedPosts.length} posts have a specific topic
+                  </p>
+                  <p className="mt-1 text-xs text-secondary">
+                    The free pass never transcribes a video and never calls an AI API.
+                    Paste each future script once in Pre-Publish; FormCraft stores it for reuse.
+                  </p>
+                  {missingTopicCount > 0 ? (
+                    <div className="mt-3">
+                      <TopicClassificationButton />
+                    </div>
+                  ) : null}
+                </div>
                 {topics.map((topic) => (
                   <div key={topic.topic}>
                     <div className="mb-1 flex items-center justify-between gap-3 text-sm">
@@ -246,6 +268,12 @@ export default async function PerformancePage({
                     </div>
                   </div>
                 ))}
+                {topics.length === 0 ? (
+                  <p className="text-sm text-secondary">
+                    No topics are classified in this range yet. Run the free pass,
+                    then correct any remaining posts in My Content.
+                  </p>
+                ) : null}
               </CardContent>
             </Card>
           </div>

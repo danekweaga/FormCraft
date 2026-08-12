@@ -194,7 +194,7 @@ export async function runContentIntelligenceJob(): Promise<{
     const { data: unclassified, error: listError } = await auth.supabase
       .from("content_posts")
       .select(
-        "id, title, caption, format, duration_seconds, classification_locked, classification",
+        "id, title, caption, transcript, format, duration_seconds, classification_locked, classification",
       )
       .eq("user_id", auth.user.id)
       .eq("classification_locked", false)
@@ -223,6 +223,7 @@ export async function runContentIntelligenceJob(): Promise<{
       const { classification, model } = await classifyPost({
         title: post.title,
         caption: post.caption,
+        transcript: post.transcript,
         format: post.format,
         durationSeconds: post.duration_seconds,
         modelName: classificationModel.modelName,

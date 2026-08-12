@@ -29,6 +29,10 @@ import {
 } from "./actions";
 import { ContentGapsPanel } from "./content-gaps-panel";
 import { CreatorComparePanel } from "./creator-compare-panel";
+import {
+  CreatorSuggestionsPanel,
+  type CreatorSuggestionCard,
+} from "./creator-suggestions-panel";
 import { MultiOutlierForm } from "./multi-outlier-form";
 import { NicheProfileForm } from "./niche-profile-form";
 import { ResearchFeedWithFilters } from "./research-feed-filters";
@@ -154,6 +158,7 @@ export default async function ResearchPage({
     { data: myPosts },
     { data: feedback },
     { data: watchlistMembers },
+    { data: creatorSuggestions },
   ] = await Promise.all([
     supabase
       .from("research_items")
@@ -184,7 +189,7 @@ export default async function ResearchPage({
       )
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false })
-      .limit(250),
+      .limit(750),
     supabase
       .from("niche_profiles")
       .select("*")
@@ -231,6 +236,15 @@ export default async function ResearchPage({
     supabase
       .from("research_watchlist_members")
       .select("watchlist_id, external_creator_id"),
+    supabase
+      .from("research_creator_suggestions")
+      .select(
+        "id, watchlist_id, external_creator_id, score, reasons, matched_topics, evidence",
+      )
+      .eq("user_id", user.id)
+      .eq("status", "pending")
+      .order("score", { ascending: false })
+      .limit(18),
   ]);
 
   const topics = Array.from(
@@ -370,6 +384,40 @@ export default async function ResearchPage({
     id: w.id,
     name: w.name,
   }));
+  const creatorsById = new Map((creators ?? []).map((creator) => [creator.id, creator]));
+  const watchlistsById = new Map(
+    (watchlists ?? []).map((watchlist) => [watchlist.id, watchlist]),
+  );
+  const suggestionCards: CreatorSuggestionCard[] = (creatorSuggestions ?? [])
+    .flatMap((suggestion): CreatorSuggestionCard[] => {
+      const creator = creatorsById.get(suggestion.external_creator_id);
+      const watchlist = watchlistsById.get(suggestion.watchlist_id);
+      if (!creator || !watchlist) return [];
+      const evidence =
+        suggestion.evidence && typeof suggestion.evidence === "object"
+          ? (suggestion.evidence as CreatorSuggestionCard["evidence"])
+          : null;
+      return [
+        {
+          id: suggestion.id,
+          watchlistId: suggestion.watchlist_id,
+          watchlistName: watchlist.name,
+          externalCreatorId: suggestion.external_creator_id,
+          platform: creator.platform,
+          handle: creator.handle,
+          displayName: creator.display_name,
+          followerCount: creator.follower_count,
+          score: Number(suggestion.score ?? 0),
+          reasons: Array.isArray(suggestion.reasons)
+            ? suggestion.reasons.map(String)
+            : [],
+          matchedTopics: Array.isArray(suggestion.matched_topics)
+            ? suggestion.matched_topics.map(String)
+            : [],
+          evidence,
+        },
+      ];
+    });
 
   const scrapeCredits = latestScrapeCreatorsCredits(scans ?? []);
   const scrapeCreditWarning = isScrapeCreatorsConfigured()
@@ -746,6 +794,11 @@ export default async function ResearchPage({
               </CardContent>
             </Card>
           </div>
+          <CreatorSuggestionsPanel
+            suggestions={suggestionCards}
+            watchlists={watchlistOptions}
+            configuredPlatforms={platforms.map((entry) => entry.platform)}
+          />
           <div className="space-y-3">
             {(watchlists?.length ?? 0) === 0 ? (
               <EmptyState

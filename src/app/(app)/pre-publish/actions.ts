@@ -19,6 +19,7 @@ import {
 import { reviewScriptHeuristic } from "@/lib/growth/heuristics";
 import { reviewScriptLabWithAi } from "@/lib/growth/pre-publish-lab";
 import { prePublishSchema } from "@/lib/growth/schemas";
+import { classifyPostHeuristic } from "@/lib/intelligence/classify-post";
 import { createClient } from "@/lib/supabase/server";
 
 export type PrePublishActionState = {
@@ -68,6 +69,12 @@ export async function createPrePublishReview(
 
   const analysisId = parsed.data.analysisId ?? null;
   const contentPostId = parsed.data.contentPostId ?? null;
+  let linkedPost:
+    | {
+        classification: Record<string, unknown> | null;
+        classification_locked: boolean;
+      }
+    | null = null;
 
   if (analysisId) {
     const { data: owned } = await auth.supabase
@@ -81,11 +88,18 @@ export async function createPrePublishReview(
   if (contentPostId) {
     const { data: owned } = await auth.supabase
       .from("content_posts")
-      .select("id")
+      .select("id, classification, classification_locked")
       .eq("id", contentPostId)
       .eq("user_id", auth.user.id)
       .maybeSingle();
     if (!owned) return { error: "My Content post not found." };
+    linkedPost = {
+      classification:
+        owned.classification && typeof owned.classification === "object"
+          ? (owned.classification as Record<string, unknown>)
+          : null,
+      classification_locked: owned.classification_locked === true,
+    };
   }
 
   if (parsed.data.runEditingCopilot && !parsed.data.creativeDirection) {
@@ -190,6 +204,13 @@ export async function createPrePublishReview(
 
   const labResult = lab?.result;
   if (!labResult) return { error: "Could not produce pre-publish review." };
+  const draftClassification = classifyPostHeuristic({
+    title: parsed.data.sourceRef ?? null,
+    caption: null,
+    transcript: parsed.data.inputText,
+    format: null,
+    durationSeconds: null,
+  });
 
   let editingPlanId: string | null = null;
   const direction = parsed.data.creativeDirection as CreativeDirection | null;
@@ -270,7 +291,14 @@ export async function createPrePublishReview(
           : "paste",
       source_ref: parsed.data.sourceRef,
       input_text: parsed.data.inputText,
-      result: labResult,
+      result: {
+        ...labResult,
+        draftClassification: {
+          ...draftClassification,
+          classification_source: "pasted_pre_publish_transcript",
+          used_transcription_api: false,
+        },
+      },
       checklist: labResult.checklist,
       status: "reviewed",
       analysis_id: analysisId,
@@ -285,6 +313,35 @@ export async function createPrePublishReview(
     .single();
 
   if (error || !data) return { error: error?.message ?? "Failed to save review." };
+
+  // A transcript pasted once is reusable. When the review is linked to an
+  // existing My Content post, store it and its local topic classification so
+  // Performance never needs to buy a transcript for that post.
+  if (contentPostId) {
+    const update: Record<string, unknown> = {
+      transcript: parsed.data.inputText,
+    };
+    if (!linkedPost?.classification_locked) {
+      update.topic = draftClassification.topic;
+      update.content_pillar = draftClassification.content_pillar;
+      update.classification = {
+        ...(linkedPost?.classification ?? {}),
+        ...draftClassification,
+        classification_source: "pasted_pre_publish_transcript",
+        used_transcription_api: false,
+      };
+      update.classification_confidence = draftClassification.confidence;
+      update.classification_model = "local-topic-rules-v1";
+      update.classified_at = new Date().toISOString();
+    }
+    await auth.supabase
+      .from("content_posts")
+      .update(update)
+      .eq("id", contentPostId)
+      .eq("user_id", auth.user.id);
+    revalidatePath("/performance");
+    revalidatePath(`/my-content/${contentPostId}`);
+  }
 
   if (editingPlanId) {
     await auth.supabase

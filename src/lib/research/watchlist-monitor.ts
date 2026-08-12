@@ -203,6 +203,22 @@ export async function runWatchlistMonitor(params: {
     retrievedAt,
   });
 
+  // New watchlist evidence should improve rankings even when no broad search
+  // runs. Recomputing uses stored posts only and costs no provider credits.
+  try {
+    const { refreshCreatorSuggestionsFromLibrary } = await import(
+      "./creator-suggestions"
+    );
+    await refreshCreatorSuggestionsFromLibrary({
+      supabase: params.supabase,
+      userId: params.userId,
+    });
+  } catch (error) {
+    console.error(
+      `[watchlist-monitor] creator recommendation refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
   return {
     creatorsChecked: (creators ?? []).length,
     remainingCreators: Math.max(

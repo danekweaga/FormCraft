@@ -61,6 +61,7 @@ export type ContentPostRow = ContentPostMetrics & {
   thumbnail_url?: string | null;
   title: string | null;
   caption: string | null;
+  transcript?: string | null;
   topic?: string | null;
   content_pillar?: string | null;
   hook_text?: string | null;

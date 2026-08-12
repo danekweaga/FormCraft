@@ -632,6 +632,199 @@ export async function addCreatorToWatchlistAction(
   };
 }
 
+/**
+ * Search configured providers using signals learned from one watchlist, then
+ * rank newly discovered accounts against the watchlist's real post library.
+ */
+export async function findSimilarCreatorsAction(
+  _previous: ResearchActionState,
+  formData: FormData,
+): Promise<ResearchActionState> {
+  const watchlistId = String(formData.get("watchlistId") ?? "");
+  if (!watchlistId) return { error: "Pick a watchlist." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+
+  const {
+    getWatchlistRecommendationSeed,
+    refreshCreatorSuggestionsFromLibrary,
+  } = await import("@/lib/research/creator-suggestions");
+  try {
+    const seed = await getWatchlistRecommendationSeed({
+      supabase,
+      userId: user.id,
+      watchlistId,
+    });
+    const platforms = Array.from(
+      new Set(searchablePlatforms().map((entry) => entry.platform)),
+    ) as ResearchPlatform[];
+    if (platforms.length === 0) {
+      return {
+        error:
+          "No discovery provider is configured. Add SCRAPECREATORS_API_KEY and/or YOUTUBE_DATA_API_KEY.",
+      };
+    }
+
+    const { data: scan, error: scanError } = await supabase
+      .from("research_scans")
+      .insert({
+        user_id: user.id,
+        name: `Similar creators: ${seed.query.slice(0, 60)}`,
+        query: seed.query,
+        platforms,
+        lookback_days: 30,
+        min_views: 0,
+        min_outlier_score: 0,
+        max_results: 48,
+        auto_scan_enabled: false,
+        status: "active",
+        parameters: {
+          recommendation_scan: true,
+          watchlist_id: watchlistId,
+          seed_creator_ids: seed.seedCreatorIds,
+          seed_query: seed.query,
+        },
+      })
+      .select("id")
+      .single();
+    if (scanError || !scan) {
+      return {
+        error: scanError?.message ?? "Could not create the recommendation scan.",
+      };
+    }
+
+    let discovered = 0;
+    let providers: string[] = [];
+    let providerWarning: string | null = null;
+    try {
+      const result = await runResearchScan({
+        supabase,
+        userId: user.id,
+        scanId: scan.id,
+      });
+      discovered = result.discovered;
+      providers = result.providers;
+    } catch (error) {
+      providerWarning =
+        error instanceof Error ? error.message : "Provider search failed.";
+    }
+
+    const refreshed = await refreshCreatorSuggestionsFromLibrary({
+      supabase,
+      userId: user.id,
+      watchlistId,
+    });
+    revalidatePath("/research");
+    if (refreshed.generated === 0) {
+      return {
+        error: providerWarning
+          ? `${providerWarning} No evidence-backed new accounts are available yet.`
+          : "The search completed, but no new account had enough shared-topic evidence yet. Refresh the watchlist and try again after the library has more posts.",
+      };
+    }
+    return {
+      discovered,
+      providers,
+      success: `Found ${refreshed.generated} evidence-backed account suggestion${refreshed.generated === 1 ? "" : "s"} from the 30-day library${providers.length ? ` via ${providers.join(", ")}` : ""}.${providerWarning ? ` Provider note: ${providerWarning}` : ""}`,
+    };
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not generate creator suggestions.",
+    };
+  }
+}
+
+export async function acceptCreatorSuggestionAction(
+  _previous: ResearchActionState,
+  formData: FormData,
+): Promise<ResearchActionState> {
+  const suggestionId = String(formData.get("suggestionId") ?? "");
+  if (!suggestionId) return { error: "Suggestion id required." };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+
+  const { data: suggestion } = await supabase
+    .from("research_creator_suggestions")
+    .select("id, watchlist_id, external_creator_id, status")
+    .eq("id", suggestionId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!suggestion || suggestion.status !== "pending") {
+    return { error: "This suggestion is no longer available." };
+  }
+
+  const { error: memberError } = await supabase
+    .from("research_watchlist_members")
+    .upsert(
+      {
+        watchlist_id: suggestion.watchlist_id,
+        external_creator_id: suggestion.external_creator_id,
+        priority: 0,
+        notes: "Added from FormCraft similar-account recommendations.",
+      },
+      { onConflict: "watchlist_id,external_creator_id" },
+    );
+  if (memberError) return { error: memberError.message };
+
+  await supabase
+    .from("research_creator_suggestions")
+    .update({ status: "accepted" })
+    .eq("id", suggestion.id)
+    .eq("user_id", user.id);
+
+  let pullNote = "Its discovered posts are already in the research library.";
+  try {
+    const { refreshSingleCreatorPosts } = await import(
+      "@/lib/research/watchlist-monitor"
+    );
+    const pull = await refreshSingleCreatorPosts({
+      supabase,
+      userId: user.id,
+      externalCreatorId: suggestion.external_creator_id,
+      maxResults: 20,
+    });
+    pullNote = `Pulled ${pull.retained} recent posts.`;
+  } catch (error) {
+    pullNote = `Added successfully; live pull can be retried later (${error instanceof Error ? error.message : "provider unavailable"}).`;
+  }
+
+  revalidatePath("/research");
+  revalidatePath(`/research/creators/${suggestion.external_creator_id}`);
+  return { success: `Added to the watchlist. ${pullNote}` };
+}
+
+export async function dismissCreatorSuggestionAction(
+  _previous: ResearchActionState,
+  formData: FormData,
+): Promise<ResearchActionState> {
+  const suggestionId = String(formData.get("suggestionId") ?? "");
+  if (!suggestionId) return { error: "Suggestion id required." };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+  const { error } = await supabase
+    .from("research_creator_suggestions")
+    .update({ status: "dismissed" })
+    .eq("id", suggestionId)
+    .eq("user_id", user.id)
+    .eq("status", "pending");
+  if (error) return { error: error.message };
+  revalidatePath("/research");
+  return { success: "Dismissed. FormCraft will not suggest this account again for this watchlist." };
+}
+
 export async function trackCreatorFromItemAction(formData: FormData) {
   const itemId = String(formData.get("itemId") ?? "");
   const watchlistId = String(formData.get("watchlistId") ?? "");
