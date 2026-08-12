@@ -5,6 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
+  meetsResearchViewFloor,
+  MIN_RESEARCH_VIEWS,
+} from "@/lib/research/visibility-policy";
+import {
   ResearchItemCard,
   type ResearchCardItem,
 } from "./research-item-card";
@@ -30,12 +34,16 @@ export function CreatorPostsWorkspace({
   const [sort, setSort] = useState<SortKey>("outlier");
   const [pending, start] = useTransition();
   const [pullMessage, setPullMessage] = useState<string | null>(null);
+  const eligiblePosts = useMemo(
+    () => posts.filter((post) => meetsResearchViewFloor(post.views)),
+    [posts],
+  );
 
   const visible = useMemo(() => {
     const base =
       mode === "outliers"
-        ? posts.filter((p) => (p.outlier_score ?? 0) >= 1.5)
-        : posts;
+        ? eligiblePosts.filter((p) => (p.outlier_score ?? 0) >= 1.5)
+        : eligiblePosts;
     const sorted = [...base];
     sorted.sort((a, b) => {
       if (sort === "views") {
@@ -49,14 +57,16 @@ export function CreatorPostsWorkspace({
       return (b.outlier_score ?? 0) - (a.outlier_score ?? 0);
     });
     return sorted;
-  }, [mode, posts, sort]);
+  }, [eligiblePosts, mode, sort]);
 
-  const outlierCount = posts.filter((p) => (p.outlier_score ?? 0) >= 1.5).length;
+  const outlierCount = eligiblePosts.filter(
+    (p) => (p.outlier_score ?? 0) >= 1.5,
+  ).length;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="primary">{posts.length} posts</Badge>
+        <Badge variant="primary">{eligiblePosts.length} posts at 20K+</Badge>
         <Badge variant="success">{outlierCount} outliers (≥1.5×)</Badge>
         <div className="ml-auto flex flex-wrap gap-2">
           {canAutoPull ? (
@@ -117,13 +127,15 @@ export function CreatorPostsWorkspace({
           : "."}
       </p>
 
-      {posts.length === 0 ? (
+      {eligiblePosts.length === 0 ? (
         <EmptyState
-          title="No posts linked yet"
+          title="No videos with 20,000+ verified views"
           description={
-            canAutoPull
-              ? "Hit Pull posts now to fetch recent videos and score them vs this creator’s median."
-              : "No discovery provider is configured for this platform. Add SCRAPECREATORS_API_KEY for Instagram/TikTok, or YOUTUBE_DATA_API_KEY for YouTube."
+            platform === "instagram"
+              ? "Meta does not provide competitor Reel view counts, so FormCraft hides those posts instead of guessing."
+              : canAutoPull
+                ? `Pull recent videos again. Posts below ${MIN_RESEARCH_VIEWS.toLocaleString()} verified views stay hidden.`
+                : "No configured provider can verify qualifying view counts for this creator."
           }
         />
       ) : visible.length === 0 ? (

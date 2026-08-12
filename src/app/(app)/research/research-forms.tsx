@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MIN_RESEARCH_VIEWS } from "@/lib/research/visibility-policy";
 import {
   runResearchScanAction,
   saveResearchReferenceAction,
@@ -241,7 +242,16 @@ export function ResearchScanForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor="min-views">Minimum views</Label>
-          <Input id="min-views" name="minViews" type="number" min="0" defaultValue="0" />
+          <Input
+            id="min-views"
+            name="minViews"
+            type="number"
+            min={MIN_RESEARCH_VIEWS}
+            defaultValue={MIN_RESEARCH_VIEWS}
+          />
+          <p className="text-xs text-secondary">
+            FormCraft never shows discovery videos below 20,000 verified views.
+          </p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="outlier-score">Minimum outlier (optional)</Label>

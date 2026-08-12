@@ -221,7 +221,7 @@ describe("normalizeSearchFilters", () => {
     expect(normalized.query).toBe("AI for CS students");
     expect(normalized.platforms).toEqual(["youtube"]);
     expect(normalized.lookbackDays).toBe(90);
-    expect(normalized.minViews).toBe(0);
+    expect(normalized.minViews).toBe(20_000);
     expect(normalized.maxResults).toBe(50);
     expect(normalized.minOutlierScore).toBe(2);
   });

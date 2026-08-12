@@ -1,3 +1,5 @@
+import { MIN_RESEARCH_VIEWS } from "./visibility-policy";
+
 export type ResearchFeedFilters = {
   keywords: string;
   minOutlier: number;
@@ -30,7 +32,7 @@ export const DEFAULT_RESEARCH_FILTERS: ResearchFeedFilters = {
   keywords: "",
   minOutlier: 0,
   maxOutlier: 100_000,
-  minViews: 0,
+  minViews: MIN_RESEARCH_VIEWS,
   maxViews: 1_000_000_000,
   minEngagement: 0,
   maxEngagement: 100,
@@ -57,8 +59,14 @@ export function normalizeResearchFeedFilters(
     keywords: typeof raw.keywords === "string" ? raw.keywords.slice(0, 200) : "",
     minOutlier: Math.max(0, finiteNumber(raw.minOutlier, 0)),
     maxOutlier: Math.max(0, finiteNumber(raw.maxOutlier, 100_000)),
-    minViews: Math.max(0, finiteNumber(raw.minViews, 0)),
-    maxViews: Math.max(0, finiteNumber(raw.maxViews, 1_000_000_000)),
+    minViews: Math.max(
+      MIN_RESEARCH_VIEWS,
+      finiteNumber(raw.minViews, MIN_RESEARCH_VIEWS),
+    ),
+    maxViews: Math.max(
+      MIN_RESEARCH_VIEWS,
+      finiteNumber(raw.maxViews, 1_000_000_000),
+    ),
     minEngagement: Math.max(0, finiteNumber(raw.minEngagement, 0)),
     maxEngagement: Math.max(0, finiteNumber(raw.maxEngagement, 100)),
     postedWithinValue: Math.max(
@@ -117,7 +125,11 @@ export function filterResearchItems<T extends FilterableResearchItem>(
     }
 
     const views = item.views ?? 0;
-    if (views < filters.minViews || views > filters.maxViews) return false;
+    const effectiveMinViews = Math.max(
+      MIN_RESEARCH_VIEWS,
+      filters.minViews,
+    );
+    if (views < effectiveMinViews || views > filters.maxViews) return false;
 
     const eng = engagementRate(item);
     if (eng != null) {

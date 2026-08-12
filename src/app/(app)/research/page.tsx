@@ -20,6 +20,7 @@ import {
 } from "@/lib/research/discovery/scrapecreators-client";
 import { scorePersonalRelevance } from "@/lib/research/relevance";
 import { normalizeResearchFeedFilters } from "@/lib/research/feed-filters";
+import { meetsResearchViewFloor } from "@/lib/research/visibility-policy";
 import type { NicheBrief } from "@/lib/research/niche-brief";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -321,14 +322,17 @@ export default async function ResearchPage({
     };
   });
 
-  const forYou = [...enriched].sort((a, b) => {
+  const visibleResearch = enriched.filter((item) =>
+    meetsResearchViewFloor(item.views),
+  );
+  const forYou = [...visibleResearch].sort((a, b) => {
     const viewDelta = (b.views ?? 0) - (a.views ?? 0);
     if (viewDelta !== 0) return viewDelta;
     const outlierDelta = (b.outlier_score ?? -1) - (a.outlier_score ?? -1);
     if (outlierDelta !== 0) return outlierDelta;
     return (b.personalScore ?? 0) - (a.personalScore ?? 0);
   });
-  const outliers = [...enriched].sort(
+  const outliers = [...visibleResearch].sort(
     (a, b) => (b.outlier_score ?? -1) - (a.outlier_score ?? -1),
   );
   const watchlistCreatorIds = new Set(
@@ -336,13 +340,13 @@ export default async function ResearchPage({
       .map((m) => m.external_creator_id)
       .filter((id): id is string => Boolean(id)),
   );
-  const watchlistOutliers = enriched.filter(
+  const watchlistOutliers = visibleResearch.filter(
     (i) =>
       i.external_creator_id &&
       watchlistCreatorIds.has(i.external_creator_id) &&
       (i.outlier_score == null || i.outlier_score >= 1.5),
   );
-  const saved = enriched.filter((i) => i.saved);
+  const saved = visibleResearch.filter((i) => i.saved);
   const savedFilterOptions = (scans ?? []).flatMap((scan) => {
     const parameters =
       scan.parameters && typeof scan.parameters === "object"
@@ -501,15 +505,20 @@ export default async function ResearchPage({
         </div>
       ) : null}
 
-      {isFeedMode && enriched.length < 8 ? (
+      {isFeedMode && visibleResearch.length < 8 ? (
         <div className="mb-6 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm">
           <p className="font-semibold text-on-background">
-            Only {enriched.length} video{enriched.length === 1 ? "" : "s"} in
-            your feed.
+            Only {visibleResearch.length}{" "}
+            {visibleResearch.length === 1 ? "video" : "videos"} in your feed.
           </p>
           <p className="mt-1 text-secondary">
             Pull YouTube, TikTok, and Instagram for your niche. Old scans kept 3
             “relevant” hits and threw the rest away.
+          </p>
+          <p className="mt-1 text-secondary">
+            FormCraft only displays videos with at least 20,000 verified views.
+            Meta does not expose competitor Reel views, so Instagram posts with
+            unavailable counts stay hidden instead of being guessed.
           </p>
           <Button asChild size="sm" className="mt-3">
             <Link

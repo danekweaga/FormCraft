@@ -11,6 +11,7 @@ import {
   filterResearchItems,
   type ResearchFeedFilters,
 } from "@/lib/research/feed-filters";
+import { MIN_RESEARCH_VIEWS } from "@/lib/research/visibility-policy";
 import { saveResearchFilterAction, type ResearchActionState } from "./actions";
 import {
   ResearchItemCard,
@@ -154,15 +155,22 @@ export function ResearchFeedWithFilters({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Views</Label>
+            <Label>Views (20K hard minimum)</Label>
             <div className="grid grid-cols-2 gap-2">
               <Input
                 type="number"
+                min={MIN_RESEARCH_VIEWS}
                 value={filters.minViews}
-                onChange={(e) => set("minViews", Number(e.target.value))}
+                onChange={(e) =>
+                  set(
+                    "minViews",
+                    Math.max(MIN_RESEARCH_VIEWS, Number(e.target.value)),
+                  )
+                }
               />
               <Input
                 type="number"
+                min={MIN_RESEARCH_VIEWS}
                 value={filters.maxViews}
                 onChange={(e) => set("maxViews", Number(e.target.value))}
               />

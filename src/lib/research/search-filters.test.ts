@@ -52,7 +52,18 @@ describe("normalizeSearchFilters", () => {
       allowedPlatforms: ["tiktok"],
     });
     expect(filters.minOutlierScore).toBe(0);
+    expect(filters.minViews).toBe(20_000);
     expect(filters.maxResults).toBe(50);
+  });
+
+  it("does not allow a discovery scan below the 20K view floor", () => {
+    const filters = normalizeSearchFilters({
+      query: "niche",
+      platforms: ["youtube"],
+      allowedPlatforms: ["youtube"],
+      minViews: 100,
+    });
+    expect(filters.minViews).toBe(20_000);
   });
 
   it("compacts long niche sentences for TikTok search", () => {

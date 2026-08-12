@@ -13,7 +13,7 @@ function item(overrides: Record<string, unknown> = {}) {
     description: "internship tips",
     creator_name: "Demo CS",
     platform: "youtube",
-    views: 10_000,
+    views: 25_000,
     likes: 500,
     comments: 50,
     shares: 10,
@@ -41,7 +41,7 @@ describe("filterResearchItems", () => {
     const result = filterResearchItems(
       [
         item({ outlier_score: 1.1, likes: 10, comments: 0, shares: 0 }),
-        item({ outlier_score: 4, likes: 800, comments: 100, shares: 20 }),
+        item({ outlier_score: 4, likes: 1_500, comments: 100, shares: 20 }),
       ],
       {
         ...DEFAULT_RESEARCH_FILTERS,
@@ -73,7 +73,7 @@ describe("filterResearchItems", () => {
       keywords: "student projects",
       minOutlier: 2.5,
       maxOutlier: 12,
-      minViews: 5000,
+      minViews: 20_000,
       maxViews: 250000,
       minEngagement: 3,
       maxEngagement: 20,
@@ -92,5 +92,15 @@ describe("filterResearchItems", () => {
         now,
       ),
     ).toHaveLength(0);
+  });
+
+  it("never shows videos below 20K or with unavailable views", () => {
+    expect(
+      filterResearchItems(
+        [item({ views: 19_999 }), item({ views: null }), item({ views: 20_000 })],
+        { ...DEFAULT_RESEARCH_FILTERS, minViews: 0 },
+        now,
+      ),
+    ).toHaveLength(1);
   });
 });

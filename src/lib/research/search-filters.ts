@@ -1,4 +1,5 @@
 import type { ResearchPlatform } from "./types";
+import { MIN_RESEARCH_VIEWS } from "./visibility-policy";
 
 export type NormalizedSearchFilters = {
   query: string;
@@ -95,7 +96,12 @@ export function normalizeSearchFilters(input: {
   }
 
   const lookbackDays = clampInt(input.lookbackDays, 1, 90, 30);
-  const minViews = clampInt(input.minViews, 0, 10_000_000, 0);
+  const minViews = clampInt(
+    input.minViews,
+    MIN_RESEARCH_VIEWS,
+    10_000_000,
+    MIN_RESEARCH_VIEWS,
+  );
   const minOutlierScore = clampFloat(input.minOutlierScore, 0, 50, 0);
   const maxResults = clampInt(input.maxResults, 1, 50, 50);
   const language =
