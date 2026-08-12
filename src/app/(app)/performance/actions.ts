@@ -94,6 +94,93 @@ export async function classifyPerformanceTopicsAction(
   };
 }
 
+export async function applySavedTranscriptToPostAction(
+  _previous: TopicClassificationState,
+  formData: FormData,
+): Promise<TopicClassificationState> {
+  const postId = String(formData.get("postId") ?? "");
+  const reviewId = String(formData.get("reviewId") ?? "");
+  if (!postId || !reviewId) {
+    return { error: "Pick both the published post and its saved draft." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+
+  const [{ data: post }, { data: review }] = await Promise.all([
+    supabase
+      .from("content_posts")
+      .select("id, title, caption, format, duration_seconds, classification, classification_locked")
+      .eq("id", postId)
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("pre_publish_reviews")
+      .select("id, input_text")
+      .eq("id", reviewId)
+      .eq("user_id", user.id)
+      .maybeSingle(),
+  ]);
+  if (!post) return { error: "Published post not found." };
+  if (!review?.input_text || review.input_text.trim().length < 20) {
+    return { error: "That Pre-Publish review has no usable saved transcript." };
+  }
+  if (post.classification_locked) {
+    return {
+      error:
+        "This post has a locked manual classification. Unlock it in My Content before replacing it.",
+    };
+  }
+
+  const classification = classifyPostHeuristic({
+    title: post.title,
+    caption: post.caption,
+    transcript: review.input_text,
+    format: post.format,
+    durationSeconds: post.duration_seconds,
+  });
+  const { error: updateError } = await supabase
+    .from("content_posts")
+    .update({
+      transcript: review.input_text,
+      topic: classification.topic,
+      content_pillar: classification.content_pillar,
+      format: classification.format ?? post.format,
+      classification: {
+        ...((post.classification as Record<string, unknown> | null) ?? {}),
+        ...classification,
+        classification_source: "saved_pre_publish_transcript",
+        source_review_id: review.id,
+        used_transcription_api: false,
+      },
+      classification_confidence: classification.confidence,
+      classification_model: "local-topic-rules-v1",
+      classified_at: new Date().toISOString(),
+    })
+    .eq("id", post.id)
+    .eq("user_id", user.id);
+  if (updateError) return { error: updateError.message };
+
+  await supabase
+    .from("pre_publish_reviews")
+    .update({ content_post_id: post.id })
+    .eq("id", review.id)
+    .eq("user_id", user.id);
+  revalidatePath("/performance");
+  revalidatePath("/dashboard");
+  revalidatePath(`/my-content/${post.id}`);
+  return {
+    classified: classification.topic ? 1 : 0,
+    remaining: classification.topic ? 0 : 1,
+    success: classification.topic
+      ? `Reused the saved transcript and classified this post as “${classification.topic}” with zero API credits.`
+      : "Saved transcript attached. Set a manual topic in My Content if this niche is not covered by the local classifier yet.",
+  };
+}
+
 export async function generateWeeklyReviewAction(): Promise<{
   error?: string;
 }> {

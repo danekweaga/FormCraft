@@ -34,7 +34,10 @@ import { createClient } from "@/lib/supabase/server";
 import { ContentRemix } from "./content-remix";
 import { GrowthChart } from "./growth-chart";
 import { ImpressionsHeatmap } from "./impressions-heatmap";
-import { TopicClassificationButton } from "./topic-classification-button";
+import {
+  SavedTranscriptMatcher,
+  TopicClassificationButton,
+} from "./topic-classification-button";
 import { GenerateWeeklyReviewButton } from "./weekly-actions";
 
 type SearchParams = Promise<{ range?: string }>;
@@ -64,7 +67,12 @@ export default async function PerformancePage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/sign-in");
 
-  const [{ data: latest }, { data: posts }, { data: snapshots }] =
+  const [
+    { data: latest },
+    { data: posts },
+    { data: snapshots },
+    { data: savedDrafts },
+  ] =
     await Promise.all([
       supabase
         .from("content_weekly_reports")
@@ -87,6 +95,13 @@ export default async function PerformancePage({
         .gte("captured_at", snapshotWindowStart())
         .order("captured_at", { ascending: true })
         .limit(5000),
+      supabase
+        .from("pre_publish_reviews")
+        .select("id, source_ref, input_text, created_at")
+        .eq("user_id", user.id)
+        .is("content_post_id", null)
+        .order("created_at", { ascending: false })
+        .limit(30),
     ]);
 
   const selectedPosts = filterPostsByPerformanceRange(
@@ -99,6 +114,18 @@ export default async function PerformancePage({
     Boolean(post.topic?.trim()),
   ).length;
   const missingTopicCount = selectedPosts.length - specificallyClassifiedCount;
+  const missingTopicPostOptions = selectedPosts
+    .filter((post) => !post.topic?.trim())
+    .map((post) => ({
+      id: post.id,
+      label: (post.title || post.caption || "Untitled").slice(0, 90),
+    }));
+  const savedDraftOptions = (savedDrafts ?? [])
+    .filter((review) => review.input_text?.trim().length >= 20)
+    .map((review) => ({
+      id: review.id,
+      label: (review.source_ref || review.input_text || "Saved draft").slice(0, 90),
+    }));
   const remix = buildRemixIngredients(selectedPosts);
   const report = (latest?.report ?? null) as Record<string, unknown> | null;
   const maxTopViews = Math.max(
@@ -249,6 +276,10 @@ export default async function PerformancePage({
                   {missingTopicCount > 0 ? (
                     <div className="mt-3">
                       <TopicClassificationButton />
+                      <SavedTranscriptMatcher
+                        posts={missingTopicPostOptions}
+                        reviews={savedDraftOptions}
+                      />
                     </div>
                   ) : null}
                 </div>
