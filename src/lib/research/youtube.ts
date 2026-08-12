@@ -58,6 +58,10 @@ export async function searchYoutubeResearch(params: {
   // Relevance, not raw viewCount — viewCount+short was returning junk spam.
   searchUrl.searchParams.set("order", "relevance");
   searchUrl.searchParams.set("q", params.query);
+  // Bias broad discovery toward Nonso's English-speaking Canadian audience.
+  // The strict ingestion gate still makes the final keep/drop decision.
+  searchUrl.searchParams.set("relevanceLanguage", "en");
+  searchUrl.searchParams.set("regionCode", "CA");
   searchUrl.searchParams.set("publishedAfter", publishedAfter);
   searchUrl.searchParams.set(
     "maxResults",
@@ -262,4 +266,3 @@ export async function getYoutubeChannelPosts(params: {
     params.maxResults ?? 10,
   );
 }
-

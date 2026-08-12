@@ -30,8 +30,21 @@ describe("classifyCreatorContentUniverse", () => {
     "Five exercises for bigger shoulders",
     "Admissions Open 2026 | Shape Your Future",
     "11th Chemistry Quarterly Exam Questions",
+    "Unstop App Kya Hai? Best Platform for Internships, Jobs & Hackathons",
+    "B.Tech CSE Complete Roadmap | Highest Package 25+ LPA",
+    "Why IIT toppers are ignoring computer science",
+    "KCET 2026 CSE First Round Cutoff",
+    "कोडिंग कैसे शुरू करें?",
   ])("drops an unrelated video: %s", (title) => {
     expect(classify(title).relevant).toBe(false);
+  });
+
+  it("keeps North American and UK placement content", () => {
+    expect(
+      classify(
+        "MSc Artificial Intelligence student shares her industry placement experience",
+      ).relevant,
+    ).toBe(true);
   });
 
   it("does not accept an unrelated title because its description mentions LinkedIn", () => {

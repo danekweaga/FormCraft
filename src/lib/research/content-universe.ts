@@ -156,6 +156,25 @@ const OFF_NICHE_TERMS = [
   "admissions open", "enroll today",
 ];
 
+// Nonso's target audience is North American/English-speaking. These markers
+// identify videos aimed at the Indian education/job market; we do not infer a
+// creator's nationality from their name or appearance.
+const EXCLUDED_INDIA_MARKET_TERMS = [
+  "india", "indian", "hindi", "hinglish", "b.tech", "btech",
+  "jee", "jee mains", "jee advanced", "neet", "upsc", "gate exam",
+  "cbse", "icse", "kcet", "comedk", "msrit", "iit", "iim",
+  "campus placement", "placement package", "highest package", "lpa",
+  "mca admission", "cap rounds", "dte code", "freshers job", "freshersjobs",
+  "rupee", "rupees", "inr", "lakh", "crore", "pune university",
+  "gurugram", "bengaluru", "bangalore", "hyderabad", "chennai", "mumbai",
+  "new delhi", "noida", "kolkata", "ahmedabad", "kya hai", "karni chahiye",
+  "kyu", "zaroori", "kiye bina", "nahi mil", "unstop app", "vedantu",
+  "unacademy", "physics wallah", "niat program",
+];
+
+const SOUTH_ASIAN_LOCAL_SCRIPT_PATTERN =
+  /[\u0900-\u097f\u0980-\u09ff\u0a00-\u0a7f\u0a80-\u0aff\u0b00-\u0b7f\u0b80-\u0bff\u0c00-\u0c7f\u0c80-\u0cff\u0d00-\u0d7f]/u;
+
 const STOPWORDS = new Set([
   "about", "after", "again", "also", "being", "content", "from", "into",
   "only", "that", "their", "these", "this", "those", "video", "with", "your",
@@ -202,12 +221,11 @@ export function classifyCreatorContentUniverse(
   query = "",
   context?: NicheUniverseContext,
 ): ContentUniverseResult {
+  const rawMetadata = `${item.title ?? ""} ${item.description ?? ""} ${item.creatorName ?? ""}`;
   const primaryHaystack = normalize(
     `${item.title ?? ""} ${item.creatorName ?? ""}`,
   );
-  const detailHaystack = normalize(
-    `${item.title ?? ""} ${item.description ?? ""} ${item.creatorName ?? ""}`,
-  );
+  const detailHaystack = normalize(rawMetadata);
 
   const explicitlyExcluded = (context?.excludedTopics ?? [])
     .map((term) => term.toLowerCase())
@@ -231,6 +249,24 @@ export function classifyCreatorContentUniverse(
       category: null,
       reason: "Matches an excluded off-niche topic",
       matchedTerms: excluded.slice(0, 5),
+    };
+  }
+
+  const indiaMarketMatches = EXCLUDED_INDIA_MARKET_TERMS.filter((term) =>
+    includesTerm(detailHaystack, term),
+  );
+  if (
+    indiaMarketMatches.length > 0 ||
+    SOUTH_ASIAN_LOCAL_SCRIPT_PATTERN.test(rawMetadata)
+  ) {
+    return {
+      relevant: false,
+      category: null,
+      reason: "Targets an excluded India-specific or South Asian local market",
+      matchedTerms:
+        indiaMarketMatches.length > 0
+          ? indiaMarketMatches.slice(0, 5)
+          : ["local-language script"],
     };
   }
 
