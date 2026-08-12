@@ -2,8 +2,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getProviderForPlatform } from "./discovery/registry";
 import { ingestScoredPosts } from "./ingest-posts";
 import {
+  BUDGETED_DISCOVERY_PROVIDERS,
+  DISCOVERY_BUDGET_OPERATIONS,
   getDiscoveryBudgets,
-  providerBudgetAllows,
+  isDiscoveryProviderBudgeted,
+  remainingDiscoveryCalls,
 } from "./provider-budget";
 import { filterRecentShortForm } from "./recent-short-form";
 
@@ -43,24 +46,22 @@ export async function runWatchlistMonitor(params: {
       .from("provider_usage_events")
       .select("id", { count: "exact", head: true })
       .eq("user_id", params.userId)
+      .in("provider", [...BUDGETED_DISCOVERY_PROVIDERS])
+      .in("operation", [...DISCOVERY_BUDGET_OPERATIONS])
       .gte("created_at", dayStart.toISOString()),
     params.supabase
       .from("provider_usage_events")
       .select("id", { count: "exact", head: true })
       .eq("user_id", params.userId)
+      .in("provider", [...BUDGETED_DISCOVERY_PROVIDERS])
+      .in("operation", [...DISCOVERY_BUDGET_OPERATIONS])
       .gte("created_at", monthStart.toISOString()),
   ]);
-  const budget = providerBudgetAllows({
+  const remainingBudget = remainingDiscoveryCalls({
     callsToday: callsToday ?? 0,
     callsMonth: callsMonth ?? 0,
     budgets,
   });
-  if (!budget.ok) throw new Error(budget.message);
-  const maxCreators = Math.min(
-    requestedMaxCreators,
-    Math.max(0, budgets.dailyCalls - (callsToday ?? 0)),
-    Math.max(0, budgets.monthlyCalls - (callsMonth ?? 0)),
-  );
 
   let creatorIds: string[];
 
@@ -122,16 +123,38 @@ export async function runWatchlistMonitor(params: {
     .in("id", creatorIds)
     .eq("tracking_paused", false)
     .order("data_freshness_at", { ascending: true, nullsFirst: true });
-  creatorsQuery = creatorsQuery.limit(maxCreators);
-  const { data: creators } = await creatorsQuery;
+  creatorsQuery = creatorsQuery.limit(Math.min(1000, creatorIds.length));
+  const { data: candidateCreators } = await creatorsQuery;
+
+  let budgetedCreators = 0;
+  let skippedForBudget = 0;
+  const creators = (candidateCreators ?? [])
+    .filter((creator) => {
+      const provider = getProviderForPlatform(creator.platform);
+      if (!provider || !isDiscoveryProviderBudgeted(provider.providerName)) {
+        return true;
+      }
+      if (budgetedCreators >= remainingBudget) {
+        skippedForBudget += 1;
+        return false;
+      }
+      budgetedCreators += 1;
+      return true;
+    })
+    .slice(0, requestedMaxCreators);
 
   const retrievedAt = new Date().toISOString();
   const allPosts = [];
   const usedProviders = new Set<string>();
   const byPlatform: Record<string, number> = {};
   const providerErrors: string[] = [];
+  if (skippedForBudget > 0) {
+    providerErrors.push(
+      `${skippedForBudget} paid/quota-limited creator pull${skippedForBudget === 1 ? " was" : "s were"} deferred until the discovery budget resets; official Meta Instagram pulls remain enabled`,
+    );
+  }
 
-  for (const creator of creators ?? []) {
+  for (const creator of creators) {
     const provider = getProviderForPlatform(creator.platform);
     if (!provider?.getCreatorPosts || !provider.capabilities().getCreatorPosts) {
       continue;
@@ -220,10 +243,10 @@ export async function runWatchlistMonitor(params: {
   }
 
   return {
-    creatorsChecked: (creators ?? []).length,
+    creatorsChecked: creators.length,
     remainingCreators: Math.max(
       0,
-      creatorIds.length - (creators ?? []).length,
+      creatorIds.length - creators.length,
     ),
     discovered: ingested.discovered,
     retained: ingested.retained,

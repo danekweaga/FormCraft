@@ -11,8 +11,12 @@ import {
 import type { SearchPostResult } from "./discovery/types";
 import { ingestScoredPosts } from "./ingest-posts";
 import {
+  BUDGETED_DISCOVERY_PROVIDERS,
+  DISCOVERY_BUDGET_OPERATIONS,
   getDiscoveryBudgets,
+  isDiscoveryProviderBudgeted,
   providerBudgetAllows,
+  remainingDiscoveryCalls,
 } from "./provider-budget";
 import {
   inferPlatformFromHandle,
@@ -96,11 +100,15 @@ export async function runResearchScan(params: {
       .from("provider_usage_events")
       .select("id", { count: "exact", head: true })
       .eq("user_id", params.userId)
+      .in("provider", [...BUDGETED_DISCOVERY_PROVIDERS])
+      .in("operation", [...DISCOVERY_BUDGET_OPERATIONS])
       .gte("created_at", dayStart.toISOString()),
     params.supabase
       .from("provider_usage_events")
       .select("id", { count: "exact", head: true })
       .eq("user_id", params.userId)
+      .in("provider", [...BUDGETED_DISCOVERY_PROVIDERS])
+      .in("operation", [...DISCOVERY_BUDGET_OPERATIONS])
       .gte("created_at", monthStart.toISOString()),
   ]);
   const budget = providerBudgetAllows({
@@ -108,7 +116,7 @@ export async function runResearchScan(params: {
     callsMonth: callsMonth ?? 0,
     budgets,
   });
-  if (!budget.ok) throw new Error(budget.message);
+  if (!targetCreators && !budget.ok) throw new Error(budget.message);
 
   try {
     resetScrapeCreatorsUsage();
@@ -194,19 +202,27 @@ export async function runResearchScan(params: {
       // A server action has a 60-second window and each creator profile costs
       // one provider request. Pull the oldest ten selected creators per run;
       // subsequent runs continue with the next stale batch.
-      const remainingBudget = Math.min(
-        Math.max(0, budgets.dailyCalls - (callsToday ?? 0)),
-        Math.max(0, budgets.monthlyCalls - (callsMonth ?? 0)),
-      );
-      const uniqueTargets = allUniqueTargets.slice(
-        0,
-        Math.min(10, remainingBudget),
-      );
+      const remainingBudget = remainingDiscoveryCalls({
+        callsToday: callsToday ?? 0,
+        callsMonth: callsMonth ?? 0,
+        budgets,
+      });
+      let budgetedTargets = 0;
+      const uniqueTargets = allUniqueTargets
+        .filter((target) => {
+          const provider = getProviderForPlatform(target.platform);
+          if (!provider || !isDiscoveryProviderBudgeted(provider.providerName)) {
+            return true;
+          }
+          if (budgetedTargets >= remainingBudget) return false;
+          budgetedTargets += 1;
+          return true;
+        })
+        .slice(0, 10);
 
       if (uniqueTargets.length === 0) {
-        throw new Error(
-          "No supported YouTube or TikTok creators were selected for this pull.",
-        );
+        if (!budget.ok) throw new Error(budget.message);
+        throw new Error("No supported creators were selected for this pull.");
       }
 
       for (const target of uniqueTargets) {

@@ -177,6 +177,15 @@ describe("provider budget", () => {
     });
     expect(result.ok).toBe(false);
   });
+
+  it("does not classify official Meta discovery as a paid/quota provider", async () => {
+    const { isDiscoveryProviderBudgeted } = await import("./provider-budget");
+    expect(isDiscoveryProviderBudgeted("meta_instagram_business_discovery")).toBe(
+      false,
+    );
+    expect(isDiscoveryProviderBudgeted("scrapecreators")).toBe(true);
+    expect(isDiscoveryProviderBudgeted("supadata")).toBe(false);
+  });
 });
 
 describe("dedupe key", () => {

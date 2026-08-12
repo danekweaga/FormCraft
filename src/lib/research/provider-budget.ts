@@ -5,6 +5,40 @@ export type DiscoveryBudgets = {
   autoDeepAnalysis: boolean;
 };
 
+/** Providers whose requests consume paid credits or a scarce search quota. */
+export const BUDGETED_DISCOVERY_PROVIDERS = [
+  "scrapecreators",
+  "youtube_data_api",
+  "tiktokapi_store",
+] as const;
+
+/** Operations that belong to discovery; transcript/AI usage is budgeted elsewhere. */
+export const DISCOVERY_BUDGET_OPERATIONS = [
+  "search_posts",
+  "get_creator_posts",
+] as const;
+
+export function isDiscoveryProviderBudgeted(providerName: string): boolean {
+  return (BUDGETED_DISCOVERY_PROVIDERS as readonly string[]).includes(
+    providerName,
+  );
+}
+
+export function remainingDiscoveryCalls(params: {
+  callsToday: number;
+  callsMonth: number;
+  budgets?: DiscoveryBudgets;
+}): number {
+  const budgets = params.budgets ?? getDiscoveryBudgets();
+  return Math.max(
+    0,
+    Math.min(
+      budgets.dailyCalls - params.callsToday,
+      budgets.monthlyCalls - params.callsMonth,
+    ),
+  );
+}
+
 export function getDiscoveryBudgets(): DiscoveryBudgets {
   return {
     dailyCalls: Number(process.env.DISCOVERY_DAILY_CALL_BUDGET ?? "50") || 50,
