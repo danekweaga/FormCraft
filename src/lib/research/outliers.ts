@@ -90,29 +90,47 @@ export function calculateVelocityLabel(
 function scoreCohort(
   candidates: ResearchVideoCandidate[],
 ): ScoredResearchVideo[] {
-  const cohortViews = candidates
-    .map((candidate) => candidate.views)
-    .filter((value): value is number => typeof value === "number");
-  const cohortMedian = median(cohortViews);
-  const byCreator = new Map<string, number[]>();
-
-  for (const candidate of candidates) {
-    if (!candidate.creatorId || typeof candidate.views !== "number") continue;
-    byCreator.set(candidate.creatorId, [
-      ...(byCreator.get(candidate.creatorId) ?? []),
-      candidate.views,
-    ]);
-  }
-
   return candidates.map((candidate) => {
-    const creatorViews = candidate.creatorId
-      ? (byCreator.get(candidate.creatorId) ?? [])
+    const candidatePublishedAt = candidate.publishedAt
+      ? new Date(candidate.publishedAt).getTime()
+      : null;
+    const creatorHistory = candidate.creatorId
+      ? candidates
+          .filter(
+            (other) =>
+              other.externalId !== candidate.externalId &&
+              other.creatorId === candidate.creatorId &&
+              typeof other.views === "number" &&
+              (candidatePublishedAt == null ||
+                other.publishedAt == null ||
+                new Date(other.publishedAt).getTime() < candidatePublishedAt),
+          )
+          .sort((a, b) => {
+            const aTime = a.publishedAt
+              ? new Date(a.publishedAt).getTime()
+              : 0;
+            const bTime = b.publishedAt
+              ? new Date(b.publishedAt).getTime()
+              : 0;
+            return bTime - aTime;
+          })
+          .slice(0, 30)
       : [];
-    const useCreatorBaseline = creatorViews.length >= 3;
+    const creatorViews = creatorHistory.map((item) => item.views as number);
+    const cohortViews = candidates
+      .filter(
+        (other) =>
+          other.externalId !== candidate.externalId &&
+          typeof other.views === "number",
+      )
+      .map((other) => other.views as number);
+    const useCreatorBaseline = creatorViews.length >= 5;
     const sampleSize = useCreatorBaseline
       ? creatorViews.length
       : cohortViews.length;
-    const baseline = useCreatorBaseline ? median(creatorViews) : cohortMedian;
+    const baseline = useCreatorBaseline
+      ? median(creatorViews)
+      : median(cohortViews);
     const outlierScore =
       typeof candidate.views === "number" && baseline && baseline > 0
         ? candidate.views / baseline

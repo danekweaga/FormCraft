@@ -11,7 +11,12 @@ import { scorePersonalRelevance } from "./relevance";
 import { normalizeSearchFilters } from "./search-filters";
 import type { ResearchVideoCandidate } from "./types";
 
-function video(id: string, creatorId: string, views: number): ResearchVideoCandidate {
+function video(
+  id: string,
+  creatorId: string,
+  views: number,
+  daysAgo = 0,
+): ResearchVideoCandidate {
   return {
     platform: "youtube",
     externalId: id,
@@ -21,7 +26,9 @@ function video(id: string, creatorId: string, views: number): ResearchVideoCandi
     title: id,
     description: null,
     thumbnailUrl: null,
-    publishedAt: new Date().toISOString(),
+    publishedAt: new Date(
+      Date.UTC(2026, 7, 12) - daysAgo * 86_400_000,
+    ).toISOString(),
     durationSeconds: null,
     views,
     likes: null,
@@ -31,30 +38,48 @@ function video(id: string, creatorId: string, views: number): ResearchVideoCandi
 }
 
 describe("scoreResearchOutliers", () => {
-  it("uses a creator median when at least three creator videos are present", () => {
+  it("uses up to 30 prior creator posts and excludes the scored post", () => {
     const scored = scoreResearchOutliers([
-      video("a", "creator", 100),
-      video("b", "creator", 200),
-      video("c", "creator", 900),
-      video("d", "other", 50),
+      video("hot", "creator", 900, 0),
+      video("a", "creator", 100, 1),
+      video("b", "creator", 200, 2),
+      video("c", "creator", 200, 3),
+      video("d", "creator", 300, 4),
+      video("e", "creator", 200, 5),
+      video("other", "other", 50, 6),
     ]);
-    const outlier = scored.find((item) => item.externalId === "c");
+    const outlier = scored.find((item) => item.externalId === "hot");
     expect(outlier?.scoreBasis).toBe("creator_median");
     expect(outlier?.baselineViews).toBe(200);
     expect(outlier?.outlierScore).toBe(4.5);
     expect(outlier?.outlierLabel).toBe("strong_outlier");
-    expect(outlier?.baselineConfidence).toBe("low");
+    expect(outlier?.baselineSampleSize).toBe(5);
+    expect(outlier?.baselineConfidence).toBe("medium");
+  });
+
+  it("requires five prior creator posts before using a creator baseline", () => {
+    const scored = scoreResearchOutliers([
+      video("hot", "creator", 900, 0),
+      video("a", "creator", 100, 1),
+      video("b", "creator", 200, 2),
+      video("c", "creator", 200, 3),
+      video("d", "creator", 300, 4),
+      video("other", "other", 50, 5),
+    ]);
+    expect(scored.find((item) => item.externalId === "hot")?.scoreBasis).toBe(
+      "niche_cohort_median",
+    );
   });
 
   it("falls back to the disclosed niche cohort median", () => {
     const scored = scoreResearchOutliers([
-      video("a", "one", 100),
-      video("b", "two", 200),
-      video("c", "three", 900),
+      video("a", "one", 100, 2),
+      video("b", "two", 200, 1),
+      video("c", "three", 900, 0),
     ]);
     const outlier = scored.find((item) => item.externalId === "c");
     expect(outlier?.scoreBasis).toBe("niche_cohort_median");
-    expect(outlier?.outlierScore).toBe(4.5);
+    expect(outlier?.outlierScore).toBe(6);
   });
 
   it("scores TikTok against TikTok, not YouTube medians", () => {

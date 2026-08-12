@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { STARTER_PSYCHOLOGY_PRINCIPLES } from "@/lib/psychology/starter-library";
+import { openAlexProvider } from "@/lib/psychology/providers/openalex";
+import type { ScholarlyStudy } from "@/lib/psychology/providers/types";
 
 const sourceTypes = [
   "doi",
@@ -165,4 +167,74 @@ export async function installPsychologyStarterLibraryAction() {
   }
   revalidatePath("/psychology");
   redirect(`/psychology?installed=${STARTER_PSYCHOLOGY_PRINCIPLES.length}`);
+}
+
+const openAlexSaveSchema = z.object({
+  providerId: z.string().regex(/^W\d+$/),
+});
+
+export async function saveOpenAlexStudyAction(formData: FormData) {
+  const parsed = openAlexSaveSchema.safeParse({
+    providerId: formData.get("providerId"),
+  });
+  if (!parsed.success) {
+    redirect("/psychology?error=Invalid%20OpenAlex%20study");
+  }
+
+  const { supabase, user } = await authenticated();
+  let study: ScholarlyStudy;
+  try {
+    study = await openAlexProvider.getStudy(parsed.data.providerId);
+  } catch (error) {
+    redirect(
+      `/psychology?error=${encodeURIComponent(
+        error instanceof Error ? error.message : "Could not load OpenAlex study",
+      )}`,
+    );
+  }
+
+  const row = {
+    user_id: user.id,
+    source_type: "openalex",
+    source_provider: study.provider,
+    source_provider_id: study.providerId,
+    title: study.title,
+    url: study.sourceUrl,
+    doi: study.doi,
+    citation: [
+      study.authors.join(", "),
+      study.year ? `(${study.year})` : null,
+      study.title,
+      study.journal,
+    ]
+      .filter(Boolean)
+      .join(". "),
+    notes: study.isRetracted
+      ? "OpenAlex marks this work as retracted. Do not use it as supporting evidence."
+      : "Imported from OpenAlex. Review the original methods, findings, and limitations before deriving a principle.",
+    authors: study.authors,
+    publication_year: study.year,
+    journal: study.journal,
+    study_type: study.studyType,
+    abstract: study.abstract,
+    full_text_access: study.fullTextAccess,
+    is_retracted: study.isRetracted,
+    cited_by_count: study.citedByCount,
+    metadata: {
+      open_access_url: study.openAccessUrl,
+      imported_at: new Date().toISOString(),
+    },
+  };
+
+  const conflict = study.doi
+    ? "user_id,doi"
+    : "user_id,source_provider,source_provider_id";
+  const { error } = await supabase
+    .from("psychology_sources")
+    .upsert(row, { onConflict: conflict });
+  if (error) {
+    redirect(`/psychology?error=${encodeURIComponent(error.message)}`);
+  }
+  revalidatePath("/psychology");
+  redirect("/psychology?saved=openalex");
 }

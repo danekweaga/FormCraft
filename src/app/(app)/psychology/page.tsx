@@ -8,9 +8,24 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createClient } from "@/lib/supabase/server";
 import { STARTER_PSYCHOLOGY_PRINCIPLES } from "@/lib/psychology/starter-library";
-import { addPsychologyPrincipleAction, addPsychologySourceAction, installPsychologyStarterLibraryAction } from "./actions";
+import { openAlexProvider } from "@/lib/psychology/providers/openalex";
+import type { ScholarlyStudy } from "@/lib/psychology/providers/types";
+import {
+  addPsychologyPrincipleAction,
+  addPsychologySourceAction,
+  installPsychologyStarterLibraryAction,
+  saveOpenAlexStudyAction,
+} from "./actions";
 
-type PageProps = { searchParams: Promise<{ error?: string; principle?: string; installed?: string }> };
+type PageProps = {
+  searchParams: Promise<{
+    error?: string;
+    principle?: string;
+    installed?: string;
+    q?: string;
+    saved?: string;
+  }>;
+};
 
 const sourceTypeLabels: Record<string, string> = {
   doi: "DOI",
@@ -30,6 +45,18 @@ export default async function PsychologyPage({ searchParams }: PageProps) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/sign-in");
+
+  const scholarlyQuery = params.q?.trim() ?? "";
+  let scholarlyStudies: ScholarlyStudy[] = [];
+  let scholarlyError: string | null = null;
+  if (scholarlyQuery.length >= 3 && openAlexProvider.isConfigured()) {
+    try {
+      scholarlyStudies = await openAlexProvider.searchStudies(scholarlyQuery, 12);
+    } catch (error) {
+      scholarlyError =
+        error instanceof Error ? error.message : "Scholarly search failed.";
+    }
+  }
 
   const [principlesResult, sourcesResult] = await Promise.all([
     supabase
@@ -59,6 +86,85 @@ export default async function PsychologyPage({ searchParams }: PageProps) {
       </div>
       {params.error ? <p className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error">{params.error}</p> : null}
       {params.installed ? <p className="rounded-lg bg-primary/10 p-3 text-sm text-primary">Installed {params.installed} cited principles and linked their original sources.</p> : null}
+      {params.saved === "openalex" ? <p className="rounded-lg bg-primary/10 p-3 text-sm text-primary">Saved the verified OpenAlex record to your source library.</p> : null}
+
+      <section>
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle>Discover scholarly evidence</CardTitle>
+                <CardDescription>
+                  Search OpenAlex, then save the canonical record before deriving a content principle.
+                </CardDescription>
+              </div>
+              <Badge variant={openAlexProvider.isConfigured() ? "primary" : "default"}>
+                {openAlexProvider.isConfigured() ? "OpenAlex connected" : "OpenAlex key required"}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <form method="get" action="/psychology" className="flex flex-col gap-3 sm:flex-row">
+              <Input
+                name="q"
+                defaultValue={scholarlyQuery}
+                minLength={3}
+                required
+                placeholder="Search attention, curiosity, memory, persuasion..."
+                aria-label="Search scholarly studies"
+              />
+              <Button type="submit">Search studies</Button>
+            </form>
+
+            {!openAlexProvider.isConfigured() ? (
+              <p className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-secondary">
+                Scholarly discovery is disabled until the server-only <code>OPENALEX_API_KEY</code> is added locally and in Vercel. Manual sources and the cited starter library still work.
+              </p>
+            ) : null}
+            {scholarlyQuery.length > 0 && scholarlyQuery.length < 3 ? (
+              <p className="text-sm text-secondary">Enter at least three characters.</p>
+            ) : null}
+            {scholarlyError ? (
+              <p className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error">{scholarlyError}</p>
+            ) : null}
+            {scholarlyQuery.length >= 3 && !scholarlyError && openAlexProvider.isConfigured() && scholarlyStudies.length === 0 ? (
+              <p className="text-sm text-secondary">No studies matched this search.</p>
+            ) : null}
+
+            {scholarlyStudies.length > 0 ? (
+              <div className="grid gap-4 lg:grid-cols-2">
+                {scholarlyStudies.map((study) => (
+                  <article key={study.providerId} className="space-y-3 rounded-xl border border-outline p-4">
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="default">{study.studyType.replaceAll("_", " ")}</Badge>
+                      <Badge variant="default">{study.citedByCount.toLocaleString()} citations</Badge>
+                      {study.fullTextAccess === "open" ? <Badge variant="primary">Open access</Badge> : null}
+                      {study.isRetracted ? <Badge variant="danger">Retracted</Badge> : null}
+                    </div>
+                    <div>
+                      <h3 className="font-headline text-lg font-semibold">{study.title}</h3>
+                      <p className="mt-1 text-xs text-secondary">
+                        {[study.authors.slice(0, 4).join(", "), study.year, study.journal].filter(Boolean).join(" · ")}
+                      </p>
+                    </div>
+                    {study.abstract ? <p className="line-clamp-5 text-sm text-secondary">{study.abstract}</p> : <p className="text-sm text-secondary">Abstract unavailable from the provider.</p>}
+                    {study.isRetracted ? <p className="text-sm font-medium text-error">Do not use this study as supporting evidence.</p> : null}
+                    <div className="flex flex-wrap gap-2">
+                      <form action={saveOpenAlexStudyAction}>
+                        <input type="hidden" name="providerId" value={study.providerId} />
+                        <Button type="submit" size="sm" disabled={study.isRetracted}>Save verified source</Button>
+                      </form>
+                      <Button asChild variant="outline" size="sm">
+                        <a href={study.sourceUrl} target="_blank" rel="noreferrer">Open original</a>
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      </section>
 
       <section>
         <h2 className="mb-1 font-headline text-2xl font-semibold">FormCraft starter principles</h2>
