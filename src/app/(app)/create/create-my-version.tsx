@@ -72,10 +72,15 @@ export function CreateMyVersion({
             <div className="grid gap-3 md:grid-cols-2">
               {[
                 ["Audience problem", directionState.direction.audienceProblem],
-                ["Suggested format", directionState.direction.suggestedFormat],
-                ["Suggested hook", directionState.direction.suggestedHook],
+                ["Objective + audience", `${directionState.direction.objective} · ${directionState.direction.audienceLevel} audience`],
+                ["Suggested format", `${directionState.direction.suggestedFormat}. ${directionState.direction.formatReason}`],
+                ["Text hook", directionState.direction.textHook || directionState.direction.suggestedHook],
+                ["Spoken hook", directionState.direction.spokenHook || directionState.direction.suggestedHook],
+                ["Opening visual", directionState.direction.visualHook],
                 ["Personal angle", directionState.direction.personalAngle],
+                ["Payoff", directionState.direction.payoff],
                 ["CTA", directionState.direction.cta],
+                ["Experiment", directionState.direction.experimentVariable],
               ].map(([label, value]) => (
                 <div key={label} className="rounded-lg bg-surface-container-lowest p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-secondary">{label}</p>
@@ -83,12 +88,30 @@ export function CreateMyVersion({
                 </div>
               ))}
             </div>
+            <div className="rounded-lg border border-outline-variant/20 p-4">
+              <p className="text-sm font-semibold text-on-background">Hook alignment</p>
+              <p className="mt-2 text-sm text-secondary">{directionState.direction.hookAlignmentNotes}</p>
+            </div>
             <div>
               <p className="text-sm font-semibold text-on-background">Structure</p>
               <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-secondary">
                 {directionState.direction.structure.map((step) => <li key={step}>{step}</li>)}
               </ol>
             </div>
+            <div>
+              <p className="text-sm font-semibold text-on-background">Proof plan</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-secondary">
+                {(directionState.direction.proofPlan.length ? directionState.direction.proofPlan : directionState.direction.relevantProof).map((proof) => <li key={proof}>{proof}</li>)}
+              </ul>
+            </div>
+            {directionState.direction.claimFlags.length ? (
+              <div className="rounded-lg border border-warning/30 bg-warning/5 p-4">
+                <p className="text-sm font-semibold text-on-background">Verify before publishing</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-secondary">
+                  {directionState.direction.claimFlags.map((claim) => <li key={claim}>{claim}</li>)}
+                </ul>
+              </div>
+            ) : null}
             <div>
               <p className="text-sm font-semibold text-on-background">How this stays original</p>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-secondary">
@@ -117,11 +140,32 @@ export function CreateMyVersion({
           </CardHeader>
           <CardContent className="space-y-5">
             <pre className="whitespace-pre-wrap rounded-lg bg-surface-container-lowest p-5 font-sans text-sm leading-relaxed text-on-background">{scriptState.package.script}</pre>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={scriptState.package.qualityGateStatus === "Ready" ? "success" : scriptState.package.qualityGateStatus === "Verify" ? "warning" : "default"}>
+                Quality gate: {scriptState.package.qualityGateStatus}
+              </Badge>
+            </div>
             <div className="grid gap-3 md:grid-cols-2">
               <div className="rounded-lg border border-outline-variant/20 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-secondary">Caption</p><p className="mt-2 whitespace-pre-wrap text-sm">{scriptState.package.caption}</p></div>
               <div className="rounded-lg border border-outline-variant/20 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-secondary">Cover text</p><p className="mt-2 text-sm">{scriptState.package.coverText}</p></div>
               <div className="rounded-lg border border-outline-variant/20 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-secondary">Search terms</p><p className="mt-2 text-sm">{scriptState.package.searchTerms.join(" · ") || "None suggested"}</p></div>
               <div className="rounded-lg border border-outline-variant/20 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-secondary">Thumbnail concept</p><p className="mt-2 text-sm">{scriptState.package.thumbnailConcept}</p></div>
+              <div className="rounded-lg border border-outline-variant/20 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-secondary">Opening visual</p><p className="mt-2 text-sm">{scriptState.package.openingVisual}</p></div>
+              <div className="rounded-lg border border-outline-variant/20 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-secondary">Payoff + CTA</p><p className="mt-2 text-sm">{scriptState.package.payoff}</p><p className="mt-2 text-sm text-secondary">{scriptState.package.primaryCTA}</p></div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              {[
+                ["Rehooks", scriptState.package.rehooks],
+                ["Proof beats", scriptState.package.proofBeats],
+                ["Quality checks", scriptState.package.qualityGateNotes],
+              ].map(([label, items]) => (
+                <div key={label as string} className="rounded-lg bg-surface-container-lowest p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-secondary">{label as string}</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-on-background">
+                    {(items as string[]).map((item) => <li key={item}>{item}</li>)}
+                  </ul>
+                </div>
+              ))}
             </div>
             <div className="flex flex-wrap gap-2">
               <Button asChild><Link href={`/pre-publish?scriptNode=${scriptState.scriptNodeId}`}>Continue to Pre-Publish</Link></Button>

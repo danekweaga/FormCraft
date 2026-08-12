@@ -15,6 +15,7 @@ export const PRIMARY_NAV: NavItem[] = [
 ];
 
 export const SECONDARY_NAV: NavItem[] = [
+  { href: "/brand-brain", label: "Content System", icon: "account_tree", group: "Intelligence" },
   { href: "/dashboard", label: "Dashboard", icon: "home", group: "Intelligence" },
   { href: "/performance", label: "Performance", icon: "analytics", group: "Intelligence" },
   { href: "/roadmap", label: "Roadmap", icon: "flag", group: "Intelligence" },

@@ -27,7 +27,7 @@ export default async function IdeaGatePage() {
     <div>
       <PageHeader
         title="Idea Gate"
-        description="Decide what deserves production time. Heuristic recommendations persist now; Knowledge- and performance-aware AI stays deferred."
+        description="Decide what deserves production time. FormCraft checks the whole content system, including audience, brand fit, originality, proof, format, hook angles, effort, conversion fit, and claim risk."
       />
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -36,7 +36,7 @@ export default async function IdeaGatePage() {
         {(evaluations?.length ?? 0) === 0 ? (
           <EmptyState
             title="No evaluations yet"
-            description="Gate your next idea before drafting in Create. Recommendations are local heuristics until the LLM path ships."
+            description="Gate your next idea before drafting in Build. FormCraft uses your Creator Profile, audience evidence, prior work, experiments, performance lessons, and taught knowledge when available."
           />
         ) : (
           <ul className="space-y-3">

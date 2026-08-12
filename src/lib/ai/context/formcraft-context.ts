@@ -6,6 +6,7 @@ import { CONTEXT_BUDGETS } from "@/lib/ai/models/types";
 import type { ContextTaskType, ModelTier } from "@/lib/ai/models/types";
 import { resolveTaskModel } from "@/lib/ai/models/preferences";
 import { estimateTokens } from "@/lib/ai/models/estimate-tokens";
+import type { SourceStatus } from "@/lib/content-intelligence/kernel";
 
 export type ContextSourceType =
   | "current_entity"
@@ -552,12 +553,46 @@ async function loadExplicitPosts(
 }
 
 /** Serialize context for LLM prompts — never includes tokens/credentials. */
+export function sourceStatusForContextItem(item: FormCraftContextItem): SourceStatus {
+  const explicit = item.metadata?.sourceStatus;
+  if (typeof explicit === "string" && [
+    "research_or_platform",
+    "creator_framework",
+    "creator_claim",
+    "mentor_feedback",
+    "user_observation",
+    "formcraft_synthesis",
+  ].includes(explicit)) return explicit as SourceStatus;
+
+  switch (item.sourceType) {
+    case "my_content":
+    case "performance":
+    case "experiment":
+    case "explicit_source":
+      return "research_or_platform";
+    case "knowledge_document":
+      return "creator_framework";
+    case "brand_brain":
+    case "roadmap":
+    case "draft_or_idea":
+      return "user_observation";
+    case "performance_lesson":
+    case "audience_insight":
+    case "analysis":
+      return "formcraft_synthesis";
+    case "audience_comment":
+    case "current_entity":
+      return "creator_claim";
+  }
+}
+
 export function contextToPromptBlock(ctx: FormCraftContext): string {
   const parts = ctx.items.map(
     (item, i) =>
-      `<source index="${i + 1}" type="${item.sourceType}">\nTitle: ${item.title}\n${item.content}\n</source>`,
+      `<source index="${i + 1}" type="${item.sourceType}" status="${sourceStatusForContextItem(item)}">\nTitle: ${item.title}\n${item.content}\n</source>`,
   );
   return [
+    "FORMCRAFT PERSONAL CONTEXT",
     `Task: ${ctx.taskType}`,
     `Estimated tokens: ${ctx.estimatedTokens}/${ctx.budgetTokens}`,
     `Sources used: ${ctx.usedFrom.join("; ") || "none"}`,

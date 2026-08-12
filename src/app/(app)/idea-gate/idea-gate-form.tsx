@@ -21,8 +21,8 @@ export function IdeaGateForm() {
           Gate an idea
         </h2>
         <p className="mt-1 text-sm text-secondary">
-          Paste a concept for a heuristic recommendation (pursue / reshape /
-          park / kill). Full AI evaluation is deferred.
+          FormCraft checks audience relevance, brand fit, originality, proof,
+          format, hook angles, effort, conversion fit, and claim risk before you draft.
         </p>
       </div>
       <div className="space-y-2">

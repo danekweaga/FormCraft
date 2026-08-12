@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
+import {
+  CONTENT_INTELLIGENCE_VERSION,
+  contentIntelligencePromptBlock,
+} from "@/lib/content-intelligence/kernel";
+import type { ContextTaskType } from "@/lib/ai/models/types";
 import { callOpenRouter } from "@/lib/ai/models/openrouter";
 import { isLlmConfigured } from "@/lib/ai/models/router";
 import { resolveTaskModel } from "@/lib/ai/models/preferences";
@@ -18,6 +23,19 @@ import type {
 function maxRetries(): number {
   const n = Number(process.env.AI_MAX_RETRIES ?? "2");
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 2;
+}
+
+export function withContentIntelligence(
+  taskType: ContextTaskType,
+  messages: GenerateTextInput["messages"],
+): GenerateTextInput["messages"] {
+  return [
+    {
+      role: "system",
+      content: contentIntelligencePromptBlock(taskType),
+    },
+    ...messages,
+  ];
 }
 
 async function createJob(
@@ -104,6 +122,7 @@ export function createFormCraftAI(supabase: SupabaseClient): AIProvider {
   return {
     async generateText(input: GenerateTextInput): Promise<AITextResult> {
       const started = Date.now();
+      const messages = withContentIntelligence(input.taskType, input.messages);
       const modelSelection = await resolveTaskModel(supabase, {
         userId: input.userId,
         taskType: input.taskType,
@@ -115,14 +134,15 @@ export function createFormCraftAI(supabase: SupabaseClient): AIProvider {
           ? resolveModelNameForRole("multimodal")
           : modelSelection.modelName);
 
-      const cacheKey =
+      const baseCacheKey =
         input.cacheKey ??
         hashAiInput([
           input.taskType,
           input.promptVersion,
           model,
-          input.messages,
+          messages,
         ]);
+      const cacheKey = `${baseCacheKey}:${CONTENT_INTELLIGENCE_VERSION}`;
 
       const cached = await readAiCache<{
         text: string;
@@ -200,7 +220,7 @@ export function createFormCraftAI(supabase: SupabaseClient): AIProvider {
         const result = await callOpenRouter({
           tier: roleToLegacyTier(input.role),
           modelName: model,
-          messages: input.messages,
+          messages,
           maxOutputTokens: input.maxOutputTokens,
           temperature: input.temperature,
         });

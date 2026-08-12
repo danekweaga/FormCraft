@@ -26,11 +26,23 @@ export const ideaGateDecisionSchema = z.object({
   suggestedFormat: z.string().nullable(),
   requiredPersonalContext: z.array(z.string()),
   sourcesUsed: z.array(z.string()),
+  worthMaking: z.enum(["yes", "reshape", "not_now"]).default("reshape"),
+  audienceRelevance: z.string().default("Needs a specific audience problem."),
+  brandFitReason: z.string().default("Compare against the saved creator profile."),
+  originalityReason: z.string().default("Use a distinct angle, proof, structure, and conclusion."),
+  proofAvailable: z.array(z.string()).max(6).default([]),
+  bestFormats: z.array(z.string()).max(4).default([]),
+  hookAngles: z.array(z.string()).max(5).default([]),
+  seriesPotential: z.string().default("Not yet assessed."),
+  conversionFit: z.string().default("Match the CTA to the content objective."),
+  productionEffort: z.enum(["low", "medium", "high"]).default("medium"),
+  claimRisks: z.array(z.string()).max(6).default([]),
+  qualityGateStatus: z.enum(["Ready", "Revise", "Rethink", "Verify"]).default("Revise"),
 });
 
 export type IdeaGateDecision = z.infer<typeof ideaGateDecisionSchema>;
 
-const PROMPT_VERSION = "idea-gate-v2";
+const PROMPT_VERSION = "idea-gate-content-intelligence-v3";
 
 function normalize(text: string): string {
   return text.toLowerCase().replace(/\W+/g, " ").trim();
@@ -175,13 +187,15 @@ export async function evaluateIdeaWithContext(params: {
       promptVersion: PROMPT_VERSION,
       cacheKey,
       modelName: params.context.modelName,
-      maxOutputTokens: 1200,
+      maxOutputTokens: 2000,
       schema: ideaGateDecisionSchema,
       messages: [
         {
           role: "system",
-          content:
-            "You are FormCraft Idea Gate. Use only provided context. Return JSON matching the IdeaGateDecision schema keys. Recommendations must be one of: MAKE IT | PROMISING — FIX THE ANGLE | SAVE FOR LATER | TOO SIMILAR | NEEDS PERSONAL PROOF | DOES NOT FIT CURRENT STRATEGY. Never invent sources.",
+          content: [
+            "You are FormCraft Idea Gate. Use only provided context. Return JSON matching every IdeaGateDecision schema key.",
+            "Recommendations must be one of: MAKE IT | PROMISING — FIX THE ANGLE | SAVE FOR LATER | TOO SIMILAR | NEEDS PERSONAL PROOF | DOES NOT FIT CURRENT STRATEGY. Never invent sources.",
+          ].join("\n\n"),
         },
         {
           role: "user",
