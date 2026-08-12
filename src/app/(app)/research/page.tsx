@@ -419,6 +419,12 @@ export default async function ResearchPage({
       ];
     });
 
+  const suggestionPlatforms = ["instagram", "tiktok", "youtube"].filter(
+    (platform) =>
+      platforms.some((entry) => entry.platform === platform) ||
+      (creators ?? []).some((creator) => creator.platform === platform),
+  );
+
   const scrapeCredits = latestScrapeCreatorsCredits(scans ?? []);
   const scrapeCreditWarning = isScrapeCreatorsConfigured()
     ? scrapeCreatorsCreditWarning(
@@ -797,7 +803,7 @@ export default async function ResearchPage({
           <CreatorSuggestionsPanel
             suggestions={suggestionCards}
             watchlists={watchlistOptions}
-            configuredPlatforms={platforms.map((entry) => entry.platform)}
+            availablePlatforms={suggestionPlatforms}
           />
           <div className="space-y-3">
             {(watchlists?.length ?? 0) === 0 ? (

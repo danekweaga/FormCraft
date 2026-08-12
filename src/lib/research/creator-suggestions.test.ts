@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCreatorRecommendationQuery,
   creatorSignalTokens,
+  filterCreatorCandidatesByPlatforms,
   scoreSimilarCreators,
   type CreatorSuggestionPost,
 } from "./creator-suggestions";
@@ -113,5 +114,17 @@ describe("creator suggestions", () => {
       excludedCreatorIds: ["excluded"],
     });
     expect(scored).toEqual([]);
+  });
+
+  it("keeps only the social platforms selected by the user", () => {
+    const candidates = [
+      { id: "ig", platform: "instagram" },
+      { id: "tt", platform: "tiktok" },
+      { id: "yt", platform: "youtube" },
+    ];
+    expect(
+      filterCreatorCandidatesByPlatforms(candidates, ["instagram", "youtube"])
+        .map((candidate) => candidate.id),
+    ).toEqual(["ig", "yt"]);
   });
 });

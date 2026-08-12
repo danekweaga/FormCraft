@@ -75,15 +75,23 @@ function SuggestionActions({ suggestionId }: { suggestionId: string }) {
 export function CreatorSuggestionsPanel({
   suggestions,
   watchlists,
-  configuredPlatforms,
+  availablePlatforms,
 }: {
   suggestions: CreatorSuggestionCard[];
   watchlists: Array<{ id: string; name: string }>;
-  configuredPlatforms: string[];
+  availablePlatforms: string[];
 }) {
   const [state, action, pending] = useActionState(
     findSimilarCreatorsAction,
     initial,
+  );
+  const activePlatforms = new Set(
+    state.selectedPlatforms?.length
+      ? state.selectedPlatforms
+      : availablePlatforms,
+  );
+  const visibleSuggestions = suggestions.filter((suggestion) =>
+    activePlatforms.has(suggestion.platform),
   );
 
   if (watchlists.length === 0) return null;
@@ -99,46 +107,77 @@ export function CreatorSuggestionsPanel({
             <Badge variant="primary">Learns from watchlists</Badge>
           </div>
           <p className="mt-1 text-sm text-secondary">
-            FormCraft searches the last 30 days using topics from your tracked
-            creators, then ranks new accounts by shared subjects, recent posts,
-            and real outlier evidence. Dismissed accounts stay dismissed.
+            FormCraft ranks accounts already found in your 30-day library by
+            shared subjects, recent posts, and real outlier evidence. Choose the
+            platforms you want. Live provider search is optional and uses quota.
           </p>
         </div>
-        <form action={action} className="flex flex-col gap-2 sm:flex-row">
-          <label className="sr-only" htmlFor="similar-watchlist">
-            Watchlist
+        <form action={action} className="w-full space-y-3 lg:max-w-xl">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <label className="flex-1 text-xs font-medium text-secondary">
+              Watchlist
+              <select
+                id="similar-watchlist"
+                name="watchlistId"
+                defaultValue={watchlists[0]?.id}
+                className="mt-1 h-9 w-full rounded-md border border-outline-variant/30 bg-surface-container-lowest px-3 text-sm text-on-background"
+              >
+                {watchlists.map((watchlist) => (
+                  <option key={watchlist.id} value={watchlist.id}>
+                    {watchlist.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={pending || availablePlatforms.length === 0}
+            >
+              {pending ? "Ranking creators…" : "Find similar creators"}
+            </Button>
+          </div>
+          <fieldset>
+            <legend className="text-xs font-medium text-secondary">
+              Suggest accounts from
+            </legend>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {availablePlatforms.map((platform) => (
+                <label
+                  key={platform}
+                  className="flex cursor-pointer items-center gap-2 rounded-full border border-outline-variant/30 bg-surface-container-lowest px-3 py-1.5 text-xs font-medium text-on-background"
+                >
+                  <input
+                    type="checkbox"
+                    name="platforms"
+                    value={platform}
+                    defaultChecked
+                    className="size-3.5 accent-primary"
+                  />
+                  <span className="capitalize">{platform}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <label className="flex items-start gap-2 text-xs text-secondary">
+            <input
+              type="checkbox"
+              name="refreshProviders"
+              value="1"
+              className="mt-0.5 size-3.5 accent-primary"
+            />
+            <span>
+              Refresh live providers first. This can discover additional
+              accounts, but it uses daily provider quota.
+            </span>
           </label>
-          <select
-            id="similar-watchlist"
-            name="watchlistId"
-            defaultValue={watchlists[0]?.id}
-            className="h-9 rounded-md border border-outline-variant/30 bg-surface-container-lowest px-3 text-sm"
-          >
-            {watchlists.map((watchlist) => (
-              <option key={watchlist.id} value={watchlist.id}>
-                {watchlist.name}
-              </option>
-            ))}
-          </select>
-          <Button
-            type="submit"
-            size="sm"
-            disabled={pending || configuredPlatforms.length === 0}
-          >
-            {pending ? "Searching providers…" : "Find similar creators"}
-          </Button>
         </form>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
-        {configuredPlatforms.map((platform) => (
-          <Badge key={platform} variant="default">
-            {platform}
-          </Badge>
-        ))}
-        {configuredPlatforms.length === 0 ? (
+        {availablePlatforms.length === 0 ? (
           <p className="text-xs text-error">
-            Configure ScrapeCreators and/or YouTube before searching.
+            Add creators and pull their posts before asking for similar accounts.
           </p>
         ) : null}
       </div>
@@ -147,9 +186,9 @@ export function CreatorSuggestionsPanel({
         <p className="mt-3 text-sm text-primary-container">{state.success}</p>
       ) : null}
 
-      {suggestions.length > 0 ? (
+      {visibleSuggestions.length > 0 ? (
         <ul className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {suggestions.map((suggestion) => (
+          {visibleSuggestions.map((suggestion) => (
             <li
               key={suggestion.id}
               className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-4"
@@ -202,11 +241,10 @@ export function CreatorSuggestionsPanel({
         </ul>
       ) : (
         <div className="mt-5 rounded-lg border border-dashed border-outline-variant/30 p-5 text-sm text-secondary">
-          No similar-account recommendations yet. Add creators and pull their
-          posts, then click <strong>Find similar creators</strong>.
+          No recommendations match the selected platforms yet. Pull more
+          watchlist posts or enable the optional live-provider refresh.
         </div>
       )}
     </section>
   );
 }
-

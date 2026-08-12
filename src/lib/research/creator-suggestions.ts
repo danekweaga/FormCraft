@@ -78,6 +78,14 @@ export type ScoredCreatorSuggestion = {
   };
 };
 
+export function filterCreatorCandidatesByPlatforms<
+  T extends { platform: string },
+>(candidates: T[], platforms?: string[]): T[] {
+  if (!platforms?.length) return candidates;
+  const selected = new Set(platforms);
+  return candidates.filter((candidate) => selected.has(candidate.platform));
+}
+
 export function creatorSignalTokens(value: string | null | undefined): string[] {
   return (value ?? "")
     .toLowerCase()
@@ -323,6 +331,7 @@ export async function refreshCreatorSuggestionsFromLibrary(params: {
   supabase: SupabaseClient;
   userId: string;
   watchlistId?: string;
+  platforms?: string[];
 }): Promise<{ generated: number; watchlists: number }> {
   let listsQuery = params.supabase
     .from("research_watchlists")
@@ -410,8 +419,9 @@ export async function refreshCreatorSuggestionsFromLibrary(params: {
             !dismissedOrAccepted.includes(creatorId),
         ),
     );
-    const candidates = allCreators.filter((creator) =>
-      candidateIds.has(creator.id),
+    const candidates = filterCreatorCandidatesByPlatforms(
+      allCreators.filter((creator) => candidateIds.has(creator.id)),
+      params.platforms,
     );
     const scored = scoreSimilarCreators({
       seedCreatorIds,

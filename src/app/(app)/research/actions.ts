@@ -19,6 +19,7 @@ export type ResearchActionState = {
   eligible?: number;
   retained?: number;
   providers?: string[];
+  selectedPlatforms?: string[];
   hooks?: {
     formatMatched: Array<{
       text: string;
@@ -632,16 +633,30 @@ export async function addCreatorToWatchlistAction(
   };
 }
 
-/**
- * Search configured providers using signals learned from one watchlist, then
- * rank newly discovered accounts against the watchlist's real post library.
- */
+/** Rank the stored library first; optionally refresh broad-search providers. */
 export async function findSimilarCreatorsAction(
   _previous: ResearchActionState,
   formData: FormData,
 ): Promise<ResearchActionState> {
   const watchlistId = String(formData.get("watchlistId") ?? "");
   if (!watchlistId) return { error: "Pick a watchlist." };
+  const selectedPlatforms = Array.from(
+    new Set(
+      formData
+        .getAll("platforms")
+        .map(String)
+        .filter((platform) =>
+          ["instagram", "tiktok", "youtube"].includes(platform),
+        ),
+    ),
+  );
+  if (selectedPlatforms.length === 0) {
+    return {
+      error: "Pick at least one platform for creator suggestions.",
+      selectedPlatforms: [],
+    };
+  }
+  const refreshProviders = formData.get("refreshProviders") === "1";
 
   const supabase = await createClient();
   const {
@@ -659,68 +674,97 @@ export async function findSimilarCreatorsAction(
       userId: user.id,
       watchlistId,
     });
-    const platforms = Array.from(
+    const searchable = Array.from(
       new Set(searchablePlatforms().map((entry) => entry.platform)),
     ) as ResearchPlatform[];
-    if (platforms.length === 0) {
-      return {
-        error:
-          "No discovery provider is configured. Add SCRAPECREATORS_API_KEY and/or YOUTUBE_DATA_API_KEY.",
-      };
-    }
-
-    const { data: scan, error: scanError } = await supabase
-      .from("research_scans")
-      .insert({
-        user_id: user.id,
-        name: `Similar creators: ${seed.query.slice(0, 60)}`,
-        query: seed.query,
-        platforms,
-        lookback_days: 30,
-        min_views: 0,
-        min_outlier_score: 0,
-        max_results: 48,
-        auto_scan_enabled: false,
-        status: "active",
-        parameters: {
-          recommendation_scan: true,
-          watchlist_id: watchlistId,
-          seed_creator_ids: seed.seedCreatorIds,
-          seed_query: seed.query,
-        },
-      })
-      .select("id")
-      .single();
-    if (scanError || !scan) {
-      return {
-        error: scanError?.message ?? "Could not create the recommendation scan.",
-      };
-    }
+    const platforms = selectedPlatforms.filter((platform) =>
+      searchable.includes(platform as ResearchPlatform),
+    ) as ResearchPlatform[];
 
     let discovered = 0;
     let providers: string[] = [];
     let providerWarning: string | null = null;
-    try {
-      const result = await runResearchScan({
+
+    // Ranking stored evidence costs no provider calls. Live search is opt-in,
+    // so recommendations do not fail when a paid provider reaches its quota.
+    if (!refreshProviders) {
+      const refreshed = await refreshCreatorSuggestionsFromLibrary({
         supabase,
         userId: user.id,
-        scanId: scan.id,
+        watchlistId,
+        platforms: selectedPlatforms,
       });
-      discovered = result.discovered;
-      providers = result.providers;
-    } catch (error) {
+      revalidatePath("/research");
+      return refreshed.generated > 0
+        ? {
+            selectedPlatforms,
+            success: `Found ${refreshed.generated} evidence-backed ${selectedPlatforms.join(" + ")} account suggestion${refreshed.generated === 1 ? "" : "s"} from your existing 30-day library. No provider quota was used.`,
+          }
+        : {
+            selectedPlatforms,
+            error:
+              "No matching accounts are in the stored 30-day library yet. Turn on “Refresh live providers first” or refresh more watchlist creators, then try again.",
+          };
+    }
+
+    if (platforms.length === 0) {
       providerWarning =
-        error instanceof Error ? error.message : "Provider search failed.";
+        "None of the selected platforms has a broad-search provider configured; ranked the existing library instead.";
+    } else {
+      const { data: scan, error: scanError } = await supabase
+        .from("research_scans")
+        .insert({
+          user_id: user.id,
+          name: `Similar creators: ${seed.query.slice(0, 60)}`,
+          query: seed.query,
+          platforms,
+          lookback_days: 30,
+          min_views: 0,
+          min_outlier_score: 0,
+          max_results: 48,
+          auto_scan_enabled: false,
+          status: "active",
+          parameters: {
+            recommendation_scan: true,
+            watchlist_id: watchlistId,
+            seed_creator_ids: seed.seedCreatorIds,
+            seed_query: seed.query,
+          },
+        })
+        .select("id")
+        .single();
+      if (scanError || !scan) {
+        return {
+          selectedPlatforms,
+          error:
+            scanError?.message ?? "Could not create the recommendation scan.",
+        };
+      }
+
+      try {
+        const result = await runResearchScan({
+          supabase,
+          userId: user.id,
+          scanId: scan.id,
+        });
+        discovered = result.discovered;
+        providers = result.providers;
+      } catch (error) {
+        providerWarning =
+          error instanceof Error ? error.message : "Provider search failed.";
+      }
     }
 
     const refreshed = await refreshCreatorSuggestionsFromLibrary({
       supabase,
       userId: user.id,
       watchlistId,
+      platforms: selectedPlatforms,
     });
     revalidatePath("/research");
     if (refreshed.generated === 0) {
       return {
+        selectedPlatforms,
         error: providerWarning
           ? `${providerWarning} No evidence-backed new accounts are available yet.`
           : "The search completed, but no new account had enough shared-topic evidence yet. Refresh the watchlist and try again after the library has more posts.",
@@ -729,10 +773,12 @@ export async function findSimilarCreatorsAction(
     return {
       discovered,
       providers,
-      success: `Found ${refreshed.generated} evidence-backed account suggestion${refreshed.generated === 1 ? "" : "s"} from the 30-day library${providers.length ? ` via ${providers.join(", ")}` : ""}.${providerWarning ? ` Provider note: ${providerWarning}` : ""}`,
+      selectedPlatforms,
+      success: `Found ${refreshed.generated} evidence-backed ${selectedPlatforms.join(" + ")} account suggestion${refreshed.generated === 1 ? "" : "s"} from the 30-day library${providers.length ? ` after refreshing via ${providers.join(", ")}` : ""}.${providerWarning ? ` Existing-library results are shown; live refresh note: ${providerWarning}` : ""}`,
     };
   } catch (error) {
     return {
+      selectedPlatforms,
       error:
         error instanceof Error
           ? error.message
