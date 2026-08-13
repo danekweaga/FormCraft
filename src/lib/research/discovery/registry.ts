@@ -34,8 +34,20 @@ export function getConfiguredDiscoveryProviders(): ContentDiscoveryProvider[] {
 export function getProviderForPlatform(
   platform: string,
 ): ContentDiscoveryProvider | null {
+  const configured = getConfiguredDiscoveryProviders();
+  // Meta Business Discovery is excellent for official public metadata but it
+  // does not expose competitor Reel plays. Prefer the configured provider
+  // that returns real view counts for Instagram watchlist/outlier scoring.
+  if (platform === "instagram") {
+    const viewCapable = configured.find(
+      (provider) =>
+        provider.providerName === "scrapecreators" &&
+        provider.capabilities().getCreatorPosts,
+    );
+    if (viewCapable) return viewCapable;
+  }
   return (
-    getConfiguredDiscoveryProviders().find((p) =>
+    configured.find((p) =>
       p.capabilities().platforms.includes(platform as never),
     ) ?? null
   );

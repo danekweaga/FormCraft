@@ -53,6 +53,7 @@ export type ResearchCardItem = {
   whyRelevant?: string[];
   personalFit?: string | null;
   personalScore?: number;
+  recommendationScore?: number;
 };
 
 function compactCount(value: number | null): string | null {
@@ -343,6 +344,11 @@ export function ResearchItemCard({
               {item.personalFit ? (
                 <Badge variant="primary">Fit: {item.personalFit}</Badge>
               ) : null}
+              {item.recommendationScore != null ? (
+                <Badge variant="success">
+                  For You {Math.round(item.recommendationScore)}
+                </Badge>
+              ) : null}
             </div>
             <p className="text-xs text-secondary">
               Outlier{" "}
@@ -464,6 +470,26 @@ export function ResearchItemCard({
               ) : null}
               <Button
                 size="sm"
+                variant="outline"
+                disabled={pending}
+                onClick={() =>
+                  start(async () => {
+                    const fd = new FormData();
+                    fd.set("itemId", item.id);
+                    fd.set("feedbackType", "relevant");
+                    await submitResearchFeedbackAction(fd);
+                    setActionMessage({
+                      kind: "success",
+                      text: "Got it. Similar topics and creators will rank higher.",
+                    });
+                    router.refresh();
+                  })
+                }
+              >
+                More like this
+              </Button>
+              <Button
+                size="sm"
                 variant="ghost"
                 disabled={pending}
                 onClick={() =>
@@ -472,6 +498,11 @@ export function ResearchItemCard({
                     fd.set("itemId", item.id);
                     fd.set("feedbackType", "not_relevant");
                     await submitResearchFeedbackAction(fd);
+                    setActionMessage({
+                      kind: "success",
+                      text: "Removed. Similar recommendations will rank lower.",
+                    });
+                    router.refresh();
                   })
                 }
               >
@@ -487,6 +518,11 @@ export function ResearchItemCard({
                     fd.set("itemId", item.id);
                     fd.set("feedbackType", "hide_creator");
                     await submitResearchFeedbackAction(fd);
+                    setActionMessage({
+                      kind: "success",
+                      text: "Creator hidden from future recommendations.",
+                    });
+                    router.refresh();
                   })
                 }
               >

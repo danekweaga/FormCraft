@@ -341,6 +341,7 @@ export async function runResearchScan(params: {
       minViews: scan.min_views,
       minOutlierScore: scan.min_outlier_score,
       retrievedAt,
+      trustedCreatorPosts: targetCreators,
     });
 
     // Re-rank the user's pending creator recommendations whenever the real

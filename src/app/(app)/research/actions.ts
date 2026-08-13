@@ -600,6 +600,7 @@ export async function addCreatorToWatchlistAction(
         minViews: 0,
         minOutlierScore: 0,
         retrievedAt,
+        trustedCreatorPosts: true,
       });
       pulled = ingested.retained;
       await supabase.from("provider_usage_events").insert({
@@ -1040,24 +1041,54 @@ export async function generateHookMachineAction(
 export async function submitResearchFeedbackAction(formData: FormData) {
   const itemId = String(formData.get("itemId") ?? "");
   const feedbackType = String(formData.get("feedbackType") ?? "");
+  const allowedFeedback = new Set([
+    "relevant",
+    "not_relevant",
+    "already_covered",
+    "wrong_audience",
+    "wrong_niche",
+    "save_for_later",
+    "hide_creator",
+  ]);
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user || !itemId || !feedbackType) return;
+  if (!user || !itemId || !allowedFeedback.has(feedbackType)) return;
+
+  const { data: item } = await supabase
+    .from("research_items")
+    .select("external_creator_id, creator_id")
+    .eq("id", itemId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!item) return;
+
+  const preferenceFeedback = [
+    "relevant",
+    "not_relevant",
+    "already_covered",
+    "wrong_audience",
+    "wrong_niche",
+    "save_for_later",
+  ];
+  if (preferenceFeedback.includes(feedbackType)) {
+    await supabase
+      .from("research_feedback")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("research_item_id", itemId)
+      .in("feedback_type", preferenceFeedback);
+  }
 
   await supabase.from("research_feedback").insert({
     user_id: user.id,
     research_item_id: itemId,
+    external_creator_id: item.external_creator_id,
     feedback_type: feedbackType,
   });
 
   if (feedbackType === "hide_creator") {
-    const { data: item } = await supabase
-      .from("research_items")
-      .select("external_creator_id, creator_id")
-      .eq("id", itemId)
-      .maybeSingle();
     if (item?.creator_id) {
       await supabase
         .from("research_items")
@@ -1065,9 +1096,45 @@ export async function submitResearchFeedbackAction(formData: FormData) {
         .eq("user_id", user.id)
         .eq("creator_id", item.creator_id);
     }
+  } else if (
+    ["not_relevant", "already_covered", "wrong_audience", "wrong_niche"].includes(
+      feedbackType,
+    )
+  ) {
+    await supabase
+      .from("research_items")
+      .update({ hidden: true })
+      .eq("id", itemId)
+      .eq("user_id", user.id);
   }
 
   revalidatePath("/research");
+}
+
+export async function setCreatorPriorityAction(formData: FormData) {
+  const creatorId = String(formData.get("creatorId") ?? "");
+  const priority = String(formData.get("priority") ?? "0") === "100" ? 100 : 0;
+  if (!creatorId) return;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { data: creator } = await supabase
+    .from("external_creators")
+    .select("id")
+    .eq("id", creatorId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!creator) return;
+
+  await supabase
+    .from("research_watchlist_members")
+    .update({ priority })
+    .eq("external_creator_id", creatorId);
+  revalidatePath("/research");
+  revalidatePath(`/research/creators/${creatorId}`);
 }
 
 export async function saveNicheProfileAction(
@@ -1218,7 +1285,7 @@ export async function refreshWatchlistMonitoringAction(
     const result = await runWatchlistMonitor({
       supabase,
       userId: user.id,
-      maxCreators: 10,
+      maxCreators: 20,
     });
     revalidatePath("/research");
     if (result.creatorsChecked === 0) {

@@ -8,6 +8,7 @@ import { getProviderForPlatform } from "@/lib/research/discovery/registry";
 import { createClient } from "@/lib/supabase/server";
 import { CreatorPostsWorkspace } from "../../creator-posts-workspace";
 import type { ResearchCardItem } from "../../research-item-card";
+import { setCreatorPriorityAction } from "../../actions";
 
 export default async function ResearchCreatorPage({
   params,
@@ -70,6 +71,10 @@ export default async function ResearchCreatorPage({
   const wlNames = (memberships ?? [])
     .map((m) => watchlists?.find((w) => w.id === m.watchlist_id)?.name)
     .filter(Boolean);
+  const priority = Math.max(
+    0,
+    ...(memberships ?? []).map((membership) => Number(membership.priority ?? 0)),
+  );
 
   const provider = getProviderForPlatform(creator.platform);
   const canAutoPull = Boolean(
@@ -105,11 +110,23 @@ export default async function ResearchCreatorPage({
         ) : (
           <Badge variant="success">Tracking</Badge>
         )}
+        {priority > 0 ? <Badge variant="success">Daily priority</Badge> : null}
         {wlNames.map((name) => (
           <Badge key={name} variant="primary">
             {name}
           </Badge>
         ))}
+        <form action={setCreatorPriorityAction}>
+          <input type="hidden" name="creatorId" value={creatorId} />
+          <input
+            type="hidden"
+            name="priority"
+            value={priority > 0 ? "0" : "100"}
+          />
+          <Button type="submit" size="sm" variant="outline">
+            {priority > 0 ? "Remove daily priority" : "Scan daily"}
+          </Button>
+        </form>
       </div>
       <div className="mb-8 grid gap-4 md:grid-cols-4">
         <div className="rounded-xl border border-outline-variant/20 bg-surface-primary p-4">

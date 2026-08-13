@@ -89,6 +89,8 @@ export async function ingestScoredPosts(params: {
   minViews?: number;
   minOutlierScore?: number;
   retrievedAt?: string;
+  /** A user-curated creator list is itself a relevance signal. */
+  trustedCreatorPosts?: boolean;
 }): Promise<{ discovered: number; retained: number }> {
   const retrievedAt = params.retrievedAt ?? new Date().toISOString();
   const unique = dedupeSearchPosts(params.posts);
@@ -115,7 +117,22 @@ export async function ingestScoredPosts(params: {
     video,
     relevance: classifyCheapRelevance(video, params.query, nicheContext),
   }));
-  const retained = retainByRelevance(withRelevance);
+  const retained = params.trustedCreatorPosts
+    ? withRelevance.map(({ video, relevance }) => ({
+        video,
+        relevance: relevance.relevant
+          ? relevance
+          : {
+              ...relevance,
+              relevant: true,
+              relevanceReason: "From a creator you intentionally track",
+              topic:
+                video.title?.trim().slice(0, 100) ||
+                video.description?.trim().slice(0, 100) ||
+                "Tracked creator",
+            },
+      }))
+    : retainByRelevance(withRelevance);
 
   const durableThumbnails = new Map<string, string | null>();
   const socialRows = retained.filter(

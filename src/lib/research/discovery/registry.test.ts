@@ -10,7 +10,7 @@ describe("discovery registry", () => {
     vi.unstubAllEnvs();
   });
 
-  it("prefers official Meta for Instagram and keeps ScrapeCreators for broad search", () => {
+  it("uses view-capable Instagram watchlist pulls while keeping Meta configured", () => {
     vi.stubEnv("SCRAPECREATORS_API_KEY", "sc-key");
     vi.stubEnv("YOUTUBE_DATA_API_KEY", "yt-key");
     vi.stubEnv("TIKTOK_DATA_API_KEY", "tt-store-key");
@@ -28,7 +28,7 @@ describe("discovery registry", () => {
     );
     expect(getProviderForPlatform("tiktok")?.providerName).toBe("scrapecreators");
     expect(getProviderForPlatform("instagram")?.providerName).toBe(
-      "meta_instagram_business_discovery",
+      "scrapecreators",
     );
 
     const platforms = searchablePlatforms().map((p) => p.platform);

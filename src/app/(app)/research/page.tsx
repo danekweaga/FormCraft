@@ -19,6 +19,7 @@ import {
   scrapeCreatorsCreditWarning,
 } from "@/lib/research/discovery/scrapecreators-client";
 import { scorePersonalRelevance } from "@/lib/research/relevance";
+import { rankPersonalizedFeed } from "@/lib/research/personalized-feed";
 import { normalizeResearchFeedFilters } from "@/lib/research/feed-filters";
 import {
   meetsResearchViewFloor,
@@ -158,7 +159,10 @@ export default async function ResearchPage({
     .eq("hidden", false)
     .gte("views", MIN_RESEARCH_VIEWS);
   const researchItemsQuery =
-    mode === "outliers"
+    mode === "for-you"
+      ? researchItemsBase
+          .order("published_at", { ascending: false, nullsFirst: false })
+      : mode === "outliers"
       ? researchItemsBase.order("outlier_score", {
           ascending: false,
           nullsFirst: false,
@@ -187,7 +191,7 @@ export default async function ResearchPage({
     { data: watchlistMembers },
     { data: creatorSuggestions },
   ] = await Promise.all([
-    researchItemsQuery.limit(120),
+    researchItemsQuery.limit(mode === "for-you" ? 400 : 120),
     supabase
       .from("research_scans")
       .select(
@@ -242,16 +246,16 @@ export default async function ResearchPage({
       .maybeSingle(),
     supabase
       .from("content_posts")
-      .select("title, caption, classification")
+      .select("title, caption, topic, content_pillar, views, classification")
       .eq("user_id", user.id)
-      .order("published_at", { ascending: false, nullsFirst: false })
-      .limit(20),
+      .order("views", { ascending: false, nullsFirst: false })
+      .limit(40),
     supabase
       .from("research_feedback")
-      .select("feedback_type, research_item_id")
+      .select("feedback_type, research_item_id, created_at")
       .eq("user_id", user.id)
-      .eq("feedback_type", "hide_creator")
-      .limit(100),
+      .order("created_at", { ascending: false })
+      .limit(500),
     supabase
       .from("research_watchlist_members")
       .select("watchlist_id, external_creator_id"),
@@ -271,16 +275,20 @@ export default async function ResearchPage({
       (myPosts ?? [])
         .map((p) => {
           const c = p.classification as Record<string, unknown> | null;
-          return typeof c?.topic === "string"
-            ? c.topic
-            : (p.title || p.caption || "").slice(0, 40);
+          if (p.topic?.trim()) return p.topic.trim();
+          if (p.content_pillar?.trim()) return p.content_pillar.trim();
+          return typeof c?.topic === "string" && c.topic.trim()
+            ? c.topic.trim()
+            : (p.title || p.caption || "").slice(0, 60);
         })
         .filter(Boolean),
     ),
   ).slice(0, 12);
 
   const hiddenFeedbackItemIds = new Set(
-    (feedback ?? []).map((entry) => entry.research_item_id),
+    (feedback ?? [])
+      .filter((entry) => entry.feedback_type === "hide_creator")
+      .map((entry) => entry.research_item_id),
   );
   const dismissedCreators = Array.from(
     new Set(
@@ -343,20 +351,19 @@ export default async function ResearchPage({
   const visibleResearch = enriched.filter((item) =>
     meetsResearchViewFloor(item.views),
   );
-  const forYou = [...visibleResearch].sort((a, b) => {
-    const viewDelta = (b.views ?? 0) - (a.views ?? 0);
-    if (viewDelta !== 0) return viewDelta;
-    const outlierDelta = (b.outlier_score ?? -1) - (a.outlier_score ?? -1);
-    if (outlierDelta !== 0) return outlierDelta;
-    return (b.personalScore ?? 0) - (a.personalScore ?? 0);
-  });
-  const outliers = [...visibleResearch].sort(
-    (a, b) => (b.outlier_score ?? -1) - (a.outlier_score ?? -1),
-  );
   const watchlistCreatorIds = new Set(
     (watchlistMembers ?? [])
       .map((m) => m.external_creator_id)
       .filter((id): id is string => Boolean(id)),
+  );
+  const forYou = rankPersonalizedFeed(visibleResearch, {
+    feedback: feedback ?? [],
+    watchedCreatorIds: [...watchlistCreatorIds],
+    highPerformingTopics: topics,
+    maxAgeDays: 30,
+  });
+  const outliers = [...visibleResearch].sort(
+    (a, b) => (b.outlier_score ?? -1) - (a.outlier_score ?? -1),
   );
   const watchlistOutliers = visibleResearch.filter(
     (i) =>
@@ -469,7 +476,11 @@ export default async function ResearchPage({
     }));
 
   const feedList =
-    mode === "saved" ? saved : mode === "outliers" ? outliers : forYou;
+    mode === "saved"
+      ? saved
+      : mode === "outliers"
+        ? outliers
+        : forYou.slice(0, 120);
   const isFeedMode =
     mode === "for-you" || mode === "outliers" || mode === "saved";
 
@@ -1001,11 +1012,19 @@ export default async function ResearchPage({
           title="For You ranking"
           confidence="medium"
           why={[
-            "Deterministic score from outlier strength + your topics, lessons, audience, roadmap, and experiments.",
-            "Deep AI is not used for the full ranking.",
+            "Ranks the full 30-day pool using your winning topics, niche, saves, analyses, feedback, tracked creators, audience, roadmap, experiments, freshness, and creator-relative outliers.",
+            "A diversity pass prevents one creator, topic, or platform from taking over the feed.",
+            "Use More like this, Save, Analyze, Not relevant, and Scan daily to keep training it without spending AI credits.",
           ]}
           evidence={evidence.topics.slice(0, 4)}
-          sources={["My Content", "Performance lessons", "Audience", "Roadmap"]}
+          sources={[
+            "My Content performance",
+            "Research feedback",
+            "Saved analyses",
+            "Watchlists",
+            "Audience",
+            "Roadmap",
+          ]}
         />
       ) : null}
 

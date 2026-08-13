@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getProviderForPlatform } from "./discovery/registry";
+import type { SearchPostResult } from "./discovery/types";
 import { ingestScoredPosts } from "./ingest-posts";
 import {
   BUDGETED_DISCOVERY_PROVIDERS,
@@ -9,6 +10,48 @@ import {
   remainingDiscoveryCalls,
 } from "./provider-budget";
 import { filterRecentShortForm } from "./recent-short-form";
+
+type WatchlistCreatorRow = {
+  id: string;
+  platform: string;
+  platform_creator_id: string;
+  handle: string | null;
+  display_name: string | null;
+  tracking_paused: boolean;
+  data_freshness_at: string | null;
+};
+
+export function attachTrackedCreatorIdentity(
+  posts: SearchPostResult[],
+  creator: Pick<
+    WatchlistCreatorRow,
+    "platform_creator_id" | "display_name" | "handle"
+  >,
+): SearchPostResult[] {
+  return posts.map((post) => ({
+    ...post,
+    creatorId: creator.platform_creator_id,
+    creatorName: creator.display_name || creator.handle || post.creatorName,
+  }));
+}
+
+export function orderWatchlistCreators<T extends WatchlistCreatorRow>(
+  creators: T[],
+  priorities: Map<string, number>,
+): T[] {
+  return [...creators].sort((a, b) => {
+    const priorityDelta =
+      (priorities.get(b.id) ?? 0) - (priorities.get(a.id) ?? 0);
+    if (priorityDelta !== 0) return priorityDelta;
+    const aFreshness = a.data_freshness_at
+      ? new Date(a.data_freshness_at).getTime()
+      : 0;
+    const bFreshness = b.data_freshness_at
+      ? new Date(b.data_freshness_at).getTime()
+      : 0;
+    return aFreshness - bFreshness;
+  });
+}
 
 /**
  * Pull latest posts for tracked watchlist creators and ingest outliers.
@@ -64,6 +107,7 @@ export async function runWatchlistMonitor(params: {
   });
 
   let creatorIds: string[];
+  const creatorPriorities = new Map<string, number>();
 
   if (params.externalCreatorIds?.length) {
     const uniqueIds = Array.from(new Set(params.externalCreatorIds));
@@ -91,8 +135,18 @@ export async function runWatchlistMonitor(params: {
 
     const { data: members } = await params.supabase
       .from("research_watchlist_members")
-      .select("external_creator_id")
+      .select("external_creator_id, priority")
       .in("watchlist_id", watchlistIds);
+
+    for (const member of members ?? []) {
+      creatorPriorities.set(
+        member.external_creator_id,
+        Math.max(
+          creatorPriorities.get(member.external_creator_id) ?? 0,
+          Number(member.priority ?? 0),
+        ),
+      );
+    }
 
     creatorIds = Array.from(
       new Set(
@@ -118,7 +172,7 @@ export async function runWatchlistMonitor(params: {
 
   let creatorsQuery = params.supabase
     .from("external_creators")
-    .select("id, platform, platform_creator_id, handle, display_name, tracking_paused")
+    .select("id, platform, platform_creator_id, handle, display_name, tracking_paused, data_freshness_at")
     .eq("user_id", params.userId)
     .in("id", creatorIds)
     .eq("tracking_paused", false)
@@ -128,7 +182,13 @@ export async function runWatchlistMonitor(params: {
 
   let budgetedCreators = 0;
   let skippedForBudget = 0;
-  const creators = (candidateCreators ?? [])
+  // Priority creators are checked every run. The rest continue rotating from
+  // the stalest data_freshness_at value so a large imported catalog is fair.
+  const orderedCandidates = orderWatchlistCreators(
+    candidateCreators ?? [],
+    creatorPriorities,
+  );
+  const creators = orderedCandidates
     .filter((creator) => {
       const provider = getProviderForPlatform(creator.platform);
       if (!provider || !isDiscoveryProviderBudgeted(provider.providerName)) {
@@ -144,7 +204,7 @@ export async function runWatchlistMonitor(params: {
     .slice(0, requestedMaxCreators);
 
   const retrievedAt = new Date().toISOString();
-  const allPosts = [];
+  const allPosts: SearchPostResult[] = [];
   const usedProviders = new Set<string>();
   const byPlatform: Record<string, number> = {};
   const providerErrors: string[] = [];
@@ -167,7 +227,11 @@ export async function runWatchlistMonitor(params: {
       });
       usedProviders.add(provider.providerName);
       const recentShorts = filterRecentShortForm(posts, { lookbackDays: 30 });
-      allPosts.push(...recentShorts);
+      const stableCreatorPosts = attachTrackedCreatorIdentity(
+        recentShorts,
+        creator,
+      );
+      allPosts.push(...stableCreatorPosts);
       byPlatform[creator.platform] =
         (byPlatform[creator.platform] ?? 0) + recentShorts.length;
 
@@ -224,6 +288,7 @@ export async function runWatchlistMonitor(params: {
     minViews: 0,
     minOutlierScore: 0,
     retrievedAt,
+    trustedCreatorPosts: true,
   });
 
   // New watchlist evidence should improve rankings even when no broad search
@@ -299,6 +364,7 @@ export async function refreshSingleCreatorPosts(params: {
     maxResults: params.maxResults ?? 30,
   });
   const recentShorts = filterRecentShortForm(posts, { lookbackDays: 30 });
+  const stableCreatorPosts = attachTrackedCreatorIdentity(recentShorts, creator);
 
   await params.supabase.from("provider_usage_events").insert({
     user_id: params.userId,
@@ -329,11 +395,12 @@ export async function refreshSingleCreatorPosts(params: {
   const ingested = await ingestScoredPosts({
     supabase: params.supabase,
     userId: params.userId,
-    posts: recentShorts,
+    posts: stableCreatorPosts,
     query: niche.data?.main_niche || creator.handle || creator.display_name || "creator",
     minViews: 0,
     minOutlierScore: 0,
     retrievedAt,
+    trustedCreatorPosts: true,
   });
 
   return {
