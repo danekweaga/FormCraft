@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getProviderForPlatform } from "./discovery/registry";
+import {
+  getScrapeCreatorsUsage,
+  resetScrapeCreatorsUsage,
+} from "./discovery/scrapecreators-client";
 import type { SearchPostResult } from "./discovery/types";
 import { ingestScoredPosts } from "./ingest-posts";
 import {
@@ -53,6 +57,60 @@ export function orderWatchlistCreators<T extends WatchlistCreatorRow>(
   });
 }
 
+type CreatorQueueMember = {
+  external_creator_id: string | null;
+  priority?: number | null;
+};
+
+type CreatorQueueSuggestion = {
+  external_creator_id: string | null;
+  score?: number | null;
+};
+
+/**
+ * Pending evidence-backed suggestions are automatic feed sources, but remain
+ * pending so the user can still accept them into or dismiss them from a list.
+ */
+export function buildAutomaticCreatorQueue(params: {
+  members: CreatorQueueMember[];
+  suggestions: CreatorQueueSuggestion[];
+}): {
+  creatorIds: string[];
+  priorities: Map<string, number>;
+  suggestedCreatorIds: Set<string>;
+} {
+  const priorities = new Map<string, number>();
+  const creatorIds = new Set<string>();
+  const suggestedCreatorIds = new Set<string>();
+  for (const member of params.members) {
+    if (!member.external_creator_id) continue;
+    creatorIds.add(member.external_creator_id);
+    priorities.set(
+      member.external_creator_id,
+      Math.max(
+        priorities.get(member.external_creator_id) ?? 0,
+        Number(member.priority ?? 0),
+      ),
+    );
+  }
+  for (const suggestion of params.suggestions) {
+    if (!suggestion.external_creator_id) continue;
+    creatorIds.add(suggestion.external_creator_id);
+    suggestedCreatorIds.add(suggestion.external_creator_id);
+    // Suggested sources should be pulled before the ordinary stale rotation.
+    // Use one shared priority so freshness still rotates through all of them.
+    priorities.set(
+      suggestion.external_creator_id,
+      Math.max(priorities.get(suggestion.external_creator_id) ?? 0, 50),
+    );
+  }
+  return {
+    creatorIds: [...creatorIds],
+    priorities,
+    suggestedCreatorIds,
+  };
+}
+
 /**
  * Pull latest posts for tracked watchlist creators and ingest outliers.
  */
@@ -65,6 +123,8 @@ export async function runWatchlistMonitor(params: {
   externalCreatorIds?: string[];
 }): Promise<{
   creatorsChecked: number;
+  suggestedCreatorsQueued: number;
+  suggestedCreatorsChecked: number;
   remainingCreators: number;
   discovered: number;
   retained: number;
@@ -108,6 +168,7 @@ export async function runWatchlistMonitor(params: {
 
   let creatorIds: string[];
   const creatorPriorities = new Map<string, number>();
+  const suggestedCreatorIds = new Set<string>();
 
   if (params.externalCreatorIds?.length) {
     const uniqueIds = Array.from(new Set(params.externalCreatorIds));
@@ -123,6 +184,8 @@ export async function runWatchlistMonitor(params: {
     if (watchlistIds.length === 0) {
       return {
         creatorsChecked: 0,
+        suggestedCreatorsQueued: 0,
+        suggestedCreatorsChecked: 0,
         remainingCreators: 0,
         discovered: 0,
         retained: 0,
@@ -133,33 +196,36 @@ export async function runWatchlistMonitor(params: {
       };
     }
 
-    const { data: members } = await params.supabase
-      .from("research_watchlist_members")
-      .select("external_creator_id, priority")
-      .in("watchlist_id", watchlistIds);
-
-    for (const member of members ?? []) {
-      creatorPriorities.set(
-        member.external_creator_id,
-        Math.max(
-          creatorPriorities.get(member.external_creator_id) ?? 0,
-          Number(member.priority ?? 0),
-        ),
-      );
+    const [{ data: members }, { data: suggestions }] = await Promise.all([
+      params.supabase
+        .from("research_watchlist_members")
+        .select("external_creator_id, priority")
+        .in("watchlist_id", watchlistIds),
+      params.supabase
+        .from("research_creator_suggestions")
+        .select("external_creator_id, score")
+        .eq("user_id", params.userId)
+        .eq("status", "pending")
+        .in("watchlist_id", watchlistIds)
+        .order("score", { ascending: false })
+        .limit(250),
+    ]);
+    const queue = buildAutomaticCreatorQueue({
+      members: members ?? [],
+      suggestions: suggestions ?? [],
+    });
+    creatorIds = queue.creatorIds;
+    for (const [id, priority] of queue.priorities) {
+      creatorPriorities.set(id, priority);
     }
-
-    creatorIds = Array.from(
-      new Set(
-        (members ?? [])
-          .map((m) => m.external_creator_id)
-          .filter((id): id is string => Boolean(id)),
-      ),
-    );
+    for (const id of queue.suggestedCreatorIds) suggestedCreatorIds.add(id);
   }
 
   if (creatorIds.length === 0) {
     return {
       creatorsChecked: 0,
+      suggestedCreatorsQueued: 0,
+      suggestedCreatorsChecked: 0,
       remainingCreators: 0,
       discovered: 0,
       retained: 0,
@@ -180,7 +246,18 @@ export async function runWatchlistMonitor(params: {
   creatorsQuery = creatorsQuery.limit(Math.min(1000, creatorIds.length));
   const { data: candidateCreators } = await creatorsQuery;
 
-  let budgetedCreators = 0;
+  const requestedPostsPerCreator = Math.min(
+    500,
+    Math.max(1, params.postsPerCreator ?? 200),
+  );
+  const maxPagesPerCreator = Math.min(
+    25,
+    Math.max(
+      1,
+      Number(process.env.DISCOVERY_MAX_PAGES_PER_CREATOR ?? "20") || 20,
+    ),
+  );
+  let remainingBudgetForRun = remainingBudget;
   let skippedForBudget = 0;
   // Priority creators are checked every run. The rest continue rotating from
   // the stalest data_freshness_at value so a large imported catalog is fair.
@@ -188,45 +265,44 @@ export async function runWatchlistMonitor(params: {
     candidateCreators ?? [],
     creatorPriorities,
   );
-  const creators = orderedCandidates
-    .filter((creator) => {
-      const provider = getProviderForPlatform(creator.platform);
-      if (!provider || !isDiscoveryProviderBudgeted(provider.providerName)) {
-        return true;
-      }
-      if (budgetedCreators >= remainingBudget) {
-        skippedForBudget += 1;
-        return false;
-      }
-      budgetedCreators += 1;
-      return true;
-    })
-    .slice(0, requestedMaxCreators);
-
   const retrievedAt = new Date().toISOString();
   const allPosts: SearchPostResult[] = [];
   const usedProviders = new Set<string>();
   const byPlatform: Record<string, number> = {};
   const providerErrors: string[] = [];
-  if (skippedForBudget > 0) {
-    providerErrors.push(
-      `${skippedForBudget} paid/quota-limited creator pull${skippedForBudget === 1 ? " was" : "s were"} deferred until the discovery budget resets; official Meta Instagram pulls remain enabled`,
-    );
-  }
+  const checkedCreators: WatchlistCreatorRow[] = [];
+  resetScrapeCreatorsUsage();
 
-  for (const creator of creators) {
+  for (const creator of orderedCandidates) {
+    if (checkedCreators.length >= requestedMaxCreators) break;
     const provider = getProviderForPlatform(creator.platform);
     if (!provider?.getCreatorPosts || !provider.capabilities().getCreatorPosts) {
       continue;
     }
+    const budgeted = isDiscoveryProviderBudgeted(provider.providerName);
+    if (budgeted && remainingBudgetForRun <= 0) {
+      skippedForBudget += 1;
+      continue;
+    }
+    const allocatedPages =
+      provider.providerName === "scrapecreators"
+        ? Math.min(maxPagesPerCreator, remainingBudgetForRun)
+        : undefined;
+    checkedCreators.push(creator);
+    const scrapeCreditsBefore = getScrapeCreatorsUsage().creditsChargedThisSession;
     try {
       const posts = await provider.getCreatorPosts({
         platform: creator.platform as "youtube" | "tiktok" | "instagram" | "other",
         platformCreatorId: creator.platform_creator_id,
-        maxResults: params.postsPerCreator ?? 30,
+        maxResults: requestedPostsPerCreator,
+        lookbackDays: 30,
+        maxPages: allocatedPages,
       });
       usedProviders.add(provider.providerName);
-      const recentShorts = filterRecentShortForm(posts, { lookbackDays: 30 });
+      const recentShorts = filterRecentShortForm(posts, {
+        lookbackDays: 30,
+        strictLookback: true,
+      });
       const stableCreatorPosts = attachTrackedCreatorIdentity(
         recentShorts,
         creator,
@@ -235,18 +311,33 @@ export async function runWatchlistMonitor(params: {
       byPlatform[creator.platform] =
         (byPlatform[creator.platform] ?? 0) + recentShorts.length;
 
-      await params.supabase.from("provider_usage_events").insert({
-        user_id: params.userId,
-        provider: provider.providerName,
-        operation: "get_creator_posts",
-        result_count: recentShorts.length,
-        metadata: {
-          externalCreatorId: creator.id,
-          platformCreatorId: creator.platform_creator_id,
-          lookbackDays: 30,
-          shortFormMaxSeconds: 180,
-        },
-      });
+      const scrapeCreditsAfter =
+        getScrapeCreatorsUsage().creditsChargedThisSession;
+      const usageUnits =
+        provider.providerName === "scrapecreators"
+          ? Math.max(1, scrapeCreditsAfter - scrapeCreditsBefore)
+          : 1;
+      if (budgeted) {
+        remainingBudgetForRun = Math.max(0, remainingBudgetForRun - usageUnits);
+      }
+      await params.supabase.from("provider_usage_events").insert(
+        Array.from({ length: usageUnits }, (_, index) => ({
+          user_id: params.userId,
+          provider: provider.providerName,
+          operation: "get_creator_posts",
+          result_count: index === 0 ? recentShorts.length : 0,
+          metadata: {
+            externalCreatorId: creator.id,
+            platformCreatorId: creator.platform_creator_id,
+            automaticSuggestion: suggestedCreatorIds.has(creator.id),
+            lookbackDays: 30,
+            requestedPosts: requestedPostsPerCreator,
+            providerCreditUnit: index + 1,
+            providerCreditsCharged: usageUnits,
+            shortFormMaxSeconds: 180,
+          },
+        })),
+      );
 
       await params.supabase
         .from("external_creators")
@@ -255,6 +346,30 @@ export async function runWatchlistMonitor(params: {
         .eq("user_id", params.userId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const scrapeCreditsAfter =
+        getScrapeCreatorsUsage().creditsChargedThisSession;
+      const usageUnits =
+        provider.providerName === "scrapecreators"
+          ? Math.max(1, scrapeCreditsAfter - scrapeCreditsBefore)
+          : 1;
+      if (budgeted) {
+        remainingBudgetForRun = Math.max(0, remainingBudgetForRun - usageUnits);
+      }
+      await params.supabase.from("provider_usage_events").insert(
+        Array.from({ length: usageUnits }, (_, index) => ({
+          user_id: params.userId,
+          provider: provider.providerName,
+          operation: "get_creator_posts",
+          result_count: 0,
+          metadata: {
+            externalCreatorId: creator.id,
+            automaticSuggestion: suggestedCreatorIds.has(creator.id),
+            failed: true,
+            providerCreditUnit: index + 1,
+            providerCreditsCharged: usageUnits,
+          },
+        })),
+      );
       providerErrors.push(
         `${creator.platform} @${creator.handle || creator.platform_creator_id}: ${message}`,
       );
@@ -262,6 +377,12 @@ export async function runWatchlistMonitor(params: {
         `[watchlist-monitor] creator pull failed creator=${creator.id} platform=${creator.platform} provider=${provider.providerName}: ${message}`,
       );
     }
+  }
+
+  if (skippedForBudget > 0) {
+    providerErrors.push(
+      `${skippedForBudget} paid/quota-limited creator pull${skippedForBudget === 1 ? " was" : "s were"} deferred until the discovery budget resets; official Meta Instagram pulls remain enabled`,
+    );
   }
 
   if (allPosts.length === 0 && providerErrors.length > 0) {
@@ -308,10 +429,14 @@ export async function runWatchlistMonitor(params: {
   }
 
   return {
-    creatorsChecked: creators.length,
+    creatorsChecked: checkedCreators.length,
+    suggestedCreatorsQueued: suggestedCreatorIds.size,
+    suggestedCreatorsChecked: checkedCreators.filter((creator) =>
+      suggestedCreatorIds.has(creator.id),
+    ).length,
     remainingCreators: Math.max(
       0,
-      creatorIds.length - creators.length,
+      creatorIds.length - checkedCreators.length,
     ),
     discovered: ingested.discovered,
     retained: ingested.retained,
@@ -330,6 +455,7 @@ export async function refreshSingleCreatorPosts(params: {
   userId: string;
   externalCreatorId: string;
   maxResults?: number;
+  maxPages?: number;
 }): Promise<{
   retained: number;
   discovered: number;
@@ -358,27 +484,55 @@ export async function refreshSingleCreatorPosts(params: {
   }
 
   const retrievedAt = new Date().toISOString();
+  const configuredMaxPages =
+    params.maxPages ??
+    (Number(process.env.DISCOVERY_MAX_PAGES_PER_CREATOR ?? "20") || 20);
+  resetScrapeCreatorsUsage();
+  const scrapeCreditsBefore = getScrapeCreatorsUsage().creditsChargedThisSession;
   const posts = await provider.getCreatorPosts({
     platform: creator.platform as "youtube" | "tiktok" | "instagram" | "other",
     platformCreatorId: creator.platform_creator_id,
-    maxResults: params.maxResults ?? 30,
+    maxResults: Math.min(500, Math.max(1, params.maxResults ?? 200)),
+    lookbackDays: 30,
+    maxPages:
+      provider.providerName === "scrapecreators"
+        ? Math.min(
+            25,
+            Math.max(
+              1,
+              configuredMaxPages,
+            ),
+          )
+        : params.maxPages,
   });
-  const recentShorts = filterRecentShortForm(posts, { lookbackDays: 30 });
+  const recentShorts = filterRecentShortForm(posts, {
+    lookbackDays: 30,
+    strictLookback: true,
+  });
   const stableCreatorPosts = attachTrackedCreatorIdentity(recentShorts, creator);
 
-  await params.supabase.from("provider_usage_events").insert({
-    user_id: params.userId,
-    provider: provider.providerName,
-    operation: "get_creator_posts",
-    result_count: recentShorts.length,
-    metadata: {
-      externalCreatorId: creator.id,
-      platformCreatorId: creator.platform_creator_id,
-      single: true,
-      lookbackDays: 30,
-      shortFormMaxSeconds: 180,
-    },
-  });
+  const scrapeCreditsAfter = getScrapeCreatorsUsage().creditsChargedThisSession;
+  const usageUnits =
+    provider.providerName === "scrapecreators"
+      ? Math.max(1, scrapeCreditsAfter - scrapeCreditsBefore)
+      : 1;
+  await params.supabase.from("provider_usage_events").insert(
+    Array.from({ length: usageUnits }, (_, index) => ({
+      user_id: params.userId,
+      provider: provider.providerName,
+      operation: "get_creator_posts",
+      result_count: index === 0 ? recentShorts.length : 0,
+      metadata: {
+        externalCreatorId: creator.id,
+        platformCreatorId: creator.platform_creator_id,
+        single: true,
+        lookbackDays: 30,
+        providerCreditUnit: index + 1,
+        providerCreditsCharged: usageUnits,
+        shortFormMaxSeconds: 180,
+      },
+    })),
+  );
 
   await params.supabase
     .from("external_creators")

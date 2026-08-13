@@ -164,4 +164,86 @@ describe("scrapeCreatorsDiscoveryProvider", () => {
       "tiktok",
     ]);
   });
+
+  it("paginates a TikTok creator until the requested 30-day feed is covered", async () => {
+    vi.stubEnv("SCRAPECREATORS_API_KEY", "test-sc-key");
+    const recent = new Date(Date.now() - 2 * 86_400_000).toISOString();
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo) => {
+      const url = new URL(String(input));
+      const secondPage = url.searchParams.get("max_cursor") === "page-2";
+      return new Response(
+        JSON.stringify({
+          credits_remaining: secondPage ? 98 : 99,
+          credits_charged: 1,
+          aweme_list: [
+            {
+              aweme_id: secondPage ? "tt-2" : "tt-1",
+              desc: "AI founder lesson",
+              create_time_utc: recent,
+              author: { unique_id: "founder", nickname: "Founder" },
+              statistics: { play_count: secondPage ? 80_000 : 40_000 },
+            },
+          ],
+          has_more: secondPage ? 0 : 1,
+          max_cursor: secondPage ? null : "page-2",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const results = await scrapeCreatorsDiscoveryProvider.getCreatorPosts!({
+      platform: "tiktok",
+      platformCreatorId: "founder",
+      maxResults: 200,
+      maxPages: 5,
+      lookbackDays: 30,
+    });
+
+    expect(results.map((post) => post.externalId)).toEqual(["tt-1", "tt-2"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("paginates Instagram reels with max_id", async () => {
+    vi.stubEnv("SCRAPECREATORS_API_KEY", "test-sc-key");
+    const recentSeconds = Math.floor((Date.now() - 2 * 86_400_000) / 1000);
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo) => {
+      const url = new URL(String(input));
+      const secondPage = url.searchParams.get("max_id") === "page-2";
+      return new Response(
+        JSON.stringify({
+          credits_remaining: secondPage ? 98 : 99,
+          credits_charged: 1,
+          items: [
+            {
+              media: {
+                code: secondPage ? "ig-2" : "ig-1",
+                caption: { text: "A useful creator lesson" },
+                play_count: secondPage ? 90_000 : 30_000,
+                taken_at: recentSeconds,
+                user: { username: "founder", full_name: "Founder" },
+              },
+            },
+          ],
+          paging_info: {
+            more_available: !secondPage,
+            max_id: secondPage ? null : "page-2",
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const results = await scrapeCreatorsDiscoveryProvider.getCreatorPosts!({
+      platform: "instagram",
+      platformCreatorId: "founder",
+      maxResults: 200,
+      maxPages: 5,
+      lookbackDays: 30,
+    });
+
+    expect(results.map((post) => post.externalId)).toEqual(["ig-1", "ig-2"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

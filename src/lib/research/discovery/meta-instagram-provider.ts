@@ -12,7 +12,7 @@ import { scrapeCreatorsDiscoveryProvider } from "./scrapecreators-provider";
 const GRAPH_HOST = "graph.facebook.com";
 const DEFAULT_GRAPH_VERSION = "v26.0";
 const USERNAME_PATTERN = /^[A-Za-z0-9._]{1,30}$/;
-const MAX_PAGES = 3;
+const MAX_PAGES = 10;
 
 type MetaGraphErrorBody = {
   error?: {
@@ -267,12 +267,19 @@ async function getMetaCreatorPosts(
       "Instagram creator must be a valid username or profile URL.",
     );
   }
-  const maxResults = Math.min(50, Math.max(1, input.maxResults ?? 30));
+  const maxResults = Math.min(500, Math.max(1, input.maxResults ?? 30));
+  const pageSize = Math.min(50, maxResults);
+  const maxPages = Math.min(
+    MAX_PAGES,
+    Math.max(1, input.maxPages ?? Math.ceil(maxResults / pageSize)),
+  );
+  const lookbackDays = Math.min(365, Math.max(1, input.lookbackDays ?? 30));
+  const cutoff = Date.now() - lookbackDays * 86_400_000;
   const retrievedAt = new Date().toISOString();
 
   let first: MetaDiscoveryResponse;
   try {
-    first = await graphGet(firstRequestUrl(username, maxResults, true));
+    first = await graphGet(firstRequestUrl(username, pageSize, true));
   } catch (error) {
     // Some Graph versions/accounts do not expose thumbnail_url through nested
     // Business Discovery. Retry the proven minimal contract before failing.
@@ -280,7 +287,7 @@ async function getMetaCreatorPosts(
       error instanceof MetaInstagramDiscoveryError &&
       error.graphCode === 100
     ) {
-      first = await graphGet(firstRequestUrl(username, maxResults, false));
+      first = await graphGet(firstRequestUrl(username, pageSize, false));
     } else {
       throw error;
     }
@@ -299,8 +306,9 @@ async function getMetaCreatorPosts(
   const results: SearchPostResult[] = [];
   let page: MetaMediaPage | undefined = discovery.media;
 
-  for (let pageIndex = 0; page && pageIndex < MAX_PAGES; pageIndex += 1) {
-    for (const item of asMediaList(page.data)) {
+  for (let pageIndex = 0; page && pageIndex < maxPages; pageIndex += 1) {
+    const pageItems = asMediaList(page.data);
+    for (const item of pageItems) {
       const normalized = normalizeMedia({
         item,
         username: canonicalUsername,
@@ -312,6 +320,19 @@ async function getMetaCreatorPosts(
       if (results.length >= maxResults) return results;
     }
 
+    const pageTimestamps = pageItems
+      .map((item) => {
+        const timestamp = asString(item.timestamp);
+        return timestamp ? new Date(timestamp).getTime() : Number.NaN;
+      })
+      .filter(Number.isFinite);
+    if (
+      pageTimestamps.length > 0 &&
+      pageTimestamps.every((timestamp) => timestamp < cutoff)
+    ) {
+      break;
+    }
+
     const next = asString(page.paging?.next);
     if (!next || results.length >= maxResults) break;
     const nextBody = await graphGet(next);
@@ -321,7 +342,13 @@ async function getMetaCreatorPosts(
     };
   }
 
-  return results.slice(0, maxResults);
+  return results
+    .filter((post) => {
+      if (!post.publishedAt) return true;
+      const publishedAt = new Date(post.publishedAt).getTime();
+      return Number.isFinite(publishedAt) && publishedAt >= cutoff;
+    })
+    .slice(0, maxResults);
 }
 
 export const metaInstagramDiscoveryProvider: ContentDiscoveryProvider = {

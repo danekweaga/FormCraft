@@ -29,6 +29,10 @@ export type CreatorPostsInput = {
   platform: ResearchPlatform;
   platformCreatorId: string;
   maxResults?: number;
+  /** Stop paging once the provider has crossed this rolling window. */
+  lookbackDays?: number;
+  /** Paid providers use one credit per page; callers allocate the safe maximum. */
+  maxPages?: number;
 };
 
 export type RefreshExternalMetricsInput = {

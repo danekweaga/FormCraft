@@ -316,6 +316,46 @@ function dedupe(posts: SearchPostResult[]): SearchPostResult[] {
   return out;
 }
 
+function isInsideRollingWindow(
+  post: SearchPostResult,
+  lookbackDays: number,
+  now = Date.now(),
+): boolean {
+  if (!post.publishedAt) return true;
+  const publishedAt = new Date(post.publishedAt).getTime();
+  if (!Number.isFinite(publishedAt)) return false;
+  return publishedAt >= now - lookbackDays * 86_400_000;
+}
+
+function pageIsOlderThanWindow(
+  posts: SearchPostResult[],
+  lookbackDays: number,
+  now = Date.now(),
+): boolean {
+  const dated = posts
+    .map((post) =>
+      post.publishedAt ? new Date(post.publishedAt).getTime() : Number.NaN,
+    )
+    .filter(Number.isFinite);
+  return (
+    dated.length > 0 &&
+    dated.every((publishedAt) => publishedAt < now - lookbackDays * 86_400_000)
+  );
+}
+
+function instagramPaging(body: Record<string, unknown>): {
+  maxId: string | null;
+  moreAvailable: boolean;
+} {
+  const data = pickRecord(body.data);
+  const paging = pickRecord(body.paging_info) ?? pickRecord(data?.paging_info);
+  return {
+    maxId: asString(paging?.max_id),
+    moreAvailable:
+      paging?.more_available === true || asNumber(paging?.more_available) === 1,
+  };
+}
+
 export const scrapeCreatorsDiscoveryProvider: ContentDiscoveryProvider = {
   providerName: "scrapecreators",
 
@@ -402,47 +442,86 @@ export const scrapeCreatorsDiscoveryProvider: ContentDiscoveryProvider = {
   async getCreatorPosts(input: CreatorPostsInput): Promise<SearchPostResult[]> {
     if (!isScrapeCreatorsConfigured()) return [];
     const retrievedAt = new Date().toISOString();
-    const handle = input.platformCreatorId.replace(/^@/, "");
-    const maxResults = input.maxResults ?? 10;
+    const identity = input.platformCreatorId.replace(/^@/, "");
+    const maxResults = Math.min(500, Math.max(1, input.maxResults ?? 10));
+    const lookbackDays = Math.min(365, Math.max(1, input.lookbackDays ?? 30));
+    const maxPages = Math.min(25, Math.max(1, input.maxPages ?? 1));
 
     if (input.platform === "tiktok") {
-      const body = await scrapecreatorsGet("/v3/tiktok/profile/videos", {
-        handle,
-        sort_by: "latest",
-        trim: true,
-      });
-      return extractList(body, ["aweme_list", "videos", "search_item_list"])
-        .map((raw) => normalizeTiktokVideo(raw, retrievedAt))
-        .filter((post): post is SearchPostResult => Boolean(post))
-        .map((post) => ({
-          ...post,
-          providerName: "scrapecreators",
-          collectionMethod: "third_party_creator_posts",
-          creatorId: post.creatorId ?? handle,
-        }))
+      const posts: SearchPostResult[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < maxPages && posts.length < maxResults; page++) {
+        const body = await scrapecreatorsGet("/v3/tiktok/profile/videos", {
+          ...(/^\d+$/.test(identity)
+            ? { user_id: identity }
+            : { handle: identity }),
+          sort_by: "latest",
+          trim: true,
+          ...(cursor ? { max_cursor: cursor } : {}),
+        });
+        const pagePosts = extractList(body, [
+          "aweme_list",
+          "videos",
+          "search_item_list",
+        ])
+          .map((raw) => normalizeTiktokVideo(raw, retrievedAt))
+          .filter((post): post is SearchPostResult => Boolean(post))
+          .map((post) => ({
+            ...post,
+            providerName: "scrapecreators",
+            collectionMethod: "third_party_creator_posts",
+            creatorId: post.creatorId ?? identity,
+          }));
+        posts.push(...pagePosts);
+        if (pagePosts.length === 0 || pageIsOlderThanWindow(pagePosts, lookbackDays)) {
+          break;
+        }
+        const nextCursor = asString(body.max_cursor) ?? asString(body.cursor);
+        const hasMore = asNumber(body.has_more) === 1 || body.has_more === true;
+        if (!hasMore || !nextCursor || nextCursor === cursor) break;
+        cursor = nextCursor;
+      }
+      return dedupe(posts)
+        .filter((post) => isInsideRollingWindow(post, lookbackDays))
         .slice(0, maxResults);
     }
 
     if (input.platform === "instagram") {
-      const body = await scrapecreatorsGet("/v1/instagram/user/reels", {
-        handle,
-        trim: true,
-      });
-      return extractList(body, ["items", "reels"])
-        .map((raw) => normalizeInstagramReel(raw, retrievedAt))
-        .filter((post): post is SearchPostResult => Boolean(post))
-        .map((post) => ({
-          ...post,
-          collectionMethod: "third_party_creator_posts",
-          creatorId: post.creatorId ?? handle,
-        }))
+      const posts: SearchPostResult[] = [];
+      let maxId: string | null = null;
+      for (let page = 0; page < maxPages && posts.length < maxResults; page++) {
+        const body = await scrapecreatorsGet("/v1/instagram/user/reels", {
+          ...(/^\d+$/.test(identity)
+            ? { user_id: identity }
+            : { handle: identity }),
+          trim: true,
+          ...(maxId ? { max_id: maxId } : {}),
+        });
+        const pagePosts = extractList(body, ["items", "reels"])
+          .map((raw) => normalizeInstagramReel(raw, retrievedAt))
+          .filter((post): post is SearchPostResult => Boolean(post))
+          .map((post) => ({
+            ...post,
+            collectionMethod: "third_party_creator_posts",
+            creatorId: post.creatorId ?? identity,
+          }));
+        posts.push(...pagePosts);
+        if (pagePosts.length === 0 || pageIsOlderThanWindow(pagePosts, lookbackDays)) {
+          break;
+        }
+        const paging = instagramPaging(body);
+        if (!paging.moreAvailable || !paging.maxId || paging.maxId === maxId) break;
+        maxId = paging.maxId;
+      }
+      return dedupe(posts)
+        .filter((post) => isInsideRollingWindow(post, lookbackDays))
         .slice(0, maxResults);
     }
 
     if (input.platform === "youtube" && !isYoutubeDiscoveryConfigured()) {
-      const idParam = /^UC[\w-]{20,}$/i.test(handle)
-        ? { channelId: handle }
-        : { handle };
+      const idParam = /^UC[\w-]{20,}$/i.test(identity)
+        ? { channelId: identity }
+        : { handle: identity };
       const body = await scrapecreatorsGet(
         "/v1/youtube/channel/shorts",
         idParam,
@@ -454,6 +533,7 @@ export const scrapeCreatorsDiscoveryProvider: ContentDiscoveryProvider = {
           ...post,
           collectionMethod: "third_party_creator_posts",
         }))
+        .filter((post) => isInsideRollingWindow(post, lookbackDays))
         .slice(0, maxResults);
     }
 

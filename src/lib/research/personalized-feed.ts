@@ -25,6 +25,7 @@ export type PersonalizedFeedCandidate = {
 export type PersonalizedFeedOptions = {
   feedback?: FeedFeedbackSignal[];
   watchedCreatorIds?: string[];
+  suggestedCreatorIds?: string[];
   highPerformingTopics?: string[];
   maxAgeDays?: number;
   now?: Date;
@@ -160,6 +161,7 @@ export function rankPersonalizedFeed<T extends PersonalizedFeedCandidate>(
   const maxAgeDays = options.maxAgeDays ?? 30;
   const latestFeedback = latestFeedbackByItem(options.feedback ?? []);
   const watchedCreators = new Set(options.watchedCreatorIds ?? []);
+  const suggestedCreators = new Set(options.suggestedCreatorIds ?? []);
   const highPerformingTopics = options.highPerformingTopics ?? [];
   const creatorAffinity = new Map<string, number>();
   const topicAffinity = new Map<string, number>();
@@ -175,6 +177,9 @@ export function rankPersonalizedFeed<T extends PersonalizedFeedCandidate>(
   }
   for (const creatorId of watchedCreators) {
     addAffinity(creatorAffinity, creatorId, 2);
+  }
+  for (const creatorId of suggestedCreators) {
+    addAffinity(creatorAffinity, creatorId, 1);
   }
 
   const scored = items.flatMap((item) => {
@@ -201,6 +206,10 @@ export function rankPersonalizedFeed<T extends PersonalizedFeedCandidate>(
     const watched = Boolean(
       item.external_creator_id && watchedCreators.has(item.external_creator_id),
     );
+    const suggested = Boolean(
+      item.external_creator_id &&
+        suggestedCreators.has(item.external_creator_id),
+    );
 
     let score = item.personalScore ?? 0;
     const reasons: string[] = [...(item.whyRelevant ?? [])];
@@ -223,6 +232,9 @@ export function rankPersonalizedFeed<T extends PersonalizedFeedCandidate>(
     if (watched) {
       score += 20;
       reasons.unshift("From a creator you track");
+    } else if (suggested) {
+      score += 14;
+      reasons.unshift("From a creator FormCraft recommended for your niche");
     } else if (creatorSignal > 0) {
       score += Math.min(20, creatorSignal * 6);
       reasons.push("Similar to creators you saved or analyzed");

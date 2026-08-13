@@ -109,11 +109,14 @@ export function CreatorSuggestionsPanel({
               Similar accounts to grow your library
             </h3>
             <Badge variant="primary">Learns from watchlists</Badge>
+            <Badge variant="success">Auto-scanned for For You</Badge>
           </div>
           <p className="mt-1 text-sm text-secondary">
             FormCraft ranks accounts already found in your 30-day library by
-            shared subjects, recent posts, and real outlier evidence. Choose the
-            platforms you want. Live provider search is optional and uses quota.
+            shared subjects, recent posts, and real outlier evidence. Suggested
+            accounts are automatically checked for 30-day outliers; adding one
+            to a watchlist is still your choice. Live provider search is
+            optional and uses quota.
           </p>
         </div>
         <form action={action} className="w-full space-y-3 lg:max-w-xl">

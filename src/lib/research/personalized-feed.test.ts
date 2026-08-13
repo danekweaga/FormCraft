@@ -149,4 +149,20 @@ describe("rankPersonalizedFeed", () => {
 
     expect(result.slice(0, 2).map((item) => item.id)).toEqual(["a1", "b1"]);
   });
+
+  it("promotes videos from evidence-backed suggested creators", () => {
+    const result = rankPersonalizedFeed(
+      [
+        candidate("suggested", {
+          external_creator_id: "creator-suggested",
+          personalScore: 20,
+        }),
+        candidate("ordinary", { personalScore: 25 }),
+      ],
+      { now: NOW, suggestedCreatorIds: ["creator-suggested"] },
+    );
+
+    expect(result[0].id).toBe("suggested");
+    expect(result[0].whyRelevant.join(" ")).toContain("recommended");
+  });
 });

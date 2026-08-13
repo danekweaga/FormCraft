@@ -20,13 +20,20 @@ function maxDurationForPlatform(platform: string): number {
 
 export function isRecentShortForm(
   post: Pick<SearchPostResult, "platform" | "publishedAt" | "durationSeconds">,
-  options: { lookbackDays?: number; now?: number } = {},
+  options: {
+    lookbackDays?: number;
+    now?: number;
+    /** Creator/watchlist pulls use the exact requested window. */
+    strictLookback?: boolean;
+  } = {},
 ): boolean {
   const now = options.now ?? Date.now();
   const lookbackDays = options.lookbackDays ?? DEFAULT_DISCOVERY_LOOKBACK_DAYS;
   // TikTok keyword search often ranks older viral hits; keep a 90-day window.
   const effectiveLookback =
-    post.platform === "tiktok" ? Math.max(lookbackDays, 90) : lookbackDays;
+    post.platform === "tiktok" && !options.strictLookback
+      ? Math.max(lookbackDays, 90)
+      : lookbackDays;
 
   if (post.publishedAt) {
     const published = new Date(post.publishedAt).getTime();
@@ -57,7 +64,11 @@ export function isRecentShortForm(
 
 export function filterRecentShortForm(
   posts: SearchPostResult[],
-  options: { lookbackDays?: number; now?: number } = {},
+  options: {
+    lookbackDays?: number;
+    now?: number;
+    strictLookback?: boolean;
+  } = {},
 ): SearchPostResult[] {
   return posts.filter((post) => isRecentShortForm(post, options));
 }

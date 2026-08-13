@@ -55,6 +55,19 @@ describe("recent short-form filter", () => {
     ).toBe(true);
   });
 
+  it("uses an exact 30-day window for tracked creator feeds", () => {
+    expect(
+      isRecentShortForm(
+        {
+          platform: "tiktok",
+          publishedAt: new Date(now - 60 * 86_400_000).toISOString(),
+          durationSeconds: 40,
+        },
+        { now, lookbackDays: 30, strictLookback: true },
+      ),
+    ).toBe(false);
+  });
+
   it("rejects YouTube posts with unknown publish date", () => {
     expect(
       isRecentShortForm(

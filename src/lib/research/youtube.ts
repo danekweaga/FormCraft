@@ -190,6 +190,8 @@ export async function searchYoutubeResearch(params: {
 export async function getYoutubeChannelPosts(params: {
   channelId: string;
   maxResults?: number;
+  lookbackDays?: number;
+  maxPages?: number;
 }): Promise<ResearchVideoCandidate[]> {
   const apiKey = process.env.YOUTUBE_DATA_API_KEY?.trim();
   if (!apiKey) {
@@ -217,47 +219,65 @@ export async function getYoutubeChannelPosts(params: {
   const channelTitle = channel.items?.[0]?.snippet?.title ?? null;
   if (!uploadsId) return [];
 
-  const playlistUrl = new URL(
-    "https://www.googleapis.com/youtube/v3/playlistItems",
+  const maxResults = Math.min(500, Math.max(1, params.maxResults ?? 10));
+  const lookbackDays = Math.min(365, Math.max(1, params.lookbackDays ?? 30));
+  const cutoff = Date.now() - lookbackDays * 86_400_000;
+  // Shorts can be mixed with long uploads. Walk enough upload pages to cover
+  // the entire rolling window, then fetch video details in batches of 50.
+  const maxUploads = Math.min(500, Math.max(50, maxResults * 3));
+  const maxPages = Math.min(
+    10,
+    Math.max(1, params.maxPages ?? Math.ceil(maxUploads / 50)),
   );
-  playlistUrl.searchParams.set("key", apiKey);
-  playlistUrl.searchParams.set("part", "snippet,contentDetails");
-  playlistUrl.searchParams.set("playlistId", uploadsId);
-  playlistUrl.searchParams.set(
-    "maxResults",
-    // Oversample uploads so Shorts-length videos survive duration filtering.
-    String(Math.min(50, Math.max(1, (params.maxResults ?? 10) * 3))),
+  const playlistItems: Array<{
+    contentDetails?: { videoId?: string };
+    snippet?: { publishedAt?: string };
+  }> = [];
+  let pageToken: string | undefined;
+
+  for (let page = 0; page < maxPages && playlistItems.length < maxUploads; page++) {
+    const playlistUrl = new URL(
+      "https://www.googleapis.com/youtube/v3/playlistItems",
+    );
+    playlistUrl.searchParams.set("key", apiKey);
+    playlistUrl.searchParams.set("part", "snippet,contentDetails");
+    playlistUrl.searchParams.set("playlistId", uploadsId);
+    playlistUrl.searchParams.set("maxResults", "50");
+    if (pageToken) playlistUrl.searchParams.set("pageToken", pageToken);
+
+    const playlist = await youtubeGet<{
+      items?: Array<{
+        contentDetails?: { videoId?: string };
+        snippet?: { publishedAt?: string };
+      }>;
+      nextPageToken?: string;
+    }>(playlistUrl);
+    const pageItems = playlist.items ?? [];
+    playlistItems.push(...pageItems);
+    const dated = pageItems
+      .map((item) =>
+        item.snippet?.publishedAt
+          ? new Date(item.snippet.publishedAt).getTime()
+          : Number.NaN,
+      )
+      .filter(Number.isFinite);
+    if (dated.length > 0 && dated.every((publishedAt) => publishedAt < cutoff)) {
+      break;
+    }
+    if (!playlist.nextPageToken || pageItems.length === 0) break;
+    pageToken = playlist.nextPageToken;
+  }
+
+  const ids = Array.from(
+    new Set(
+      playlistItems
+        .map((item) => item.contentDetails?.videoId)
+        .filter((id): id is string => Boolean(id)),
+    ),
   );
-
-  const playlist = await youtubeGet<{
-    items?: Array<{
-      contentDetails?: { videoId?: string };
-      snippet?: {
-        title?: string;
-        description?: string;
-        publishedAt?: string;
-        channelId?: string;
-        channelTitle?: string;
-        thumbnails?: {
-          high?: { url?: string };
-          medium?: { url?: string };
-          default?: { url?: string };
-        };
-      };
-    }>;
-  }>(playlistUrl);
-
-  const ids = (playlist.items ?? [])
-    .map((item) => item.contentDetails?.videoId)
-    .filter((id): id is string => Boolean(id));
   if (ids.length === 0) return [];
 
-  const detailsUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
-  detailsUrl.searchParams.set("key", apiKey);
-  detailsUrl.searchParams.set("part", "snippet,statistics,contentDetails");
-  detailsUrl.searchParams.set("id", ids.join(","));
-
-  const details = await youtubeGet<{
+  type YoutubeVideoDetails = {
     items?: Array<{
       id: string;
       snippet?: {
@@ -279,9 +299,17 @@ export async function getYoutubeChannelPosts(params: {
       };
       contentDetails?: { duration?: string };
     }>;
-  }>(detailsUrl);
+  };
+  const detailBatches: YoutubeVideoDetails[] = [];
+  for (let index = 0; index < ids.length; index += 50) {
+    const detailsUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+    detailsUrl.searchParams.set("key", apiKey);
+    detailsUrl.searchParams.set("part", "snippet,statistics,contentDetails");
+    detailsUrl.searchParams.set("id", ids.slice(index, index + 50).join(","));
+    detailBatches.push(await youtubeGet<YoutubeVideoDetails>(detailsUrl));
+  }
 
-  const mapped = (details.items ?? []).map((item) => ({
+  const mapped = detailBatches.flatMap((details) => details.items ?? []).map((item) => ({
     platform: "youtube" as const,
     externalId: item.id,
     externalUrl: `https://www.youtube.com/watch?v=${item.id}`,
@@ -300,7 +328,11 @@ export async function getYoutubeChannelPosts(params: {
     likes: numberOrNull(item.statistics?.likeCount),
     comments: numberOrNull(item.statistics?.commentCount),
     shares: null,
-  }));
+  })).filter((video) => {
+    if (!video.publishedAt) return false;
+    const publishedAt = new Date(video.publishedAt).getTime();
+    return Number.isFinite(publishedAt) && publishedAt >= cutoff;
+  });
 
   // Prefer Shorts-length uploads (aligned with search videoDuration=short).
   const shorts = mapped.filter(
@@ -311,6 +343,6 @@ export async function getYoutubeChannelPosts(params: {
   );
   return (shorts.length > 0 ? shorts : mapped).slice(
     0,
-    params.maxResults ?? 10,
+    maxResults,
   );
 }

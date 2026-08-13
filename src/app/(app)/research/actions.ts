@@ -585,7 +585,8 @@ export async function addCreatorToWatchlistAction(
       const posts = await provider.getCreatorPosts({
         platform: platform as "youtube" | "tiktok",
         platformCreatorId,
-        maxResults: 12,
+        maxResults: 200,
+        lookbackDays: 30,
       });
       const { data: niche } = await supabase
         .from("niche_profiles")
@@ -844,7 +845,7 @@ export async function acceptCreatorSuggestionAction(
       supabase,
       userId: user.id,
       externalCreatorId: suggestion.external_creator_id,
-      maxResults: 20,
+      maxResults: 200,
     });
     pullNote = `Pulled ${pull.retained} recent posts.`;
   } catch (error) {
@@ -1328,7 +1329,7 @@ export async function refreshCreatorPostsAction(
       supabase,
       userId: user.id,
       externalCreatorId: creatorId,
-      maxResults: 15,
+      maxResults: 200,
     });
     revalidatePath("/research");
     revalidatePath(`/research/creators/${creatorId}`);

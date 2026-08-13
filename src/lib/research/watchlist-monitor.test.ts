@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SearchPostResult } from "./discovery/types";
 import {
   attachTrackedCreatorIdentity,
+  buildAutomaticCreatorQueue,
   orderWatchlistCreators,
 } from "./watchlist-monitor";
 
@@ -63,5 +64,23 @@ describe("watchlist priority", () => {
     });
     expect(attached.creatorId).toBe("20vc_tok");
     expect(attached.creatorName).toBe("20vc_tok");
+  });
+
+  it("automatically queues pending suggested creators without accepting them", () => {
+    const queue = buildAutomaticCreatorQueue({
+      members: [{ external_creator_id: "tracked", priority: 0 }],
+      suggestions: [
+        { external_creator_id: "suggested-a", score: 91 },
+        { external_creator_id: "suggested-b", score: 72 },
+      ],
+    });
+
+    expect(new Set(queue.creatorIds)).toEqual(
+      new Set(["tracked", "suggested-a", "suggested-b"]),
+    );
+    expect(queue.suggestedCreatorIds).toEqual(
+      new Set(["suggested-a", "suggested-b"]),
+    );
+    expect(queue.priorities.get("suggested-a")).toBe(50);
   });
 });

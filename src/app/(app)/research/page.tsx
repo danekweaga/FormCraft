@@ -267,7 +267,7 @@ export default async function ResearchPage({
       .eq("user_id", user.id)
       .eq("status", "pending")
       .order("score", { ascending: false })
-      .limit(18),
+      .limit(250),
   ]);
 
   const topics = Array.from(
@@ -359,6 +359,13 @@ export default async function ResearchPage({
   const forYou = rankPersonalizedFeed(visibleResearch, {
     feedback: feedback ?? [],
     watchedCreatorIds: [...watchlistCreatorIds],
+    suggestedCreatorIds: Array.from(
+      new Set(
+        (creatorSuggestions ?? []).map(
+          (suggestion) => suggestion.external_creator_id,
+        ),
+      ),
+    ),
     highPerformingTopics: topics,
     maxAgeDays: 30,
   });
@@ -446,7 +453,8 @@ export default async function ResearchPage({
           evidence,
         },
       ];
-    });
+    })
+    .slice(0, 24);
 
   const suggestionPlatforms = ["instagram", "tiktok", "youtube"].filter(
     (platform) =>

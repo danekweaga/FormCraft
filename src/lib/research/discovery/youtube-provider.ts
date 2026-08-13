@@ -53,6 +53,8 @@ export const youtubeDiscoveryProvider: ContentDiscoveryProvider = {
     const posts = await getYoutubeChannelPosts({
       channelId: input.platformCreatorId,
       maxResults: input.maxResults ?? 10,
+      lookbackDays: input.lookbackDays ?? 30,
+      maxPages: input.maxPages,
     });
     return posts.map((post) => ({
       ...post,
