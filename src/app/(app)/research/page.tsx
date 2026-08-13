@@ -20,7 +20,10 @@ import {
 } from "@/lib/research/discovery/scrapecreators-client";
 import { scorePersonalRelevance } from "@/lib/research/relevance";
 import { normalizeResearchFeedFilters } from "@/lib/research/feed-filters";
-import { meetsResearchViewFloor } from "@/lib/research/visibility-policy";
+import {
+  meetsResearchViewFloor,
+  MIN_RESEARCH_VIEWS,
+} from "@/lib/research/visibility-policy";
 import type { NicheBrief } from "@/lib/research/niche-brief";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -146,6 +149,29 @@ export default async function ResearchPage({
   const youtubeConfigured = platforms.some((p) => p.platform === "youtube");
   const instagramConfigured = platforms.some((p) => p.platform === "instagram");
 
+  const researchItemsBase = supabase
+    .from("research_items")
+    .select(
+      "id, platform, external_id, external_url, external_creator_id, creator_name, title, description, thumbnail_url, views, likes, comments, creator_followers, baseline_views, outlier_score, score_basis, outlier_label, baseline_confidence, baseline_sample_size, data_freshness_at, published_at, duration_seconds, hook_text, topic, analysis, analysis_model, saved, source, collection_method, hidden",
+    )
+    .eq("user_id", user.id)
+    .eq("hidden", false)
+    .gte("views", MIN_RESEARCH_VIEWS);
+  const researchItemsQuery =
+    mode === "outliers"
+      ? researchItemsBase.order("outlier_score", {
+          ascending: false,
+          nullsFirst: false,
+        })
+      : mode === "saved"
+        ? researchItemsBase
+            .eq("saved", true)
+            .order("views", { ascending: false, nullsFirst: false })
+        : researchItemsBase.order("views", {
+            ascending: false,
+            nullsFirst: false,
+          });
+
   const [
     { data: rawItems },
     { data: scans },
@@ -161,15 +187,7 @@ export default async function ResearchPage({
     { data: watchlistMembers },
     { data: creatorSuggestions },
   ] = await Promise.all([
-    supabase
-      .from("research_items")
-      .select(
-        "id, platform, external_id, external_url, external_creator_id, creator_name, title, description, thumbnail_url, views, likes, comments, creator_followers, baseline_views, outlier_score, score_basis, outlier_label, baseline_confidence, baseline_sample_size, data_freshness_at, published_at, duration_seconds, hook_text, topic, analysis, analysis_model, saved, source, collection_method, hidden",
-      )
-      .eq("user_id", user.id)
-      .eq("hidden", false)
-      .order("outlier_score", { ascending: false, nullsFirst: false })
-      .limit(120),
+    researchItemsQuery.limit(120),
     supabase
       .from("research_scans")
       .select(
