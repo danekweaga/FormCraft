@@ -53,7 +53,7 @@ function platformSuggestion(platform: SupadataPlatform): string {
   if (platform === "youtube") {
     return "Try another public video, paste a transcript, or upload the media.";
   }
-  return "Confirm the video opens in a signed-out browser, or paste/upload its transcript instead.";
+  return "Tap Analyze again in a few seconds, or paste/upload the caption or transcript.";
 }
 
 export async function ingestPublicVideoUrl(

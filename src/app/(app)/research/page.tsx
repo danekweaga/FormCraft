@@ -210,7 +210,7 @@ export default async function ResearchPage({
     supabase
       .from("external_creators")
       .select(
-        "id, platform, display_name, handle, follower_count, data_freshness_at, tracking_paused",
+        "id, platform, display_name, handle, follower_count, data_freshness_at, tracking_paused, created_at",
       )
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false })
@@ -358,9 +358,22 @@ export default async function ResearchPage({
       .map((m) => m.external_creator_id)
       .filter((id): id is string => Boolean(id)),
   );
+  const twoDaysAgo = Date.now() - 2 * 86_400_000;
+  const libraryCreatorIds = [
+    ...watchlistCreatorIds,
+    ...(creators ?? [])
+      .filter((creator) => {
+        if (watchlistCreatorIds.has(creator.id)) return false;
+        const created = "created_at" in creator
+          ? new Date(String((creator as { created_at?: string | null }).created_at ?? "")).getTime()
+          : Number.NaN;
+        return !Number.isFinite(created) || created < twoDaysAgo;
+      })
+      .map((creator) => creator.id),
+  ];
   const forYou = rankPersonalizedFeed(visibleResearch, {
     feedback: feedback ?? [],
-    watchedCreatorIds: [...watchlistCreatorIds],
+    watchedCreatorIds: libraryCreatorIds,
     suggestedCreatorIds: Array.from(
       new Set(
         (creatorSuggestions ?? []).map(

@@ -10,6 +10,8 @@ import {
   CompareForm,
 } from "./analyze-form";
 
+export const maxDuration = 60;
+
 const TABS = [
   { id: "new", label: "New" },
   { id: "recent", label: "Recent" },

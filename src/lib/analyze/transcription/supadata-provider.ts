@@ -148,22 +148,43 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export function isTranscriptTimeoutError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.name === "TimeoutError" ||
+    error.name === "AbortError" ||
+    /aborted due to timeout|the operation was aborted/i.test(error.message)
+  );
+}
+
+const TRANSCRIPT_TIMEOUT_MESSAGE =
+  "Transcript timed out. Instagram and TikTok speech-to-text often need a second try — tap Analyze again, or paste the caption/transcript.";
+
 async function supadataRequest(
   url: URL,
   apiKey: string,
+  timeoutMs = 20_000,
 ): Promise<{
   response: Response;
   payload: SupadataTranscriptPayload;
   billableRequests: number | null;
 }> {
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "x-api-key": apiKey,
-    },
-    cache: "no-store",
-    signal: AbortSignal.timeout(30_000),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "x-api-key": apiKey,
+      },
+      cache: "no-store",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    if (isTranscriptTimeoutError(error)) {
+      throw new Error(TRANSCRIPT_TIMEOUT_MESSAGE);
+    }
+    throw error;
+  }
   const payload = (await response.json().catch(() => ({}))) as SupadataTranscriptPayload;
   const billableRequests = asNumber(
     response.headers.get("x-billable-requests"),
@@ -199,7 +220,20 @@ export async function fetchSupadataTranscript(
   transcriptUrl.searchParams.set("mode", "auto");
   transcriptUrl.searchParams.set("text", "false");
 
-  const initial = await supadataRequest(transcriptUrl, apiKey);
+  const budgetMs = Math.max(8_000, options?.maxPollMs ?? 52_000);
+  const deadline = Date.now() + budgetMs;
+  const remaining = () => Math.max(3_000, deadline - Date.now());
+
+  let initial: Awaited<ReturnType<typeof supadataRequest>>;
+  try {
+    initial = await supadataRequest(transcriptUrl, apiKey, Math.min(20_000, remaining()));
+  } catch (error) {
+    if (!isTranscriptTimeoutError(error) && !(error instanceof Error && error.message === TRANSCRIPT_TIMEOUT_MESSAGE)) {
+      throw error;
+    }
+    if (remaining() < 3_000) throw new Error(TRANSCRIPT_TIMEOUT_MESSAGE);
+    initial = await supadataRequest(transcriptUrl, apiKey, Math.min(20_000, remaining()));
+  }
   const jobId = asString(initial.payload.jobId);
   if (!jobId) {
     return normalizePayload(
@@ -210,14 +244,12 @@ export async function fetchSupadataTranscript(
   }
 
   const pollIntervalMs = Math.max(0, options?.pollIntervalMs ?? 1_000);
-  const maxPollMs = Math.max(1_000, options?.maxPollMs ?? 50_000);
-  const deadline = Date.now() + maxPollMs;
   const jobUrl = new URL(
     `${SUPADATA_BASE_URL}/transcript/${encodeURIComponent(jobId)}`,
   );
   while (Date.now() < deadline) {
     if (pollIntervalMs > 0) await sleep(pollIntervalMs);
-    const job = await supadataRequest(jobUrl, apiKey);
+    const job = await supadataRequest(jobUrl, apiKey, Math.min(12_000, remaining()));
     const status = asString(job.payload.status);
     if (status === "completed") {
       return normalizePayload(

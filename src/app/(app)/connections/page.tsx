@@ -22,6 +22,7 @@ import {
   isOwnedPlatform,
   PLATFORM_CARDS,
 } from "@/lib/social/providers";
+import { friendlyOAuthError } from "@/lib/social/oauth-errors";
 import {
   isReconnectRequiredError,
   reconnectRequiredCopy,
@@ -163,7 +164,7 @@ export default async function ConnectionsPage({
 
       {params.error ? (
         <div className="mb-6 rounded-lg border border-error/30 bg-error/5 px-4 py-3 text-sm text-on-background">
-          {params.error}
+          {friendlyOAuthError(params.error)}
         </div>
       ) : null}
 

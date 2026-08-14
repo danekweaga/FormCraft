@@ -18,7 +18,7 @@ Set these for Production and Preview as appropriate. Never expose server-only va
 
 Provider-specific variables:
 
-- Instagram owned account: `META_APP_ID`, `META_APP_SECRET`, optionally `META_GRAPH_API_VERSION` and `INSTAGRAM_LOGIN_CONFIG_ID`.
+- Instagram owned account: `META_APP_ID`, `META_APP_SECRET` must be the **Instagram** app ID/secret from Instagram → API setup with Instagram login. Optionally `META_GRAPH_API_VERSION` and `INSTAGRAM_LOGIN_CONFIG_ID`.
 - TikTok owned account: `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`.
 - YouTube niche discovery: `YOUTUBE_DATA_API_KEY`.
 - TikTok + Instagram public discovery: `SCRAPECREATORS_API_KEY` (1 request = 1 credit; 402 when empty).
@@ -31,7 +31,7 @@ Generate independent high-entropy values for `CRON_SECRET` and `NEXT_SERVER_ACTI
 
 Update provider dashboards after choosing the production domain:
 
-- Instagram: `https://YOUR_DOMAIN/api/social/instagram/callback`
+- Instagram: `https://YOUR_DOMAIN/api/social/instagram/callback` — this exact URI must also be listed under Instagram → Business login settings → OAuth redirect URIs. `localhost` alone will not work on Vercel.
 - TikTok: `https://YOUR_DOMAIN/api/social/tiktok/callback`
 - YouTube: `https://YOUR_DOMAIN/api/social/youtube/callback`
 

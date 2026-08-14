@@ -80,6 +80,28 @@ export function retainByRelevance<
   return rows.filter((row) => row.relevance.relevant);
 }
 
+const HARD_EXCLUSION = /excluded|off-niche|india-specific|south asian/i;
+
+/** Keyword search already scoped the query; only drop hard off-niche hits. */
+export function retainKeywordSearchHits<
+  T extends { relevance: CheapRelevanceResult },
+>(rows: T[]): T[] {
+  return rows.flatMap((row) => {
+    if (row.relevance.relevant) return [row];
+    if (HARD_EXCLUSION.test(row.relevance.relevanceReason)) return [];
+    return [
+      {
+        ...row,
+        relevance: {
+          ...row.relevance,
+          relevant: true,
+          relevanceReason: "Found by a For You niche search",
+        },
+      },
+    ];
+  });
+}
+
 export async function ingestScoredPosts(params: {
   supabase: SupabaseClient;
   userId: string;
@@ -91,6 +113,8 @@ export async function ingestScoredPosts(params: {
   retrievedAt?: string;
   /** A user-curated creator list is itself a relevance signal. */
   trustedCreatorPosts?: boolean;
+  /** Keyword discovery should keep in-lane hits even without a title match. */
+  keywordSearch?: boolean;
 }): Promise<{ discovered: number; retained: number }> {
   const retrievedAt = params.retrievedAt ?? new Date().toISOString();
   const unique = dedupeSearchPosts(params.posts);
@@ -115,7 +139,12 @@ export async function ingestScoredPosts(params: {
 
   const withRelevance = scored.map((video) => ({
     video,
-    relevance: classifyCheapRelevance(video, params.query, nicheContext),
+    relevance: classifyCheapRelevance(
+      video,
+      unique.find((row) => row.externalId === video.externalId)?.matchedQuery ??
+        params.query,
+      nicheContext,
+    ),
   }));
   const retained = params.trustedCreatorPosts
     ? withRelevance.map(({ video, relevance }) => ({
@@ -132,7 +161,9 @@ export async function ingestScoredPosts(params: {
                 "Tracked creator",
             },
       }))
-    : retainByRelevance(withRelevance);
+    : params.keywordSearch
+      ? retainKeywordSearchHits(withRelevance)
+      : retainByRelevance(withRelevance);
 
   const durableThumbnails = new Map<string, string | null>();
   const socialRows = retained.filter(

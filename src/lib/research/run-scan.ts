@@ -363,7 +363,9 @@ export async function runResearchScan(params: {
         if (result.status === "fulfilled") {
           const { provider, posts, query } = result.value;
           usedProviders.add(provider.providerName);
-          discovered.push(...posts);
+          discovered.push(
+            ...posts.map((post) => ({ ...post, matchedQuery: query })),
+          );
           await params.supabase.from("provider_usage_events").insert({
             user_id: params.userId,
             provider: provider.providerName,
@@ -414,6 +416,7 @@ export async function runResearchScan(params: {
       minOutlierScore: scan.min_outlier_score,
       retrievedAt,
       trustedCreatorPosts: targetCreators,
+      keywordSearch: !targetCreators,
     });
 
     // Re-rank the user's pending creator recommendations whenever the real

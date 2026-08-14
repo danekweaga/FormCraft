@@ -119,6 +119,32 @@ function breakdownValues(row: InsightRow | undefined): InstagramInsightBreakdown
   });
 }
 
+/** Instagram Login authorize URL. force_reauth is required after Facebook invalidates a session. */
+export function buildInstagramAuthorizationUrl(params: {
+  appId: string;
+  redirectUri: string;
+  state: string;
+  scopes: readonly string[];
+  configId?: string | null;
+  forceReauth?: boolean;
+}): string {
+  const url = new URL("https://www.instagram.com/oauth/authorize");
+  url.searchParams.set("client_id", params.appId);
+  url.searchParams.set("redirect_uri", params.redirectUri);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("state", params.state);
+  url.searchParams.set(
+    "force_reauth",
+    params.forceReauth === false ? "false" : "true",
+  );
+  if (params.configId) {
+    url.searchParams.set("config_id", params.configId);
+  } else {
+    url.searchParams.set("scope", params.scopes.join(","));
+  }
+  return url.toString();
+}
+
 async function graphGet<T>(
   path: string,
   accessToken: string,
@@ -158,15 +184,16 @@ export const instagramOwnedProvider: OwnedSocialProvider = {
   },
 
   async getAuthorizationUrl(params: AuthorizationParams) {
-    const { appId } = instagramConfig();
+    const { appId, configId } = instagramConfig();
     if (!appId) throw new Error(this.unconfiguredReason()!);
-    const url = new URL("https://www.instagram.com/oauth/authorize");
-    url.searchParams.set("client_id", appId);
-    url.searchParams.set("redirect_uri", params.redirectUri);
-    url.searchParams.set("response_type", "code");
-    url.searchParams.set("scope", REQUESTED_SCOPES.instagram.join(","));
-    url.searchParams.set("state", params.state);
-    return url.toString();
+    return buildInstagramAuthorizationUrl({
+      appId,
+      redirectUri: params.redirectUri,
+      state: params.state,
+      scopes: REQUESTED_SCOPES.instagram,
+      configId,
+      forceReauth: true,
+    });
   },
 
   async handleCallback(params: CallbackParams): Promise<ConnectionResult> {

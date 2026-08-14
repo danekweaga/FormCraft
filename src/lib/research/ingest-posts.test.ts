@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   passesOutlierMinFilter,
   retainByRelevance,
+  retainKeywordSearchHits,
   sourceLabel,
 } from "./ingest-posts";
 
@@ -40,5 +41,36 @@ describe("retainByRelevance", () => {
       { video: { platform: "tiktok", id: "t2" }, relevance: { relevant: false } },
     ];
     expect(retainByRelevance(rows)).toHaveLength(3);
+  });
+});
+
+describe("retainKeywordSearchHits", () => {
+  it("keeps in-lane search hits that lack a title keyword match", () => {
+    const rows = [
+      {
+        video: { id: "keep" },
+        relevance: {
+          relevant: false,
+          relevanceReason: "Outside the allowed student-tech/developer content universe",
+          topic: "query",
+          format: null,
+          audience: null,
+        },
+      },
+      {
+        video: { id: "drop" },
+        relevance: {
+          relevant: false,
+          relevanceReason: "Matches an excluded off-niche topic",
+          topic: "query",
+          format: null,
+          audience: null,
+        },
+      },
+    ];
+    const kept = retainKeywordSearchHits(rows);
+    expect(kept).toHaveLength(1);
+    expect(kept[0]?.video.id).toBe("keep");
+    expect(kept[0]?.relevance.relevant).toBe(true);
   });
 });

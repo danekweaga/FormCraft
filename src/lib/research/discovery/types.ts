@@ -51,6 +51,8 @@ export type SearchPostResult = ResearchVideoCandidate & {
   collectionMethod: string;
   retrievedAt: string;
   creatorFollowerCount?: number | null;
+  /** Keyword that produced this row, used to keep For You search hits. */
+  matchedQuery?: string;
 };
 
 export type SearchCreatorResult = {

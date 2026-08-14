@@ -6,6 +6,8 @@ import { GlobalQuickCapture } from "@/components/canvas/global-quick-capture";
 import { refreshNicheFeedIfStale } from "@/lib/research/refresh-niche-feed";
 import { createClient } from "@/lib/supabase/server";
 
+export const maxDuration = 60;
+
 export default async function AppLayout({
   children,
 }: {

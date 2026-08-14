@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOAuthCallbackUrl } from "@/lib/social/config";
+import { friendlyOAuthError } from "@/lib/social/oauth-errors";
 import { createOAuthState, createPkcePair } from "@/lib/social/oauth-state";
 import {
   getOwnedProvider,
@@ -60,8 +61,9 @@ export async function GET(_request: Request, { params }: Params) {
     });
     return NextResponse.redirect(url);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Authorization start failed";
+    const message = friendlyOAuthError(
+      error instanceof Error ? error.message : "Authorization start failed",
+    );
     return NextResponse.redirect(
       new URL(
         `/connections?error=${encodeURIComponent(message)}`,

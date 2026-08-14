@@ -103,4 +103,31 @@ describe("fetchSupadataTranscript", () => {
     expect(result.platform).toBe("instagram");
     expect(result.normalizedTranscript).toContain("completed generated transcript");
   });
+
+  it("retries once when the first transcript request times out", async () => {
+    vi.stubEnv("SUPADATA_API_KEY", "test-key");
+    const timeout = Object.assign(new Error("The operation was aborted due to timeout"), {
+      name: "TimeoutError",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(timeout)
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            lang: "en",
+            content: "Retry succeeded with a usable spoken transcript for this reel.",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchSupadataTranscript(
+      "https://www.instagram.com/reel/abc/",
+      { pollIntervalMs: 0, maxPollMs: 8_000 },
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.normalizedTranscript).toContain("Retry succeeded");
+  });
 });

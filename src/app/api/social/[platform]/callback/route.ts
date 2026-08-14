@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { completeOwnedConnection } from "@/lib/social/complete-connection";
 import { getAppUrl, getOAuthCallbackUrl } from "@/lib/social/config";
+import {
+  friendlyOAuthError,
+  oauthProviderError,
+} from "@/lib/social/oauth-errors";
 import { parseOAuthState } from "@/lib/social/oauth-state";
 import {
   getOwnedProvider,
@@ -21,11 +25,11 @@ export async function GET(request: Request, { params }: Params) {
   }
 
   const url = new URL(request.url);
-  const errorParam = url.searchParams.get("error");
-  if (errorParam) {
+  const providerError = oauthProviderError(url);
+  if (providerError) {
     return NextResponse.redirect(
       new URL(
-        `/connections?error=${encodeURIComponent(errorParam)}`,
+        `/connections?error=${encodeURIComponent(providerError)}`,
         origin,
       ),
     );
@@ -77,8 +81,9 @@ export async function GET(request: Request, { params }: Params) {
       ),
     );
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "OAuth callback failed";
+    const message = friendlyOAuthError(
+      error instanceof Error ? error.message : "OAuth callback failed",
+    );
     return NextResponse.redirect(
       new URL(
         `/connections?error=${encodeURIComponent(message)}`,
