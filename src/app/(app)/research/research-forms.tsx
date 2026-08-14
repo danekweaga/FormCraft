@@ -34,6 +34,13 @@ function ResultMessage({ state }: { state: ResearchActionState }) {
         {state.success ? (
           <p className="text-xs text-secondary">{state.success}</p>
         ) : null}
+        {state.notes?.length ? (
+          <ul className="space-y-1 text-xs text-secondary">
+            {state.notes.slice(0, 4).map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+        ) : null}
       </div>
     );
   }
@@ -150,8 +157,9 @@ export function ResearchScanForm({
             When you select tracked creators or paste handles, FormCraft pulls
             those channels&apos; posts via getCreatorPosts instead of a broad
             niche search. Select all queues every supported creator shown.
-            FormCraft processes the oldest channels in safe batches, then the
-            outlier filters decide which videos stay.
+            FormCraft processes the stalest channels in safe batches, then the
+            daily scanner continues the queue automatically. The outlier
+            filters decide which videos stay.
           </p>
           {creators.length > 0 ? (
             <div className="space-y-2">

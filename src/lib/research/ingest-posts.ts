@@ -148,6 +148,7 @@ export async function ingestScoredPosts(params: {
           platform: video.platform,
           externalId: video.externalId,
           thumbnailUrl: video.thumbnailUrl,
+          externalUrl: video.externalUrl,
         });
         durableThumbnails.set(`${video.platform}:${video.externalId}`, thumbnail);
       }),

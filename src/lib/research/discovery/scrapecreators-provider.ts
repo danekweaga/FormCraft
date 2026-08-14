@@ -41,7 +41,30 @@ function asMediaUrl(value: unknown): string | null {
   if (Array.isArray(rec.url_list) && rec.url_list.length > 0) {
     return asString(rec.url_list[0]);
   }
-  return asString(rec.url);
+  const url = asString(rec.url);
+  if (url) return url;
+  // Instagram profile reels commonly nest covers under
+  // image_versions2.candidates[0].url.
+  if (Array.isArray(rec.candidates)) {
+    for (const candidate of rec.candidates) {
+      const candidateUrl = asMediaUrl(candidate);
+      if (candidateUrl) return candidateUrl;
+    }
+  }
+  return null;
+}
+
+function normalizePublishedAt(value: unknown): string | null {
+  const numeric = asNumber(value);
+  if (numeric != null && numeric > 1_000_000_000) {
+    return new Date(
+      numeric > 10_000_000_000 ? numeric : numeric * 1000,
+    ).toISOString();
+  }
+  const text = asString(value);
+  if (!text) return null;
+  const parsed = new Date(text);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
 }
 
 function scrapeCreatorsPlatforms(): ResearchPlatform[] {
@@ -119,18 +142,11 @@ export function normalizeInstagramReel(
     asString(owner?.username) ??
     asString(item.username) ??
     asString(item.owner_username);
-  const takenAt =
-    asString(item.taken_at) ??
-    asString(item.taken_at_timestamp) ??
-    asNumber(item.taken_at);
   const publishedAt =
-    typeof takenAt === "string"
-      ? takenAt
-      : takenAt && takenAt > 1_000_000_000
-        ? new Date(
-            takenAt > 10_000_000_000 ? takenAt : takenAt * 1000,
-          ).toISOString()
-        : asString(item.published_at);
+    normalizePublishedAt(item.taken_at) ??
+    normalizePublishedAt(item.taken_at_timestamp) ??
+    normalizePublishedAt(item.published_at) ??
+    normalizePublishedAt(outer.taken_at);
 
   const title =
     asString(item.caption) ??
@@ -150,10 +166,12 @@ export function normalizeInstagramReel(
     title,
     description: title,
     thumbnailUrl:
+      asString(item.thumbnail_url) ??
       asString(item.thumbnail_src) ??
       asString(item.display_url) ??
       asString(item.display_uri) ??
-      asMediaUrl(item.image_versions2),
+      asMediaUrl(item.image_versions2) ??
+      asMediaUrl(item.cover),
     publishedAt,
     durationSeconds:
       asNumber(item.video_duration) ?? asNumber(item.duration) ?? null,
@@ -260,21 +278,38 @@ async function searchInstagram(params: {
   retrievedAt: string;
 }): Promise<SearchPostResult[]> {
   const q = compactDiscoveryQuery(params.query);
+  // Docs allow pages 1–11; each page costs 1 credit. Pull enough to fill
+  // maxResults, then widen the date window once if the niche is sparse.
+  const maxPages = Math.min(
+    11,
+    Math.max(3, Math.ceil(params.maxResults / 8)),
+  );
   const posts: SearchPostResult[] = [];
-  for (let page = 1; page <= 2 && posts.length < params.maxResults; page++) {
-    const body = await scrapecreatorsGet("/v2/instagram/reels/search", {
-      query: q,
-      date_posted: instagramDatePosted(params.lookbackDays),
-      page,
-    });
-    const items = extractList(body, ["reels", "items"]);
-    if (items.length === 0) break;
-    for (const raw of items) {
-      const post = normalizeInstagramReel(raw, params.retrievedAt);
-      if (!post) continue;
-      if (post.views != null && post.views < params.minViews) continue;
-      posts.push(post);
+
+  const pullPages = async (datePosted: string | undefined) => {
+    for (let page = 1; page <= maxPages && posts.length < params.maxResults; page++) {
+      const body = await scrapecreatorsGet("/v2/instagram/reels/search", {
+        query: q,
+        ...(datePosted ? { date_posted: datePosted } : {}),
+        page,
+      });
+      const items = extractList(body, ["reels", "items"]);
+      if (items.length === 0) break;
+      for (const raw of items) {
+        const post = normalizeInstagramReel(raw, params.retrievedAt);
+        if (!post) continue;
+        if (post.views != null && post.views < params.minViews) continue;
+        posts.push(post);
+      }
     }
+  };
+
+  await pullPages(instagramDatePosted(params.lookbackDays));
+  // Niche keywords often return few Google-indexed reels in a short window.
+  if (posts.length < Math.min(8, params.maxResults)) {
+    await pullPages(
+      params.lookbackDays < 365 ? "last-year" : undefined,
+    );
   }
   return dedupe(posts).slice(0, params.maxResults);
 }

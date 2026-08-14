@@ -231,11 +231,15 @@ export function normalizeTiktokVideo(
       : null);
 
   const cover =
-    asMediaUrl(item.cover) ??
+    // ScrapeCreators' static TikTok cover is commonly HEIC, which Chrome
+    // cannot render. Dynamic/animated covers use the same frame as JPEG.
+    asMediaUrl(video.dynamic_cover) ??
+    asMediaUrl(video.animated_cover) ??
+    asMediaUrl(item.dynamic_cover) ??
     asString(item.coverUrl) ??
-    asMediaUrl(video.cover) ??
+    asMediaUrl(item.cover) ??
     asMediaUrl(video.origin_cover) ??
-    asMediaUrl(video.dynamic_cover);
+    asMediaUrl(video.cover);
 
   return {
     platform: "tiktok",

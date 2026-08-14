@@ -19,6 +19,7 @@ export type ResearchActionState = {
   eligible?: number;
   retained?: number;
   providers?: string[];
+  notes?: string[];
   selectedPlatforms?: string[];
   hooks?: {
     formatMatched: Array<{
@@ -153,6 +154,7 @@ export async function runResearchScanAction(
       eligible: result.eligible,
       retained: result.retained,
       providers: result.providers,
+      notes: result.notes,
       success: `Discovered ${result.discovered} · eligible ${result.eligible} · retained ${result.retained} (via ${providersLabel}). Deep AI analysis runs only when you click Analyze.`,
     };
   } catch (error) {

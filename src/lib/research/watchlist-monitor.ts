@@ -254,7 +254,7 @@ export async function runWatchlistMonitor(params: {
     25,
     Math.max(
       1,
-      Number(process.env.DISCOVERY_MAX_PAGES_PER_CREATOR ?? "20") || 20,
+      Number(process.env.DISCOVERY_MAX_PAGES_PER_CREATOR ?? "2") || 2,
     ),
   );
   let remainingBudgetForRun = remainingBudget;
@@ -376,6 +376,14 @@ export async function runWatchlistMonitor(params: {
       console.error(
         `[watchlist-monitor] creator pull failed creator=${creator.id} platform=${creator.platform} provider=${provider.providerName}: ${message}`,
       );
+      // Rotate failed/empty providers to the back of the stale-first queue.
+      // Without this checkpoint, the same broken channel consumes a daily
+      // slot forever and creators below it never reach the For You library.
+      await params.supabase
+        .from("external_creators")
+        .update({ data_freshness_at: retrievedAt })
+        .eq("id", creator.id)
+        .eq("user_id", params.userId);
     }
   }
 

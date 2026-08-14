@@ -634,23 +634,33 @@ export default async function ResearchPage({
                         ? (params.last_run_stats as Record<string, unknown>)
                         : null;
                     if (!stats) return null;
+                    const providerNotes = Array.isArray(stats.provider_notes)
+                      ? stats.provider_notes.map(String).slice(0, 4)
+                      : [];
                     return (
-                      <p className="font-medium text-on-background">
-                        Last pull: discovered {String(stats.discovered ?? "—")} ·
-                        eligible {String(stats.eligible ?? "—")} · retained{" "}
-                        {String(stats.retained ?? "—")}
-                        {stats.by_platform &&
-                        typeof stats.by_platform === "object"
-                          ? ` · ${Object.entries(
-                              stats.by_platform as Record<string, unknown>,
-                            )
-                              .map(([plat, n]) => `${plat}:${String(n)}`)
-                              .join(" ")}`
-                          : ""}
-                        {Array.isArray(stats.providers) && stats.providers.length
-                          ? ` · ${stats.providers.join(", ")}`
-                          : ""}
-                      </p>
+                      <>
+                        <p className="font-medium text-on-background">
+                          Last pull: discovered {String(stats.discovered ?? "—")} ·
+                          eligible {String(stats.eligible ?? "—")} · retained{" "}
+                          {String(stats.retained ?? "—")}
+                          {stats.by_platform &&
+                          typeof stats.by_platform === "object"
+                            ? ` · ${Object.entries(
+                                stats.by_platform as Record<string, unknown>,
+                              )
+                                .map(([plat, n]) => `${plat}:${String(n)}`)
+                                .join(" ")}`
+                            : ""}
+                          {Array.isArray(stats.providers) && stats.providers.length
+                            ? ` · ${stats.providers.join(", ")}`
+                            : ""}
+                        </p>
+                        {providerNotes.map((note) => (
+                          <p key={note} className="text-secondary">
+                            {note}
+                          </p>
+                        ))}
+                      </>
                     );
                   })()}
                   {primaryAuto.last_error ? (

@@ -23,6 +23,8 @@ import {
   resolvePlatformCreatorId,
 } from "./resolve-creator";
 import { filterRecentShortForm } from "./recent-short-form";
+import { nextDailyResearchRunAt } from "./scan-schedule";
+import { interleaveCreatorTargets } from "./fair-creator-targets";
 
 type ResearchScanRow = {
   id: string;
@@ -52,11 +54,14 @@ export async function runResearchScan(params: {
   supabase: SupabaseClient;
   userId: string;
   scanId: string;
+  /** Manual pulls stay small; the five-minute cron can rotate through more. */
+  maxCreatorTargets?: number;
 }): Promise<{
   discovered: number;
   eligible: number;
   retained: number;
   providers: string[];
+  notes: string[];
 }> {
   const { data, error } = await params.supabase
     .from("research_scans")
@@ -125,6 +130,7 @@ export async function runResearchScan(params: {
     const usedProviders = new Set<string>();
     const discovered: SearchPostResult[] = [];
     const providerErrors: string[] = [];
+    const providerNotes: string[] = [];
 
     if (targetCreators) {
       const { data: tracked } = creatorIds.length
@@ -150,9 +156,11 @@ export async function runResearchScan(params: {
       const targets: Array<{
         platform: string;
         platformCreatorId: string;
+        externalCreatorId: string | null;
       }> = (tracked ?? []).map((c) => ({
         platform: c.platform,
         platformCreatorId: c.platform_creator_id,
+        externalCreatorId: c.id,
       }));
 
       for (const handle of channelHandles) {
@@ -163,21 +171,27 @@ export async function runResearchScan(params: {
           handle,
         });
         if (!platformCreatorId) continue;
-        targets.push({ platform, platformCreatorId });
-
-        await params.supabase.from("external_creators").upsert(
-          {
-            user_id: params.userId,
-            platform,
-            platform_creator_id: platformCreatorId,
-            handle: handle.replace(/^@/, ""),
-            display_name: handle.replace(/^@/, ""),
-            data_source:
-              platform === "youtube" ? "official_api" : "third_party_api",
-            data_freshness_at: retrievedAt,
-          },
-          { onConflict: "user_id,platform,platform_creator_id" },
-        );
+        const { data: upsertedCreator } = await params.supabase
+          .from("external_creators")
+          .upsert(
+            {
+              user_id: params.userId,
+              platform,
+              platform_creator_id: platformCreatorId,
+              handle: handle.replace(/^@/, ""),
+              display_name: handle.replace(/^@/, ""),
+              data_source:
+                platform === "youtube" ? "official_api" : "third_party_api",
+            },
+            { onConflict: "user_id,platform,platform_creator_id" },
+          )
+          .select("id")
+          .single();
+        targets.push({
+          platform,
+          platformCreatorId,
+          externalCreatorId: upsertedCreator?.id ?? null,
+        });
       }
 
       const allUniqueTargets = Array.from(
@@ -200,15 +214,23 @@ export async function runResearchScan(params: {
         });
 
       // A server action has a 60-second window and each creator profile costs
-      // one provider request. Pull the oldest ten selected creators per run;
-      // subsequent runs continue with the next stale batch.
+      // at least one provider request. Manual pulls stay at ten; the scheduled
+      // five-minute route can rotate through a larger batch.
       const remainingBudget = remainingDiscoveryCalls({
         callsToday: callsToday ?? 0,
         callsMonth: callsMonth ?? 0,
         budgets,
       });
       let budgetedTargets = 0;
-      const uniqueTargets = allUniqueTargets
+      const requestedCreatorLimit = Math.min(
+        100,
+        Math.max(1, params.maxCreatorTargets ?? 10),
+      );
+      const fairTargets = interleaveCreatorTargets(
+        allUniqueTargets,
+        scan.platforms,
+      );
+      const uniqueTargets = fairTargets
         .filter((target) => {
           const provider = getProviderForPlatform(target.platform);
           if (!provider || !isDiscoveryProviderBudgeted(provider.providerName)) {
@@ -218,7 +240,7 @@ export async function runResearchScan(params: {
           budgetedTargets += 1;
           return true;
         })
-        .slice(0, 10);
+        .slice(0, requestedCreatorLimit);
 
       if (uniqueTargets.length === 0) {
         if (!budget.ok) throw new Error(budget.message);
@@ -252,11 +274,12 @@ export async function runResearchScan(params: {
             result_count: posts.length,
             metadata: {
               scanId: scan.id,
+              platform: target.platform,
               platformCreatorId: target.platformCreatorId,
             },
           });
           if (posts.length === 0) {
-            providerErrors.push(
+            providerNotes.push(
               `${provider.providerName}: 0 results for ${target.platformCreatorId}`,
             );
           }
@@ -267,12 +290,23 @@ export async function runResearchScan(params: {
           console.error(
             `[research-scan] creator pull failed platform=${target.platform} provider=${provider.providerName}: ${message}`,
           );
+        } finally {
+          // Advance the stale-first queue even when a creator has no recent
+          // posts or the provider fails. Otherwise one broken creator is
+          // selected every day and starves Instagram/TikTok creators below it.
+          if (target.externalCreatorId) {
+            await params.supabase
+              .from("external_creators")
+              .update({ data_freshness_at: retrievedAt })
+              .eq("id", target.externalCreatorId)
+              .eq("user_id", params.userId);
+          }
         }
       }
 
       if (allUniqueTargets.length > uniqueTargets.length) {
-        providerErrors.push(
-          `Pulled ${uniqueTargets.length} of ${allUniqueTargets.length} selected creators in this safe batch; run the pull again for the next oldest channels`,
+        providerNotes.push(
+          `Checked ${uniqueTargets.length} of ${allUniqueTargets.length} selected creators now; the daily scanner will continue with the next ${Math.min(requestedCreatorLimit, allUniqueTargets.length - uniqueTargets.length)} stale creators automatically`,
         );
       }
 
@@ -310,7 +344,7 @@ export async function runResearchScan(params: {
             metadata: { scanId: scan.id, query: scan.query },
           });
           if (posts.length === 0) {
-            providerErrors.push(`${provider.providerName}: 0 results`);
+            providerNotes.push(`${provider.providerName}: 0 results`);
           }
         } else {
           const message =
@@ -361,7 +395,7 @@ export async function runResearchScan(params: {
     }
 
     const now = new Date();
-    const nextRun = new Date(now.getTime() + 86_400_000);
+    const nextRun = nextDailyResearchRunAt(now);
     const byPlatform = discovered.reduce<Record<string, number>>((acc, post) => {
       acc[post.platform] = (acc[post.platform] ?? 0) + 1;
       return acc;
@@ -371,6 +405,9 @@ export async function runResearchScan(params: {
       scUsage.creditsRemaining,
       scUsage.exhausted,
     );
+    const notes = [creditWarning, ...providerNotes, ...providerErrors]
+      .filter(Boolean)
+      .map(String);
     const lastRunStats = {
       discovered: discovered.length,
       eligible: eligiblePosts.length,
@@ -378,6 +415,7 @@ export async function runResearchScan(params: {
       providers: [...usedProviders],
       by_platform: byPlatform,
       provider_errors: providerErrors,
+      provider_notes: notes,
       at: now.toISOString(),
       scrapecreators: {
         credits_remaining: scUsage.creditsRemaining,
@@ -385,18 +423,15 @@ export async function runResearchScan(params: {
         exhausted: scUsage.exhausted,
       },
     };
-    const softError = [creditWarning, ...providerErrors]
-      .filter(Boolean)
-      .join(" · ")
-      .slice(0, 500) || null;
     await params.supabase
       .from("research_scans")
       .update({
         status: "active",
         last_run_at: now.toISOString(),
         next_run_at: nextRun.toISOString(),
-        // Keep partial provider failures visible without failing the whole scan.
-        last_error: softError,
+        // A completed partial pull is not a failed scan. Notes remain visible
+        // in last_run_stats without leaving the radar in a red error state.
+        last_error: null,
         parameters: {
           ...parameters,
           last_run_stats: lastRunStats,
@@ -410,6 +445,7 @@ export async function runResearchScan(params: {
       eligible: eligiblePosts.length,
       retained: ingested.retained,
       providers: [...usedProviders],
+      notes,
     };
   } catch (error) {
     const message =

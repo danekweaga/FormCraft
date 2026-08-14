@@ -57,6 +57,24 @@ describe("normalizeTiktokVideo", () => {
     expect(post?.thumbnailUrl).toBe("https://cdn.example/cover.jpg");
   });
 
+  it("prefers a browser-safe dynamic cover over a static HEIC cover", () => {
+    const post = normalizeTiktokVideo(
+      {
+        aweme_id: "100",
+        author: { unique_id: "u" },
+        video: {
+          cover: { url_list: ["https://cdn.example/cover.heic"] },
+          dynamic_cover: {
+            url_list: ["https://cdn.example/dynamic.image"],
+          },
+        },
+      },
+      "2026-08-12T12:00:00.000Z",
+    );
+
+    expect(post?.thumbnailUrl).toBe("https://cdn.example/dynamic.image");
+  });
+
   it("returns null without an id", () => {
     expect(
       normalizeTiktokVideo(

@@ -68,6 +68,34 @@ describe("normalizeInstagramReel", () => {
       views: 3210,
     });
   });
+
+  it("normalizes numeric-string dates and nested Instagram cover candidates", () => {
+    const post = normalizeInstagramReel(
+      {
+        media: {
+          code: "PROFILE2",
+          taken_at: "1786464000",
+          play_count: 42_000,
+          image_versions2: {
+            candidates: [
+              {
+                url: "https://instagram.example.fbcdn.net/cover.jpg",
+                width: 1080,
+                height: 1920,
+              },
+            ],
+          },
+          user: { username: "creator" },
+        },
+      },
+      "2026-08-12T12:00:00.000Z",
+    );
+
+    expect(post?.publishedAt).toBe("2026-08-11T16:00:00.000Z");
+    expect(post?.thumbnailUrl).toBe(
+      "https://instagram.example.fbcdn.net/cover.jpg",
+    );
+  });
 });
 
 describe("normalizeYoutubeSearchItem", () => {

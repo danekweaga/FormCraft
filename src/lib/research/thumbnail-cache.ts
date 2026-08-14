@@ -9,7 +9,9 @@ function isAllowedThumbnailHost(hostname: string): boolean {
     host === "i.ytimg.com" ||
     host.endsWith(".tiktokcdn.com") ||
     host.endsWith(".tiktokcdn-us.com") ||
-    host.endsWith(".cdninstagram.com")
+    host.endsWith(".tiktokcdn-eu.com") ||
+    host.endsWith(".cdninstagram.com") ||
+    host.endsWith(".fbcdn.net")
   );
 }
 
@@ -26,6 +28,7 @@ export async function cacheResearchThumbnail(params: {
   platform: string;
   externalId: string;
   thumbnailUrl: string | null;
+  externalUrl?: string | null;
 }): Promise<string | null> {
   if (!params.thumbnailUrl || params.platform === "youtube") {
     return params.thumbnailUrl;
@@ -33,7 +36,7 @@ export async function cacheResearchThumbnail(params: {
   try {
     const source = new URL(params.thumbnailUrl);
     if (!isAllowedThumbnailHost(source.hostname)) return params.thumbnailUrl;
-    const response = await fetch(source, {
+    let response = await fetch(source, {
       headers: {
         Accept: "image/avif,image/webp,image/png,image/jpeg,image/*",
         "User-Agent": "Mozilla/5.0 (compatible; FormCraft/1.0)",
@@ -42,8 +45,47 @@ export async function cacheResearchThumbnail(params: {
       signal: AbortSignal.timeout(12_000),
     });
     if (!response.ok) return params.thumbnailUrl;
-    const contentType = response.headers.get("content-type") ?? "image/jpeg";
+    let contentType = response.headers.get("content-type") ?? "image/jpeg";
+    // TikTok's primary CDN cover is often HEIC. Use the public oEmbed cover,
+    // which is JPEG and costs no discovery-provider credits.
+    if (
+      params.platform === "tiktok" &&
+      contentType.toLowerCase().includes("heic") &&
+      params.externalUrl
+    ) {
+      await response.body?.cancel();
+      const oembed = new URL("https://www.tiktok.com/oembed");
+      oembed.searchParams.set("url", params.externalUrl);
+      const oembedResponse = await fetch(oembed, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; FormCraft/1.0)" },
+        cache: "no-store",
+        signal: AbortSignal.timeout(12_000),
+      });
+      const oembedBody = (await oembedResponse.json().catch(() => null)) as {
+        thumbnail_url?: unknown;
+      } | null;
+      const fallbackUrl =
+        typeof oembedBody?.thumbnail_url === "string"
+          ? oembedBody.thumbnail_url
+          : null;
+      if (!oembedResponse.ok || !fallbackUrl) return params.thumbnailUrl;
+      const fallbackSource = new URL(fallbackUrl);
+      if (!isAllowedThumbnailHost(fallbackSource.hostname)) {
+        return params.thumbnailUrl;
+      }
+      response = await fetch(fallbackSource, {
+        headers: {
+          Accept: "image/avif,image/webp,image/png,image/jpeg,image/*",
+          "User-Agent": "Mozilla/5.0 (compatible; FormCraft/1.0)",
+        },
+        cache: "no-store",
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (!response.ok) return params.thumbnailUrl;
+      contentType = response.headers.get("content-type") ?? "image/jpeg";
+    }
     if (!contentType.startsWith("image/")) return params.thumbnailUrl;
+    if (contentType.toLowerCase().includes("heic")) return params.thumbnailUrl;
     const declaredLength = Number(response.headers.get("content-length") ?? 0);
     if (declaredLength > MAX_BYTES) return params.thumbnailUrl;
     const bytes = Buffer.from(await response.arrayBuffer());

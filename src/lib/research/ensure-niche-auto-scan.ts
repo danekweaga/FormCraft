@@ -53,14 +53,28 @@ export async function ensureNicheAutoScan(params: {
 
   const name = `Auto: ${(profile?.main_niche || query).slice(0, 60)}`;
 
-  const { data: existing } = await params.supabase
-    .from("research_scans")
-    .select("id")
-    .eq("user_id", params.userId)
-    .eq("auto_scan_enabled", true)
-    .ilike("name", "Auto:%")
-    .limit(1)
-    .maybeSingle();
+  const [{ data: existing }, { data: trackedCreators }] = await Promise.all([
+    params.supabase
+      .from("research_scans")
+      .select("id, parameters")
+      .eq("user_id", params.userId)
+      .eq("auto_scan_enabled", true)
+      .ilike("name", "Auto:%")
+      .limit(1)
+      .maybeSingle(),
+    params.supabase
+      .from("external_creators")
+      .select("id, platform")
+      .eq("user_id", params.userId)
+      .eq("tracking_paused", false)
+      .in("platform", platforms)
+      .limit(1000),
+  ]);
+  const creatorIds = (trackedCreators ?? []).map((creator) => creator.id);
+  const existingParameters =
+    existing?.parameters && typeof existing.parameters === "object"
+      ? existing.parameters
+      : {};
 
   const payload = {
     user_id: params.userId,
@@ -74,6 +88,10 @@ export async function ensureNicheAutoScan(params: {
     auto_scan_enabled: true,
     status: "active",
     next_run_at: new Date().toISOString(),
+    parameters: {
+      ...existingParameters,
+      creatorIds,
+    },
   };
 
   if (existing?.id) {
