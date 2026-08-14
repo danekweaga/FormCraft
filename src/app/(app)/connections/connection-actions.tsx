@@ -25,6 +25,25 @@ function ActionFeedback({ state }: { state: ConnectionActionState }) {
   );
 }
 
+export function ReconnectAccountButton({
+  platform,
+  label,
+  variant = "default",
+}: {
+  platform: string;
+  label?: string;
+  variant?: "default" | "outline";
+}) {
+  const name = platform.replace(/_/g, " ");
+  return (
+    <Button asChild size="sm" variant={variant}>
+      <a href={`/api/social/${platform}/authorize`}>
+        {label ?? `Reconnect ${name}`}
+      </a>
+    </Button>
+  );
+}
+
 export function SyncNowButton({
   connectionId,
   disabled,

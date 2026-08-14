@@ -230,13 +230,13 @@ export function rankPersonalizedFeed<T extends PersonalizedFeedCandidate>(
       reasons.push("You previously analyzed this reference");
     }
     if (watched) {
-      score += 6;
-      reasons.unshift("From a creator you track");
+      score -= 4;
+      reasons.push("From a creator you already track");
     } else if (suggested) {
       score += 16;
       reasons.unshift("From a creator FormCraft recommended for your niche");
     } else {
-      score += 10;
+      score += 22;
       reasons.unshift("New creator in your niche");
       if (creatorSignal > 0) {
         score += Math.min(12, creatorSignal * 6);
@@ -305,6 +305,20 @@ export function rankPersonalizedFeed<T extends PersonalizedFeedCandidate>(
       adjusted -= platformCount * 1.5;
       if (last && (last.external_creator_id ?? last.creator_name) === creatorKey) {
         adjusted -= 14;
+      }
+      const watched = Boolean(
+        item.external_creator_id && watchedCreators.has(item.external_creator_id),
+      );
+      const watchedSoFar = ranked.filter(
+        (previous) =>
+          previous.external_creator_id &&
+          watchedCreators.has(previous.external_creator_id),
+      ).length;
+      if (watched && ranked.length < 16 && watchedSoFar >= 4) {
+        adjusted -= 40;
+      }
+      if (!watched && ranked.length < 12) {
+        adjusted += 18;
       }
       if (
         lastTwo.length === 2 &&

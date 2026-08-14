@@ -30,6 +30,7 @@ import {
   postedSinceCutoff,
 } from "./scan-schedule";
 import { interleaveCreatorTargets } from "./fair-creator-targets";
+import { nextDiscoveryQueryBatch } from "./discovery-angles";
 
 type ResearchScanRow = {
   id: string;
@@ -84,9 +85,16 @@ export async function runResearchScan(params: {
     scan.parameters && typeof scan.parameters === "object"
       ? scan.parameters
       : {};
-  const creatorIds = asStringArray(parameters.creatorIds);
-  const channelHandles = asStringArray(parameters.channelHandles);
+  const creatorIds =
+    parameters.discoveryMode === "niche_search"
+      ? []
+      : asStringArray(parameters.creatorIds);
+  const channelHandles =
+    parameters.discoveryMode === "niche_search"
+      ? []
+      : asStringArray(parameters.channelHandles);
   const targetCreators = creatorIds.length > 0 || channelHandles.length > 0;
+  const forceFullDiscovery = parameters.force_full_discovery === true;
 
   const searchProviders = getConfiguredDiscoveryProviders().filter(
     (p) =>
@@ -135,7 +143,9 @@ export async function runResearchScan(params: {
     const maxResults = Math.min(scan.max_results, budgets.maxResultsPerQuery);
     const lookbackDays = targetCreators
       ? scan.lookback_days
-      : incrementalLookbackDays(scan.last_run_at, scan.lookback_days);
+      : forceFullDiscovery
+        ? scan.lookback_days
+        : incrementalLookbackDays(scan.last_run_at, scan.lookback_days);
     const usedProviders = new Set<string>();
     const discovered: SearchPostResult[] = [];
     const providerErrors: string[] = [];
@@ -323,26 +333,35 @@ export async function runResearchScan(params: {
         throw new Error(providerErrors.join(" · "));
       }
     } else {
+      const discoveryQueries = asStringArray(parameters.discoveryQueries);
+      const { batch, nextCursor } = nextDiscoveryQueryBatch(
+        discoveryQueries.length > 0 ? discoveryQueries : [scan.query],
+        Number(parameters.discovery_query_cursor) || 0,
+        2,
+      );
+      parameters.discovery_query_cursor = nextCursor;
+      const perQuery = Math.max(8, Math.ceil(maxResults / Math.max(1, batch.length)));
+
       const settled = await Promise.allSettled(
-        searchProviders.map(async (provider) => {
-          const posts = await provider.searchPosts({
-            query: scan.query,
-            platforms: scan.platforms as Array<
-              "youtube" | "instagram" | "tiktok"
-            >,
-            lookbackDays,
-            maxResults,
-            minViews: 0,
-          });
-          return { provider, posts };
-        }),
+        searchProviders.flatMap((provider) =>
+          batch.map(async (query) => {
+            const posts = await provider.searchPosts({
+              query,
+              platforms: scan.platforms as Array<
+                "youtube" | "instagram" | "tiktok"
+              >,
+              lookbackDays,
+              maxResults: perQuery,
+              minViews: 0,
+            });
+            return { provider, posts, query };
+          }),
+        ),
       );
 
-      for (let i = 0; i < settled.length; i++) {
-        const result = settled[i]!;
-        const provider = searchProviders[i]!;
+      for (const result of settled) {
         if (result.status === "fulfilled") {
-          const { posts } = result.value;
+          const { provider, posts, query } = result.value;
           usedProviders.add(provider.providerName);
           discovered.push(...posts);
           await params.supabase.from("provider_usage_events").insert({
@@ -352,23 +371,21 @@ export async function runResearchScan(params: {
             result_count: posts.length,
             metadata: {
               scanId: scan.id,
-              query: scan.query,
+              query,
               lookbackDays,
-              incremental: Boolean(scan.last_run_at),
+              incremental: Boolean(scan.last_run_at) && !forceFullDiscovery,
             },
           });
           if (posts.length === 0) {
-            providerNotes.push(`${provider.providerName}: 0 results`);
+            providerNotes.push(`${provider.providerName} · ${query}: 0 results`);
           }
         } else {
           const message =
             result.reason instanceof Error
               ? result.reason.message
               : String(result.reason);
-          providerErrors.push(`${provider.providerName}: ${message}`);
-          console.error(
-            `[research-scan] provider search failed provider=${provider.providerName}: ${message}`,
-          );
+          providerErrors.push(message);
+          console.error(`[research-scan] provider search failed: ${message}`);
         }
       }
 
@@ -380,9 +397,12 @@ export async function runResearchScan(params: {
     const eligiblePosts = keepPostsPostedSince(
       filterRecentShortForm(discovered, {
         lookbackDays,
-        strictLookback: !targetCreators && Boolean(scan.last_run_at),
+        strictLookback:
+          !targetCreators && Boolean(scan.last_run_at) && !forceFullDiscovery,
       }),
-      targetCreators ? null : postedSinceCutoff(scan.last_run_at),
+      targetCreators || forceFullDiscovery
+        ? null
+        : postedSinceCutoff(scan.last_run_at),
     );
     const ingested = await ingestScoredPosts({
       supabase: params.supabase,
@@ -435,7 +455,7 @@ export async function runResearchScan(params: {
       provider_errors: providerErrors,
       provider_notes: notes,
       lookback_days: lookbackDays,
-      incremental: Boolean(scan.last_run_at) && !targetCreators,
+      incremental: Boolean(scan.last_run_at) && !targetCreators && !forceFullDiscovery,
       at: now.toISOString(),
       scrapecreators: {
         credits_remaining: scUsage.creditsRemaining,
@@ -454,6 +474,11 @@ export async function runResearchScan(params: {
         last_error: null,
         parameters: {
           ...parameters,
+          discoveryMode:
+            parameters.discoveryMode === "niche_search"
+              ? "niche_search"
+              : parameters.discoveryMode,
+          force_full_discovery: false,
           last_run_stats: lastRunStats,
         },
       })

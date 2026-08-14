@@ -71,11 +71,25 @@ function openRouterErrorMessage(error: unknown, apiKey: string): string {
   return `OpenRouter request failed${status ? ` (${status})` : ""}${providerMessage ? `: ${providerMessage}` : "."}`;
 }
 
-/**
- * OpenRouter chat completion. Returns null when not configured —
- * callers must fall back to deterministic heuristics.
- * Never logs message contents that may contain secrets.
- */
+function splitSystemMessages(messages: LlmMessage[]): {
+  system: string | undefined;
+  messages: Array<Exclude<LlmMessage, { role: "system" }>>;
+} {
+  const system = messages
+    .filter((message) => message.role === "system")
+    .map((message) => message.content)
+    .join("\n\n")
+    .trim();
+  const rest = messages.filter(
+    (message): message is Exclude<LlmMessage, { role: "system" }> =>
+      message.role !== "system",
+  );
+  return {
+    system: system || undefined,
+    messages: rest.length > 0 ? rest : [{ role: "user", content: "Respond." }],
+  };
+}
+
 export async function callOpenRouter(params: {
   tier: ModelTier;
   modelName?: string;
@@ -88,6 +102,7 @@ export async function callOpenRouter(params: {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
   if (!apiKey) return null;
   const modelName = params.modelName ?? resolveModelName(params.tier);
+  const { system, messages } = splitSystemMessages(params.messages);
   const estimatedInputTokens = estimateMessagesTokens(params.messages);
   const provider = createOpenRouter({
     apiKey,
@@ -106,8 +121,9 @@ export async function callOpenRouter(params: {
 
   try {
     const result = await generateText({
-      model: provider(modelName, { usage: { include: true } }),
-      messages: params.messages,
+      model: provider.chat(modelName, { usage: { include: true } }),
+      ...(system ? { system } : {}),
+      messages,
       maxOutputTokens: params.maxOutputTokens ?? 1200,
       temperature: params.temperature ?? 0.2,
       ...(abortSignal ? { abortSignal } : {}),

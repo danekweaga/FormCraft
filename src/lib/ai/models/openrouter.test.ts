@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const generateTextMock = vi.hoisted(() => vi.fn());
-const modelFactoryMock = vi.hoisted(() => vi.fn(() => ({ modelId: "mock" })));
+const chatMock = vi.hoisted(() => vi.fn(() => ({ modelId: "mock" })));
 const createOpenRouterMock = vi.hoisted(() =>
-  vi.fn(() => modelFactoryMock),
+  vi.fn(() => {
+    const provider = Object.assign(vi.fn(), { chat: chatMock });
+    return provider;
+  }),
 );
 
 vi.mock("ai", () => ({ generateText: generateTextMock }));
@@ -18,7 +21,7 @@ describe("OpenRouter AI SDK adapter", () => {
 
   beforeEach(() => {
     process.env.OPENROUTER_API_KEY = "test-key-never-sent";
-    modelFactoryMock.mockClear();
+    chatMock.mockClear();
     createOpenRouterMock.mockClear();
     generateTextMock.mockReset();
   });
@@ -41,10 +44,15 @@ describe("OpenRouter AI SDK adapter", () => {
       messages: [{ role: "user", content: "test" }],
     });
 
-    expect(modelFactoryMock).toHaveBeenCalledWith(
-      "anthropic/claude-sonnet-5",
-      { usage: { include: true } },
+    expect(chatMock).toHaveBeenCalledWith("anthropic/claude-sonnet-5", {
+      usage: { include: true },
+    });
+    expect(generateTextMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: [{ role: "user", content: "test" }],
+      }),
     );
+    expect(generateTextMock.mock.calls[0]?.[0]?.system).toBeUndefined();
     expect(result?.estimatedInputTokens).toBe(7);
     expect(result?.actualCostUsd).toBe(0.0001);
     expect(createOpenRouterMock).toHaveBeenCalledWith(
@@ -53,6 +61,29 @@ describe("OpenRouter AI SDK adapter", () => {
         headers: expect.objectContaining({
           "X-OpenRouter-Title": "FormCraft",
         }),
+      }),
+    );
+  });
+
+  it("moves system prompts out of messages for Gemini-style models", async () => {
+    generateTextMock.mockResolvedValue({
+      text: "ok",
+      usage: { inputTokens: 3, outputTokens: 1 },
+    });
+
+    await callOpenRouter({
+      tier: "standard",
+      modelName: "google/gemini-3.7-flash",
+      messages: [
+        { role: "system", content: "You are FormCraft." },
+        { role: "user", content: "Hello" },
+      ],
+    });
+
+    expect(generateTextMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        system: "You are FormCraft.",
+        messages: [{ role: "user", content: "Hello" }],
       }),
     );
   });

@@ -4,8 +4,8 @@ import { useState } from "react";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { BrandMark } from "@/components/brand/brand-mark";
 import { PrimaryNavLinks, SecondaryNavLinks } from "./nav-links";
-import { MaterialIcon } from "./material-icon";
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
@@ -21,7 +21,7 @@ export function MobileNav() {
       <SheetContent side="left" className="flex h-dvh flex-col overflow-hidden">
         <SheetHeader className="shrink-0">
           <SheetTitle className="flex items-center gap-2">
-            <MaterialIcon name="workspace_premium" className="text-primary" />
+            <BrandMark size={24} />
             FormCraft
           </SheetTitle>
         </SheetHeader>

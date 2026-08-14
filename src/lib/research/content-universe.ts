@@ -58,6 +58,8 @@ const CATEGORIES: Category[] = [
       "cursor", "codex", "copilot", "llm", "large language model", "ai agent",
       "agentic", "vibe coding", "prompting", "mcp", "machine learning",
       "hallucination", "ai tool", "ai workflow", "ai coding",
+      "model release", "new model", "open source model", "huggingface",
+      "anthropic", "deepseek", "grok", "xai", "gpt", "foundation model",
     ],
   },
   {
@@ -88,6 +90,7 @@ const CATEGORIES: Category[] = [
       "startup", "student founder", "founder", "saas", "customer interview",
       "product validation", "validate an idea", "cofounder", "pitch competition",
       "startup grant", "waitlist", "product launch", "ship a product",
+      "startup funding", "seed round", "venture capital", "indie hacker",
     ],
   },
   {
@@ -97,6 +100,8 @@ const CATEGORIES: Category[] = [
       "technology news", "tech news", "open source", "developer culture",
       "programmer humor", "coding meme", "developer meme", "cs stereotype",
       "programming language", "tech twitter", "tech community",
+      "just launched", "product launch", "breaking", "funding round",
+      "series a", "y combinator", "yc batch",
     ],
   },
   {

@@ -7,6 +7,11 @@ import {
   VISIT_REFRESH_COOLDOWN_MS,
 } from "./scan-schedule";
 
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(String).filter(Boolean);
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"
     ? { ...(value as Record<string, unknown>) }
@@ -48,34 +53,41 @@ export async function refreshNicheFeedIfStale(params: {
     .maybeSingle();
 
   const parameters = asRecord(scan?.parameters);
+  const leftoverWatchlist = asStringArray(parameters.creatorIds).length > 0;
   delete parameters.creatorIds;
   delete parameters.channelHandles;
   const lastMarker = laterTimestamp(
     scan?.last_run_at,
     parameters.refresh_claimed_at,
   );
-  if (!shouldRefreshOnVisit(lastMarker)) {
+  const needsKick =
+    leftoverWatchlist ||
+    parameters.force_full_discovery === true ||
+    parameters.discoveryMode !== "niche_search";
+  if (!needsKick && !shouldRefreshOnVisit(lastMarker)) {
     return { ran: false, reason: "fresh" };
   }
 
   const claimedAt = new Date().toISOString();
   const cooldownAgo = new Date(Date.now() - VISIT_REFRESH_COOLDOWN_MS).toISOString();
-  const { data: claimed } = await params.supabase
+  let claim = params.supabase
     .from("research_scans")
     .update({
       parameters: {
         ...parameters,
         discoveryMode: "niche_search",
+        force_full_discovery: needsKick ? true : parameters.force_full_discovery,
         refresh_claimed_at: claimedAt,
       },
     })
     .eq("id", auto.scanId)
-    .eq("user_id", params.userId)
-    .or(
+    .eq("user_id", params.userId);
+  if (!needsKick) {
+    claim = claim.or(
       `parameters->>refresh_claimed_at.is.null,parameters->>refresh_claimed_at.lte.${cooldownAgo}`,
-    )
-    .select("id")
-    .maybeSingle();
+    );
+  }
+  const { data: claimed } = await claim.select("id").maybeSingle();
 
   if (!claimed) {
     return { ran: false, reason: "claimed" };

@@ -31,9 +31,14 @@ import {
   getOwnedProvider,
   isOwnedPlatform,
 } from "@/lib/social/providers";
+import {
+  isReconnectRequiredError,
+  reconnectRequiredCopy,
+} from "@/lib/social/reconnect";
 import type { OwnedPlatform, SocialConnectionRow } from "@/lib/social/types";
 import { createClient } from "@/lib/supabase/server";
 import {
+  ReconnectAccountButton,
   RefreshAllConnectedButton,
   SyncNowButton,
 } from "../connections/connection-actions";
@@ -170,8 +175,10 @@ export default async function MyContentPage({
       platform: OwnedPlatform;
     } => isOwnedPlatform(connection.platform));
 
-  const refreshableCount = connectedAccounts.filter((connection) =>
-    getOwnedProvider(connection.platform).isConfigured(),
+  const refreshableCount = connectedAccounts.filter(
+    (connection) =>
+      getOwnedProvider(connection.platform).isConfigured() &&
+      !isReconnectRequiredError(connection.last_error),
   ).length;
 
   let postsQuery = supabase
@@ -256,6 +263,9 @@ export default async function MyContentPage({
           </CardHeader>
           <CardContent className="space-y-3">
             {connectedAccounts.map((connection) => {
+              const needsReconnect = isReconnectRequiredError(
+                connection.last_error,
+              );
               const configured = getOwnedProvider(
                 connection.platform,
               ).isConfigured();
@@ -287,24 +297,32 @@ export default async function MyContentPage({
                       · {freshness.label} · Followers:{" "}
                       {formatFollowerCount(followers)}
                     </p>
-                    {connection.last_error ? (
-                      <p className="mt-1 text-xs text-destructive">
+                    {needsReconnect ? (
+                      <p className="mt-1 text-xs text-error">
+                        {reconnectRequiredCopy(connection.platform)}
+                      </p>
+                    ) : connection.last_error ? (
+                      <p className="mt-1 text-xs text-error">
                         {connection.last_error}
                       </p>
                     ) : null}
                     {!configured ? (
-                      <p className="mt-1 text-xs text-destructive">
+                      <p className="mt-1 text-xs text-error">
                         {getOwnedProvider(connection.platform).unconfiguredReason() ??
                           "Platform not configured — refresh disabled."}
                       </p>
                     ) : null}
                   </div>
-                  <SyncNowButton
-                    connectionId={connection.id}
-                    disabled={
-                      !configured || connection.status === "syncing"
-                    }
-                  />
+                  {needsReconnect ? (
+                    <ReconnectAccountButton platform={connection.platform} />
+                  ) : (
+                    <SyncNowButton
+                      connectionId={connection.id}
+                      disabled={
+                        !configured || connection.status === "syncing"
+                      }
+                    />
+                  )}
                 </div>
               );
             })}

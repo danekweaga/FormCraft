@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { disconnectSocialAccount } from "@/lib/social/disconnect";
 import { getOwnedProvider, isOwnedPlatform } from "@/lib/social/providers";
+import { isReconnectRequiredError } from "@/lib/social/reconnect";
 import { runSocialSync } from "@/lib/social/sync/run-sync";
 import { createClient } from "@/lib/supabase/server";
 
@@ -42,7 +43,7 @@ export async function syncConnectionNow(
 
     const { data: connection, error } = await supabase
       .from("social_connections")
-      .select("id, platform, status, account_type")
+      .select("id, platform, status, account_type, last_error")
       .eq("id", connectionId)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -54,6 +55,11 @@ export async function syncConnectionNow(
     }
     if (connection.status === "disconnected") {
       return { error: "Reconnect this account before refreshing." };
+    }
+    if (isReconnectRequiredError(connection.last_error)) {
+      return {
+        error: `Reconnect ${connection.platform} first. Facebook invalidated the login session, so Refresh will keep failing until you authorize again.`,
+      };
     }
     if (!isOwnedPlatform(connection.platform)) {
       return { error: "Platform adapter unavailable." };
@@ -92,7 +98,7 @@ export async function refreshAllConnectedAccounts(
     const { supabase, user } = await requireUser();
     const { data: connections, error } = await supabase
       .from("social_connections")
-      .select("id, platform, status")
+      .select("id, platform, status, last_error")
       .eq("user_id", user.id)
       .eq("account_type", "owned")
       .in("status", ["connected", "needs_attention", "syncing"]);
@@ -101,10 +107,20 @@ export async function refreshAllConnectedAccounts(
 
     const refreshable = (connections ?? []).filter((connection) => {
       if (!isOwnedPlatform(connection.platform)) return false;
+      if (isReconnectRequiredError(connection.last_error)) return false;
       return getOwnedProvider(connection.platform).isConfigured();
     });
+    const needsReconnect = (connections ?? []).filter((connection) =>
+      isReconnectRequiredError(connection.last_error),
+    );
 
     if (refreshable.length === 0) {
+      if (needsReconnect.length > 0) {
+        return {
+          error:
+            "Reconnect Instagram (or the signed-out account) before refreshing. A dead access token cannot be refreshed.",
+        };
+      }
       return {
         error:
           "No configured connected accounts to refresh. Connect Instagram, YouTube, or TikTok first.",
@@ -137,10 +153,14 @@ export async function refreshAllConnectedAccounts(
       return { error: failures.join(" · ") || "Refresh failed." };
     }
 
-    if (failures.length > 0) {
+    if (failures.length > 0 || needsReconnect.length > 0) {
+      const reconnectNote =
+        needsReconnect.length > 0
+          ? ` Reconnect ${needsReconnect.map((c) => c.platform).join(", ")} to sync those accounts again.`
+          : "";
       return {
         success: `Refreshed posts & followers for ${refreshed} account(s).`,
-        error: `Some accounts failed: ${failures.join(" · ")}`,
+        error: `${failures.length > 0 ? `Some accounts failed: ${failures.join(" · ")}` : ""}${reconnectNote}`.trim(),
       };
     }
 

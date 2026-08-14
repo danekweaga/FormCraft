@@ -27,24 +27,24 @@ export function resolveModelNameForRole(role: AIModelRole): string {
   if (role === "cheap") {
     return (
       envModel("AI_MODEL_CHEAP", "OPENROUTER_CHEAP_MODEL") ??
-      "openai/gpt-4o-mini"
+      "google/gemini-3.7-flash"
     );
   }
   if (role === "premium") {
     return (
       envModel("AI_MODEL_PREMIUM", "OPENROUTER_PREMIUM_MODEL") ??
-      "anthropic/claude-sonnet-4"
+      "google/gemini-3.7-flash"
     );
   }
   if (role === "multimodal") {
     return (
       envModel("AI_MODEL_MULTIMODAL", "OPENROUTER_MULTIMODAL_MODEL") ??
-      "openai/gpt-4o-mini"
+      "google/gemini-3.7-flash"
     );
   }
   return (
     envModel("AI_MODEL_STANDARD", "OPENROUTER_STANDARD_MODEL") ??
-    "openai/gpt-4o-mini"
+    "google/gemini-3.7-flash"
   );
 }
 

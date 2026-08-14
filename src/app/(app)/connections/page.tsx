@@ -22,10 +22,15 @@ import {
   isOwnedPlatform,
   PLATFORM_CARDS,
 } from "@/lib/social/providers";
+import {
+  isReconnectRequiredError,
+  reconnectRequiredCopy,
+} from "@/lib/social/reconnect";
 import type { SocialConnectionRow, SyncProgressStep } from "@/lib/social/types";
 import { createClient } from "@/lib/supabase/server";
 import {
   DisconnectPanel,
+  ReconnectAccountButton,
   RefreshAllConnectedButton,
   SyncNowButton,
   SyncSettingsForm,
@@ -212,6 +217,9 @@ export default async function ConnectionsPage({
                   staleAfterHours: connection.sync_frequency_hours * 2,
                 })
               : null;
+            const needsReconnect = isReconnectRequiredError(
+              connection?.last_error,
+            );
             const followerCount = connection
               ? connectionFollowerCount(connection.metadata)
               : null;
@@ -358,8 +366,12 @@ export default async function ConnectionsPage({
                             </dd>
                           </div>
                         ) : null}
-                        {connection.last_error ? (
-                          <div className="sm:col-span-2 text-destructive">
+                        {needsReconnect ? (
+                          <div className="sm:col-span-2 text-error">
+                            {reconnectRequiredCopy(connection.platform)}
+                          </div>
+                        ) : connection.last_error ? (
+                          <div className="sm:col-span-2 text-error">
                             Sync error: {connection.last_error}
                           </div>
                         ) : null}
@@ -367,12 +379,18 @@ export default async function ConnectionsPage({
 
                       <div className="space-y-2">
                         <div className="flex flex-wrap gap-2">
-                          <SyncNowButton
-                            connectionId={connection.id}
-                            disabled={
-                              connection.status === "syncing" || !configured
-                            }
-                          />
+                          {needsReconnect ? (
+                            <ReconnectAccountButton
+                              platform={connection.platform}
+                            />
+                          ) : (
+                            <SyncNowButton
+                              connectionId={connection.id}
+                              disabled={
+                                connection.status === "syncing" || !configured
+                              }
+                            />
+                          )}
                           <Button asChild size="sm" variant="outline">
                             <Link
                               href={`/my-content?source=connected_account&platform=${connection.platform}`}
@@ -385,12 +403,12 @@ export default async function ConnectionsPage({
                             <Link href="/performance">Instagram analytics</Link>
                           </Button>
                         ) : null}
-                        {configured ? (
-                          <Button asChild size="sm" variant="outline">
-                            <a href={`/api/social/${card.platform}/authorize`}>
-                              Reconnect
-                            </a>
-                          </Button>
+                        {configured && !needsReconnect ? (
+                          <ReconnectAccountButton
+                            platform={card.platform}
+                            label="Reconnect"
+                            variant="outline"
+                          />
                         ) : null}
                         <Button asChild size="sm" variant="ghost">
                           <a href={`#manage-${connection.id}`}>

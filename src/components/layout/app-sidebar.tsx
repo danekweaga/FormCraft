@@ -1,13 +1,11 @@
+import { BrandMark } from "@/components/brand/brand-mark";
 import { PrimaryNavLinks, SecondaryNavLinks } from "./nav-links";
-import { MaterialIcon } from "./material-icon";
 
 export function AppSidebar() {
   return (
     <aside className="fixed left-0 top-0 z-50 hidden h-dvh w-64 flex-col overflow-hidden border-r border-outline-variant/15 bg-surface px-3 py-5 md:flex">
       <div className="mb-5 flex shrink-0 items-center gap-3 px-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-on-background text-white">
-          <MaterialIcon name="workspace_premium" className="text-lg text-white" />
-        </div>
+        <BrandMark size={32} />
         <div>
           <h1 className="font-sans text-xl font-bold leading-none tracking-tight text-on-background">
             FormCraft

@@ -501,7 +501,7 @@ export default async function ResearchPage({
     <div>
       <PageHeader
         title="Research"
-        description="For You is a live niche feed: new creators and videos that match your brief, not only people already on your list."
+        description="For You searches your niche plus adjacent lanes like tech news, startups, and AI model drops — not only people already on your list."
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
@@ -1040,7 +1040,7 @@ export default async function ResearchPage({
           title="For You ranking"
           confidence="medium"
           why={[
-            "Ranks the 30-day pool with a For You mix: new creators in your niche first, then recommended and tracked accounts, plus your winning topics, saves, and feedback.",
+            "Ranks a mix of new creators first. Watchlist accounts stay in the pool but no longer take over the feed.",
             "A diversity pass prevents one creator, topic, or platform from taking over the feed.",
             "Opening the app checks for videos posted since the last scan. Watchlists stay on their own refresh so discovery does not cost a credit per creator.",
           ]}

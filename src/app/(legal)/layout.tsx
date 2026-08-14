@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MaterialIcon } from "@/components/layout/material-icon";
+import { BrandMark } from "@/components/brand/brand-mark";
 
 export default function LegalLayout({ children }: LayoutProps<"/">) {
   return (
@@ -7,12 +7,7 @@ export default function LegalLayout({ children }: LayoutProps<"/">) {
       <header className="border-b border-outline-variant/20">
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-6 py-6">
           <Link href="/" className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded bg-primary-container text-white paper-shadow">
-              <MaterialIcon
-                name="workspace_premium"
-                className="text-lg text-white"
-              />
-            </div>
+            <BrandMark size={36} />
             <div>
               <p className="font-headline text-xl font-bold leading-none tracking-tight">
                 FormCraft

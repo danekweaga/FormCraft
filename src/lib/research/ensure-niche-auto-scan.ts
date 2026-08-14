@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { buildDiscoveryAngles } from "./discovery-angles";
 import { searchablePlatforms } from "./discovery/registry";
 import { defaultDiscoveryPlatforms } from "./search-filters";
 import type { ResearchPlatform } from "./types";
@@ -13,9 +14,21 @@ function samePlatforms(left: unknown, right: string[]): boolean {
   return left.every((value, index) => String(value) === right[index]);
 }
 
-function isNicheSearchScan(parameters: Record<string, unknown>): boolean {
+function sameQueries(left: unknown, right: string[]): boolean {
+  if (!Array.isArray(left) || left.length !== right.length) return false;
+  return left.every((value, index) => String(value) === right[index]);
+}
+
+function isNicheSearchScan(
+  parameters: Record<string, unknown>,
+  queries: string[],
+): boolean {
   const creatorIds = asStringArray(parameters.creatorIds);
-  return parameters.discoveryMode === "niche_search" && creatorIds.length === 0;
+  return (
+    parameters.discoveryMode === "niche_search" &&
+    creatorIds.length === 0 &&
+    sameQueries(parameters.discoveryQueries, queries)
+  );
 }
 
 /**
@@ -33,11 +46,12 @@ export async function ensureNicheAutoScan(params: {
     .eq("user_id", params.userId)
     .maybeSingle();
 
-  const queryParts = [
-    profile?.main_niche,
-    ...(profile?.keywords ?? []).slice(0, 5),
-  ].filter((value): value is string => Boolean(value?.trim()));
-  const query = queryParts.join(" ").trim();
+  const discoveryQueries = buildDiscoveryAngles({
+    niche: profile?.main_niche ?? null,
+    keywords: profile?.keywords,
+    topics: profile?.topics,
+  });
+  const query = (profile?.main_niche?.trim() || discoveryQueries[0] || "").trim();
   if (query.length < 2) return null;
 
   const configured = searchablePlatforms().map(
@@ -81,7 +95,12 @@ export async function ensureNicheAutoScan(params: {
     existing?.parameters && typeof existing.parameters === "object"
       ? { ...(existing.parameters as Record<string, unknown>) }
       : {};
-  const alreadyNicheSearch = isNicheSearchScan(existingParameters);
+  const alreadyNicheSearch = isNicheSearchScan(
+    existingParameters,
+    discoveryQueries,
+  );
+  const convertingFromWatchlist =
+    asStringArray(existingParameters.creatorIds).length > 0;
   delete existingParameters.creatorIds;
   delete existingParameters.channelHandles;
 
@@ -108,6 +127,8 @@ export async function ensureNicheAutoScan(params: {
     parameters: {
       ...existingParameters,
       discoveryMode: "niche_search",
+      discoveryQueries,
+      force_full_discovery: convertingFromWatchlist || !alreadyNicheSearch,
     },
   };
 
