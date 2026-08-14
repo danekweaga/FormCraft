@@ -1192,7 +1192,7 @@ export async function saveNicheProfileAction(
   revalidatePath("/research");
   return {
     success: auto
-      ? `Niche profile saved. Auto-scan “${auto.created ? "created" : "updated"}” will refresh discovery on schedule.`
+      ? `Niche profile saved. For You will search your niche for new creators and only pull videos posted since the last scan.`
       : "Niche profile saved.",
   };
 }

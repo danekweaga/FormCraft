@@ -23,7 +23,12 @@ import {
   resolvePlatformCreatorId,
 } from "./resolve-creator";
 import { filterRecentShortForm } from "./recent-short-form";
-import { nextDailyResearchRunAt } from "./scan-schedule";
+import {
+  incrementalLookbackDays,
+  keepPostsPostedSince,
+  nextDailyResearchRunAt,
+  postedSinceCutoff,
+} from "./scan-schedule";
 import { interleaveCreatorTargets } from "./fair-creator-targets";
 
 type ResearchScanRow = {
@@ -35,6 +40,7 @@ type ResearchScanRow = {
   min_views: number;
   min_outlier_score: number;
   max_results: number;
+  last_run_at: string | null;
   parameters: Record<string, unknown> | null;
 };
 
@@ -66,7 +72,7 @@ export async function runResearchScan(params: {
   const { data, error } = await params.supabase
     .from("research_scans")
     .select(
-      "id, user_id, query, platforms, lookback_days, min_views, min_outlier_score, max_results, parameters",
+      "id, user_id, query, platforms, lookback_days, min_views, min_outlier_score, max_results, last_run_at, parameters",
     )
     .eq("id", params.scanId)
     .eq("user_id", params.userId)
@@ -127,6 +133,9 @@ export async function runResearchScan(params: {
     resetScrapeCreatorsUsage();
     const retrievedAt = new Date().toISOString();
     const maxResults = Math.min(scan.max_results, budgets.maxResultsPerQuery);
+    const lookbackDays = targetCreators
+      ? scan.lookback_days
+      : incrementalLookbackDays(scan.last_run_at, scan.lookback_days);
     const usedProviders = new Set<string>();
     const discovered: SearchPostResult[] = [];
     const providerErrors: string[] = [];
@@ -321,7 +330,7 @@ export async function runResearchScan(params: {
             platforms: scan.platforms as Array<
               "youtube" | "instagram" | "tiktok"
             >,
-            lookbackDays: scan.lookback_days,
+            lookbackDays,
             maxResults,
             minViews: 0,
           });
@@ -341,7 +350,12 @@ export async function runResearchScan(params: {
             provider: provider.providerName,
             operation: "search_posts",
             result_count: posts.length,
-            metadata: { scanId: scan.id, query: scan.query },
+            metadata: {
+              scanId: scan.id,
+              query: scan.query,
+              lookbackDays,
+              incremental: Boolean(scan.last_run_at),
+            },
           });
           if (posts.length === 0) {
             providerNotes.push(`${provider.providerName}: 0 results`);
@@ -363,9 +377,13 @@ export async function runResearchScan(params: {
       }
     }
 
-    const eligiblePosts = filterRecentShortForm(discovered, {
-      lookbackDays: scan.lookback_days,
-    });
+    const eligiblePosts = keepPostsPostedSince(
+      filterRecentShortForm(discovered, {
+        lookbackDays,
+        strictLookback: !targetCreators && Boolean(scan.last_run_at),
+      }),
+      targetCreators ? null : postedSinceCutoff(scan.last_run_at),
+    );
     const ingested = await ingestScoredPosts({
       supabase: params.supabase,
       userId: params.userId,
@@ -416,6 +434,8 @@ export async function runResearchScan(params: {
       by_platform: byPlatform,
       provider_errors: providerErrors,
       provider_notes: notes,
+      lookback_days: lookbackDays,
+      incremental: Boolean(scan.last_run_at) && !targetCreators,
       at: now.toISOString(),
       scrapecreators: {
         credits_remaining: scUsage.creditsRemaining,

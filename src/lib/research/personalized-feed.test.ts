@@ -165,4 +165,23 @@ describe("rankPersonalizedFeed", () => {
     expect(result[0].id).toBe("suggested");
     expect(result[0].whyRelevant.join(" ")).toContain("recommended");
   });
+
+  it("surfaces new niche creators ahead of tracked ones when quality is similar", () => {
+    const result = rankPersonalizedFeed(
+      [
+        candidate("tracked", {
+          external_creator_id: "creator-watched",
+          personalScore: 22,
+        }),
+        candidate("discovery", {
+          external_creator_id: "creator-new",
+          personalScore: 22,
+        }),
+      ],
+      { now: NOW, watchedCreatorIds: ["creator-watched"] },
+    );
+
+    expect(result[0].id).toBe("discovery");
+    expect(result[0].whyRelevant.join(" ")).toContain("New creator");
+  });
 });

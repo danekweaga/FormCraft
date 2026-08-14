@@ -19,7 +19,7 @@ export function PageHeader({
       )}
     >
       <div className="max-w-3xl">
-        <h1 className="font-headline text-3xl font-semibold tracking-tight text-on-background md:text-4xl">
+        <h1 className="font-sans text-3xl font-semibold tracking-tight text-on-background md:text-4xl">
           {title}
         </h1>
         {description ? (

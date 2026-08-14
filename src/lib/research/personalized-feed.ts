@@ -230,16 +230,20 @@ export function rankPersonalizedFeed<T extends PersonalizedFeedCandidate>(
       reasons.push("You previously analyzed this reference");
     }
     if (watched) {
-      score += 20;
+      score += 6;
       reasons.unshift("From a creator you track");
     } else if (suggested) {
-      score += 14;
+      score += 16;
       reasons.unshift("From a creator FormCraft recommended for your niche");
-    } else if (creatorSignal > 0) {
-      score += Math.min(20, creatorSignal * 6);
-      reasons.push("Similar to creators you saved or analyzed");
-    } else if (creatorSignal < 0) {
-      score += Math.max(-24, creatorSignal * 6);
+    } else {
+      score += 10;
+      reasons.unshift("New creator in your niche");
+      if (creatorSignal > 0) {
+        score += Math.min(12, creatorSignal * 6);
+        reasons.push("Similar to creators you saved or analyzed");
+      } else if (creatorSignal < 0) {
+        score += Math.max(-24, creatorSignal * 6);
+      }
     }
     if (topicSignal > 0) {
       score += Math.min(16, topicSignal * 5);

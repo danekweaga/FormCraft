@@ -3,10 +3,25 @@ import { searchablePlatforms } from "./discovery/registry";
 import { defaultDiscoveryPlatforms } from "./search-filters";
 import type { ResearchPlatform } from "./types";
 
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(String);
+}
+
+function samePlatforms(left: unknown, right: string[]): boolean {
+  if (!Array.isArray(left) || left.length !== right.length) return false;
+  return left.every((value, index) => String(value) === right[index]);
+}
+
+function isNicheSearchScan(parameters: Record<string, unknown>): boolean {
+  const creatorIds = asStringArray(parameters.creatorIds);
+  return parameters.discoveryMode === "niche_search" && creatorIds.length === 0;
+}
+
 /**
  * Ensure an auto-enabled research scan exists from the user's niche profile.
- * Uses niche_profiles.platforms when set; otherwise all configured providers
- * (including YouTube when the key is present).
+ * Keyword search discovers new creators; watchlists stay on their own monitor
+ * so For You is not limited to people already on Creator+.
  */
 export async function ensureNicheAutoScan(params: {
   supabase: SupabaseClient;
@@ -53,28 +68,31 @@ export async function ensureNicheAutoScan(params: {
 
   const name = `Auto: ${(profile?.main_niche || query).slice(0, 60)}`;
 
-  const [{ data: existing }, { data: trackedCreators }] = await Promise.all([
-    params.supabase
-      .from("research_scans")
-      .select("id, parameters")
-      .eq("user_id", params.userId)
-      .eq("auto_scan_enabled", true)
-      .ilike("name", "Auto:%")
-      .limit(1)
-      .maybeSingle(),
-    params.supabase
-      .from("external_creators")
-      .select("id, platform")
-      .eq("user_id", params.userId)
-      .eq("tracking_paused", false)
-      .in("platform", platforms)
-      .limit(1000),
-  ]);
-  const creatorIds = (trackedCreators ?? []).map((creator) => creator.id);
+  const { data: existing } = await params.supabase
+    .from("research_scans")
+    .select("id, query, platforms, parameters")
+    .eq("user_id", params.userId)
+    .eq("auto_scan_enabled", true)
+    .ilike("name", "Auto:%")
+    .limit(1)
+    .maybeSingle();
+
   const existingParameters =
     existing?.parameters && typeof existing.parameters === "object"
-      ? existing.parameters
+      ? { ...(existing.parameters as Record<string, unknown>) }
       : {};
+  const alreadyNicheSearch = isNicheSearchScan(existingParameters);
+  delete existingParameters.creatorIds;
+  delete existingParameters.channelHandles;
+
+  if (
+    existing?.id &&
+    existing.query === query &&
+    samePlatforms(existing.platforms, platforms) &&
+    alreadyNicheSearch
+  ) {
+    return { scanId: existing.id, created: false };
+  }
 
   const payload = {
     user_id: params.userId,
@@ -87,10 +105,9 @@ export async function ensureNicheAutoScan(params: {
     max_results: 50,
     auto_scan_enabled: true,
     status: "active",
-    next_run_at: new Date().toISOString(),
     parameters: {
       ...existingParameters,
-      creatorIds,
+      discoveryMode: "niche_search",
     },
   };
 
@@ -105,7 +122,10 @@ export async function ensureNicheAutoScan(params: {
 
   const { data: created, error } = await params.supabase
     .from("research_scans")
-    .insert(payload)
+    .insert({
+      ...payload,
+      next_run_at: new Date().toISOString(),
+    })
     .select("id")
     .single();
   if (error || !created) return null;

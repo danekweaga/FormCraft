@@ -1,7 +1,9 @@
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { AppTopBar } from "@/components/layout/app-top-bar";
 import { GlobalQuickCapture } from "@/components/canvas/global-quick-capture";
+import { refreshNicheFeedIfStale } from "@/lib/research/refresh-niche-feed";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function AppLayout({
@@ -17,6 +19,16 @@ export default async function AppLayout({
   if (!user) {
     redirect("/sign-in");
   }
+
+  after(() => {
+    void refreshNicheFeedIfStale({ supabase, userId: user.id }).catch(
+      (error) => {
+        console.error(
+          `[research] visit refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      },
+    );
+  });
 
   const { data: profile } = await supabase
     .from("profiles")

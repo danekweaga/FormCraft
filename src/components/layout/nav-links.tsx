@@ -16,10 +16,10 @@ function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void 
       href={item.href}
       onClick={onNavigate}
       className={cn(
-        "flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-semibold tracking-wide transition-colors active:scale-95",
+        "flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold tracking-wide transition-colors active:scale-[0.98]",
         active
-          ? "bg-surface-container-low text-primary"
-          : "text-secondary hover:bg-surface-container-low",
+          ? "bg-on-background text-white"
+          : "text-secondary hover:bg-surface-container-low hover:text-on-background",
       )}
     >
       <MaterialIcon name={item.icon} filled={active} />

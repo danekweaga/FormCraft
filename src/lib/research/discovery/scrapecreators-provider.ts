@@ -280,10 +280,10 @@ async function searchInstagram(params: {
   const q = compactDiscoveryQuery(params.query);
   // Docs allow pages 1–11; each page costs 1 credit. Pull enough to fill
   // maxResults, then widen the date window once if the niche is sparse.
-  const maxPages = Math.min(
-    11,
-    Math.max(3, Math.ceil(params.maxResults / 8)),
-  );
+  const maxPages =
+    params.lookbackDays <= 2
+      ? 2
+      : Math.min(11, Math.max(3, Math.ceil(params.maxResults / 8)));
   const posts: SearchPostResult[] = [];
 
   const pullPages = async (datePosted: string | undefined) => {
@@ -306,7 +306,12 @@ async function searchInstagram(params: {
 
   await pullPages(instagramDatePosted(params.lookbackDays));
   // Niche keywords often return few Google-indexed reels in a short window.
-  if (posts.length < Math.min(8, params.maxResults)) {
+  // Incremental visit refreshes stay in the requested window so we don't
+  // spend credits re-pulling last year's catalog.
+  if (
+    posts.length < Math.min(8, params.maxResults) &&
+    params.lookbackDays >= 14
+  ) {
     await pullPages(
       params.lookbackDays < 365 ? "last-year" : undefined,
     );

@@ -9,7 +9,7 @@ export default function HomePage() {
         className="pointer-events-none fixed inset-0 -z-10"
         style={{
           background:
-            "radial-gradient(120% 80% at 10% 0%, rgba(61,92,255,0.14) 0%, transparent 55%), radial-gradient(90% 70% at 90% 20%, rgba(244,241,234,0.95) 0%, transparent 50%), linear-gradient(180deg, #f8f9ff 0%, #eceef4 100%)",
+            "radial-gradient(120% 80% at 8% 0%, rgba(20,20,20,0.06) 0%, transparent 55%), radial-gradient(90% 70% at 92% 18%, rgba(255,255,255,0.9) 0%, transparent 52%), linear-gradient(180deg, #fafaf8 0%, #ecece8 100%)",
         }}
       />
       <div
@@ -23,7 +23,7 @@ export default function HomePage() {
 
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-6 md:px-10">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded bg-primary-container text-white paper-shadow">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-on-background text-white shadow-sm">
             <MaterialIcon name="workspace_premium" className="text-lg text-white" />
           </div>
           <div>
@@ -38,13 +38,13 @@ export default function HomePage() {
         <nav className="flex items-center gap-3">
           <Link
             href="/sign-in"
-            className="rounded-lg px-4 py-2 text-sm font-semibold text-secondary transition-colors hover:bg-surface-container-low hover:text-on-background"
+            className="rounded-full px-4 py-2 text-sm font-semibold text-secondary transition-colors hover:bg-surface-container-low hover:text-on-background"
           >
             Sign in
           </Link>
           <Link
             href="/sign-up"
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-on-primary transition-transform active:scale-95 paper-shadow"
+            className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-on-primary transition-transform active:scale-[0.98] shadow-sm"
           >
             Get started
           </Link>
@@ -77,14 +77,14 @@ export default function HomePage() {
               >
                 <Link
                   href="/sign-up"
-                  className="inline-flex items-center gap-2 rounded-lg bg-primary-container px-7 py-3.5 text-sm font-semibold text-on-primary-container transition-transform hover:opacity-95 active:scale-95 paper-shadow"
+                  className="inline-flex items-center gap-2 rounded-full bg-primary-container px-7 py-3.5 text-sm font-semibold text-on-primary-container transition-transform hover:opacity-95 active:scale-[0.98] shadow-sm"
                 >
                   Start building
                   <MaterialIcon name="arrow_forward" className="text-base" />
                 </Link>
                 <Link
                   href="/sign-in"
-                  className="inline-flex items-center gap-2 rounded-lg border border-outline/30 bg-surface-container-lowest/70 px-7 py-3.5 text-sm font-semibold text-on-background backdrop-blur transition-colors hover:bg-surface-container-lowest"
+                  className="inline-flex items-center gap-2 rounded-full border border-outline-variant/40 bg-surface-container-lowest/80 px-7 py-3.5 text-sm font-semibold text-on-background backdrop-blur transition-colors hover:bg-surface-container-lowest"
                 >
                   Sign in
                 </Link>
@@ -95,7 +95,7 @@ export default function HomePage() {
               className="animate-fc-fade-slide relative lg:col-span-5"
               style={{ animationDelay: "180ms" }}
             >
-              <div className="relative overflow-hidden rounded-xl border border-outline-variant/25 bg-surface-primary paper-shadow">
+              <div className="relative overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface-primary shadow-sm">
                 <div
                   aria-hidden
                   className="absolute inset-0 opacity-[0.12]"

@@ -21,6 +21,7 @@ import {
 import { scorePersonalRelevance } from "@/lib/research/relevance";
 import { rankPersonalizedFeed } from "@/lib/research/personalized-feed";
 import { normalizeResearchFeedFilters } from "@/lib/research/feed-filters";
+import { shouldRefreshOnVisit } from "@/lib/research/scan-schedule";
 import {
   meetsResearchViewFloor,
   MIN_RESEARCH_VIEWS,
@@ -38,6 +39,7 @@ import {
   CreatorSuggestionsPanel,
   type CreatorSuggestionCard,
 } from "./creator-suggestions-panel";
+import { NicheFeedRefresh } from "./niche-feed-refresh";
 import { MultiOutlierForm } from "./multi-outlier-form";
 import { NicheProfileForm } from "./niche-profile-form";
 import { ResearchFeedWithFilters } from "./research-feed-filters";
@@ -491,12 +493,15 @@ export default async function ResearchPage({
         : forYou.slice(0, 120);
   const isFeedMode =
     mode === "for-you" || mode === "outliers" || mode === "saved";
+  const feedRefreshPending =
+    Boolean(nicheProfile?.main_niche || primaryAuto) &&
+    shouldRefreshOnVisit(primaryAuto?.last_run_at);
 
   return (
     <div>
       <PageHeader
         title="Research"
-        description="Live pull from YouTube, TikTok, and Instagram Reels. Outlier scores are relative, not fake trends."
+        description="For You is a live niche feed: new creators and videos that match your brief, not only people already on your list."
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
@@ -531,6 +536,10 @@ export default async function ResearchPage({
             : ""}
       </p>
 
+      {mode === "for-you" ? (
+        <NicheFeedRefresh pending={feedRefreshPending} />
+      ) : null}
+
       {scrapeCreditWarning ? (
         <div className="mb-6 rounded-xl border border-error/30 bg-error/10 p-4 text-sm">
           <p className="font-semibold text-on-background">
@@ -549,8 +558,9 @@ export default async function ResearchPage({
             {visibleResearch.length === 1 ? "video" : "videos"} in your feed.
           </p>
           <p className="mt-1 text-secondary">
-            Pull YouTube, TikTok, and Instagram for your niche. Old scans kept 3
-            “relevant” hits and threw the rest away.
+            Pull YouTube, TikTok, and Instagram for your niche. Opening Research
+            only fetches videos posted since the last scan so credits are not
+            spent re-importing the same catalog.
           </p>
           <p className="mt-1 text-secondary">
             FormCraft only displays videos with at least 20,000 verified views.
@@ -1030,9 +1040,9 @@ export default async function ResearchPage({
           title="For You ranking"
           confidence="medium"
           why={[
-            "Ranks the full 30-day pool using your winning topics, niche, saves, analyses, feedback, tracked creators, audience, roadmap, experiments, freshness, and creator-relative outliers.",
+            "Ranks the 30-day pool with a For You mix: new creators in your niche first, then recommended and tracked accounts, plus your winning topics, saves, and feedback.",
             "A diversity pass prevents one creator, topic, or platform from taking over the feed.",
-            "Use More like this, Save, Analyze, Not relevant, and Scan daily to keep training it without spending AI credits.",
+            "Opening the app checks for videos posted since the last scan. Watchlists stay on their own refresh so discovery does not cost a credit per creator.",
           ]}
           evidence={evidence.topics.slice(0, 4)}
           sources={[
@@ -1050,9 +1060,17 @@ export default async function ResearchPage({
         feedList.length === 0 ? (
           <EmptyState
             title={
-              mode === "saved" ? "Nothing saved yet" : "No research items yet"
+              mode === "saved"
+                ? "Nothing saved yet"
+                : mode === "for-you"
+                  ? "Your For You feed is empty"
+                  : "No research items yet"
             }
-            description="Run Discover with TikTok (and optionally YouTube), or refresh watchlist channels. FormCraft will not invent results."
+            description={
+              mode === "for-you"
+                ? "Set your niche, then open Research again. FormCraft searches TikTok, Instagram, and YouTube for new videos that match — you do not have to add every creator first."
+                : "Run Discover with TikTok (and optionally YouTube), or refresh watchlist channels. FormCraft will not invent results."
+            }
           />
         ) : (
           <div className="mt-6">

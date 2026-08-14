@@ -19,7 +19,7 @@ export function EmptyState({
       )}
     >
       <div>
-        <h3 className="font-headline text-xl font-semibold text-on-background">
+        <h3 className="font-sans text-xl font-semibold text-on-background">
           {title}
         </h3>
         <p className="mt-2 max-w-xl text-sm leading-relaxed text-secondary">

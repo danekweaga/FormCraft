@@ -226,7 +226,7 @@ export function ResearchItemCard({
       <div className="flex flex-1 flex-col gap-3 p-3">
         <header className="min-w-0">
           <h3
-            className="line-clamp-1 font-headline text-sm font-semibold leading-snug text-on-background"
+            className="line-clamp-1 font-sans text-sm font-semibold leading-snug text-on-background"
             title={title}
           >
             {title}

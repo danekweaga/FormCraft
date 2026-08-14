@@ -234,6 +234,41 @@ describe("scrapeCreatorsDiscoveryProvider", () => {
     expect(results.length).toBeGreaterThan(1);
   });
 
+  it("does not widen Instagram to last-year on an incremental lookback", async () => {
+    vi.stubEnv("SCRAPECREATORS_API_KEY", "test-sc-key");
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      return new Response(
+        JSON.stringify({
+          credits_remaining: 7000,
+          credits_charged: 1,
+          reels: [
+            {
+              shortcode: "fresh-ig",
+              caption: "reel",
+              video_play_count: 90_000,
+              owner: { username: "iguser" },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await scrapeCreatorsDiscoveryProvider.searchPosts({
+      query: "coding",
+      platforms: ["instagram"],
+      lookbackDays: 1,
+      maxResults: 8,
+    });
+
+    const dates = fetchMock.mock.calls.map(
+      ([input]) => new URL(String(input)).searchParams.get("date_posted"),
+    );
+    expect(dates.every((date) => date === "last-day")).toBe(true);
+    expect(dates).not.toContain("last-year");
+  });
+
   it("paginates a TikTok creator until the requested 30-day feed is covered", async () => {
     vi.stubEnv("SCRAPECREATORS_API_KEY", "test-sc-key");
     const recent = new Date(Date.now() - 2 * 86_400_000).toISOString();

@@ -41,10 +41,10 @@ export function AppTopBar({
                 aria-label={tab.label}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "inline-flex h-10 items-center gap-2 rounded-lg border px-2 text-sm font-semibold transition-colors sm:px-3",
+                  "inline-flex h-10 items-center gap-2 rounded-full border px-2 text-sm font-semibold transition-colors sm:px-3",
                   active
-                    ? "border-primary-container bg-primary-container text-white"
-                    : "border-outline-variant/20 bg-surface text-on-surface hover:bg-surface-container-low",
+                    ? "border-on-background bg-on-background text-white"
+                    : "border-outline-variant/25 bg-surface-primary text-on-surface hover:bg-surface-container-low",
                 )}
               >
                 <MaterialIcon name={tab.icon} filled={active} className="text-lg" />
