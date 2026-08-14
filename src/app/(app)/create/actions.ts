@@ -233,6 +233,13 @@ export async function createMyVersionAction(
       ],
     },
   });
+  if (!ai.usedLlm) {
+    return {
+      error:
+        ai.fallbackReason ??
+        "OpenRouter did not generate this idea. Check OPENROUTER_API_KEY locally and on Vercel, then try again.",
+    };
+  }
 
   const gateContext = await buildFormCraftContext(supabase, {
     userId: user.id,
@@ -439,6 +446,13 @@ export async function generateScriptFromDirectionAction(
       ],
     },
   });
+  if (!ai.usedLlm) {
+    return {
+      error:
+        ai.fallbackReason ??
+        "OpenRouter did not write this script. Check OPENROUTER_API_KEY locally and on Vercel, then try again.",
+    };
+  }
 
   const scriptNode = await insertCanvasNode({
     supabase,

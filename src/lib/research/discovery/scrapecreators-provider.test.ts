@@ -193,6 +193,47 @@ describe("scrapeCreatorsDiscoveryProvider", () => {
     ]);
   });
 
+  it("widens Instagram search pages when the first window is sparse", async () => {
+    vi.stubEnv("SCRAPECREATORS_API_KEY", "test-sc-key");
+    vi.stubEnv("YOUTUBE_DATA_API_KEY", "yt-key");
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo) => {
+      const url = new URL(String(input));
+      const page = Number(url.searchParams.get("page") ?? "1");
+      const datePosted = url.searchParams.get("date_posted");
+      const shortcode = `${datePosted ?? "open"}-p${page}`;
+      return new Response(
+        JSON.stringify({
+          credits_remaining: 7000,
+          credits_charged: 1,
+          reels: [
+            {
+              shortcode,
+              caption: "reel",
+              video_play_count: 90_000,
+              owner: { username: "iguser" },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const results = await scrapeCreatorsDiscoveryProvider.searchPosts({
+      query: "coding",
+      platforms: ["instagram"],
+      lookbackDays: 30,
+      maxResults: 8,
+    });
+
+    const dates = fetchMock.mock.calls.map(
+      ([input]) => new URL(String(input)).searchParams.get("date_posted"),
+    );
+    expect(dates).toContain("last-month");
+    expect(dates).toContain("last-year");
+    expect(results.length).toBeGreaterThan(1);
+  });
+
   it("paginates a TikTok creator until the requested 30-day feed is covered", async () => {
     vi.stubEnv("SCRAPECREATORS_API_KEY", "test-sc-key");
     const recent = new Date(Date.now() - 2 * 86_400_000).toISOString();

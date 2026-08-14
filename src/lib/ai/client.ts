@@ -225,7 +225,9 @@ export function createFormCraftAI(supabase: SupabaseClient): AIProvider {
           temperature: input.temperature,
         });
         if (!result) {
-          throw new Error("AI analysis unavailable.");
+          throw new Error(
+            "AI analysis unavailable. OPENROUTER_API_KEY is not configured in this environment.",
+          );
         }
 
         await writeAiCache({
