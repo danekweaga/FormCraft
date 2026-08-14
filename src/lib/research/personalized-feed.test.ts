@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  mixFeedByPolicy,
   rankPersonalizedFeed,
   type PersonalizedFeedCandidate,
 } from "./personalized-feed";
@@ -190,5 +191,47 @@ describe("rankPersonalizedFeed", () => {
 
     expect(result[0].id).toBe("discovery");
     expect(result[0].whyRelevant.join(" ")).toContain("New creator");
+  });
+
+  it("mixes search hits ahead of a watchlist-heavy pool", () => {
+    const pool = [
+      ...Array.from({ length: 8 }, (_, index) =>
+        candidate(`w${index}`, {
+          external_creator_id: "creator-watched",
+          collection_method: "third_party_creator_posts",
+          personalScore: 40,
+        }),
+      ),
+      candidate("d1", {
+        external_creator_id: "creator-new-a",
+        collection_method: "third_party_search",
+        personalScore: 18,
+      }),
+      candidate("d2", {
+        external_creator_id: "creator-new-b",
+        collection_method: "third_party_search",
+        personalScore: 18,
+      }),
+      candidate("d3", {
+        external_creator_id: "creator-new-c",
+        collection_method: "third_party_search",
+        personalScore: 18,
+      }),
+    ];
+    const ranked = rankPersonalizedFeed(pool, {
+      now: NOW,
+      watchedCreatorIds: ["creator-watched"],
+    });
+    const mixed = mixFeedByPolicy(ranked, {
+      watchedCreatorIds: ["creator-watched"],
+      targetLength: 10,
+    });
+    const discoveryCount = mixed.filter((item) =>
+      item.id.startsWith("d"),
+    ).length;
+    expect(discoveryCount).toBeGreaterThanOrEqual(3);
+    expect(mixed.slice(0, 10).every((item) => item.id.startsWith("w"))).toBe(
+      false,
+    );
   });
 });

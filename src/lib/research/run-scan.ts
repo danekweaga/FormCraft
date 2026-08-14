@@ -337,10 +337,12 @@ export async function runResearchScan(params: {
       const { batch, nextCursor } = nextDiscoveryQueryBatch(
         discoveryQueries.length > 0 ? discoveryQueries : [scan.query],
         Number(parameters.discovery_query_cursor) || 0,
-        2,
+        4,
       );
       parameters.discovery_query_cursor = nextCursor;
       const perQuery = Math.max(8, Math.ceil(maxResults / Math.max(1, batch.length)));
+      const preferLatest =
+        Boolean(scan.last_run_at) && !forceFullDiscovery && lookbackDays <= 14;
 
       const settled = await Promise.allSettled(
         searchProviders.flatMap((provider) =>
@@ -353,6 +355,7 @@ export async function runResearchScan(params: {
               lookbackDays,
               maxResults: perQuery,
               minViews: 0,
+              sortBy: preferLatest ? "latest" : "relevance",
             });
             return { provider, posts, query };
           }),

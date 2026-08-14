@@ -19,10 +19,14 @@ import {
   scrapeCreatorsCreditWarning,
 } from "@/lib/research/discovery/scrapecreators-client";
 import { scorePersonalRelevance } from "@/lib/research/relevance";
-import { rankPersonalizedFeed } from "@/lib/research/personalized-feed";
+import {
+  mixFeedByPolicy,
+  rankPersonalizedFeed,
+} from "@/lib/research/personalized-feed";
 import { normalizeResearchFeedFilters } from "@/lib/research/feed-filters";
 import { shouldRefreshOnVisit } from "@/lib/research/scan-schedule";
 import {
+  meetsForYouViewFloor,
   meetsResearchViewFloor,
   MIN_RESEARCH_VIEWS,
 } from "@/lib/research/visibility-policy";
@@ -152,14 +156,23 @@ export default async function ResearchPage({
   const youtubeConfigured = platforms.some((p) => p.platform === "youtube");
   const instagramConfigured = platforms.some((p) => p.platform === "instagram");
 
-  const researchItemsBase = supabase
-    .from("research_items")
-    .select(
-      "id, platform, external_id, external_url, external_creator_id, creator_name, title, description, thumbnail_url, views, likes, comments, creator_followers, baseline_views, outlier_score, score_basis, outlier_label, baseline_confidence, baseline_sample_size, data_freshness_at, published_at, duration_seconds, hook_text, topic, analysis, analysis_model, saved, source, collection_method, hidden",
-    )
-    .eq("user_id", user.id)
-    .eq("hidden", false)
-    .gte("views", MIN_RESEARCH_VIEWS);
+  const researchItemsBase =
+    mode === "for-you"
+      ? supabase
+          .from("research_items")
+          .select(
+            "id, platform, external_id, external_url, external_creator_id, creator_name, title, description, thumbnail_url, views, likes, comments, creator_followers, baseline_views, outlier_score, score_basis, outlier_label, baseline_confidence, baseline_sample_size, data_freshness_at, published_at, duration_seconds, hook_text, topic, analysis, analysis_model, saved, source, collection_method, hidden",
+          )
+          .eq("user_id", user.id)
+          .eq("hidden", false)
+      : supabase
+          .from("research_items")
+          .select(
+            "id, platform, external_id, external_url, external_creator_id, creator_name, title, description, thumbnail_url, views, likes, comments, creator_followers, baseline_views, outlier_score, score_basis, outlier_label, baseline_confidence, baseline_sample_size, data_freshness_at, published_at, duration_seconds, hook_text, topic, analysis, analysis_model, saved, source, collection_method, hidden",
+          )
+          .eq("user_id", user.id)
+          .eq("hidden", false)
+          .gte("views", MIN_RESEARCH_VIEWS);
   const researchItemsQuery =
     mode === "for-you"
       ? researchItemsBase
@@ -351,29 +364,18 @@ export default async function ResearchPage({
   });
 
   const visibleResearch = enriched.filter((item) =>
-    meetsResearchViewFloor(item.views),
+    mode === "for-you"
+      ? meetsForYouViewFloor(item.views)
+      : meetsResearchViewFloor(item.views),
   );
   const watchlistCreatorIds = new Set(
     (watchlistMembers ?? [])
       .map((m) => m.external_creator_id)
       .filter((id): id is string => Boolean(id)),
   );
-  const twoDaysAgo = Date.now() - 2 * 86_400_000;
-  const libraryCreatorIds = [
-    ...watchlistCreatorIds,
-    ...(creators ?? [])
-      .filter((creator) => {
-        if (watchlistCreatorIds.has(creator.id)) return false;
-        const created = "created_at" in creator
-          ? new Date(String((creator as { created_at?: string | null }).created_at ?? "")).getTime()
-          : Number.NaN;
-        return !Number.isFinite(created) || created < twoDaysAgo;
-      })
-      .map((creator) => creator.id),
-  ];
-  const forYou = rankPersonalizedFeed(visibleResearch, {
+  const rankedForYou = rankPersonalizedFeed(visibleResearch, {
     feedback: feedback ?? [],
-    watchedCreatorIds: libraryCreatorIds,
+    watchedCreatorIds: [...watchlistCreatorIds],
     suggestedCreatorIds: Array.from(
       new Set(
         (creatorSuggestions ?? []).map(
@@ -383,6 +385,10 @@ export default async function ResearchPage({
     ),
     highPerformingTopics: topics,
     maxAgeDays: 30,
+  });
+  const forYou = mixFeedByPolicy(rankedForYou, {
+    watchedCreatorIds: [...watchlistCreatorIds],
+    targetLength: 120,
   });
   const outliers = [...visibleResearch].sort(
     (a, b) => (b.outlier_score ?? -1) - (a.outlier_score ?? -1),
@@ -509,6 +515,20 @@ export default async function ResearchPage({
   const feedRefreshPending =
     Boolean(nicheProfile?.main_niche || primaryAuto) &&
     shouldRefreshOnVisit(primaryAuto?.last_run_at);
+  const primaryAutoParameters =
+    primaryAuto?.parameters && typeof primaryAuto.parameters === "object"
+      ? (primaryAuto.parameters as Record<string, unknown>)
+      : null;
+  const lastRunStats =
+    primaryAutoParameters?.last_run_stats &&
+    typeof primaryAutoParameters.last_run_stats === "object"
+      ? (primaryAutoParameters.last_run_stats as {
+          discovered?: number;
+          eligible?: number;
+          retained?: number;
+          at?: string;
+        })
+      : null;
 
   return (
     <div>
@@ -550,7 +570,11 @@ export default async function ResearchPage({
       </p>
 
       {mode === "for-you" ? (
-        <NicheFeedRefresh pending={feedRefreshPending} />
+        <NicheFeedRefresh
+          pending={feedRefreshPending}
+          lastError={primaryAuto?.last_error}
+          lastStats={lastRunStats}
+        />
       ) : null}
 
       {scrapeCreditWarning ? (

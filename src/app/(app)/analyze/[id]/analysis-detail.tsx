@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
@@ -53,6 +53,8 @@ type AnalysisDetail = {
   parent_analysis_id?: string | null;
   saved?: boolean;
   estimated_cost_usd?: number | null;
+  transcript_provider?: string | null;
+  processing_error?: string | null;
   result: unknown;
   versions?: Array<{ id: string; analysis_version: number; created_at: string }>;
 };
@@ -149,6 +151,16 @@ export function AnalysisDetailClient({ analysis }: { analysis: AnalysisDetail })
     [analysis.result],
   );
 
+  useEffect(() => {
+    if (analysis.status !== "processing" && analysis.status !== "queued") {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      router.refresh();
+    }, 3_000);
+    return () => window.clearInterval(timer);
+  }, [analysis.status, router]);
+
   function seek(seconds: number) {
     if (videoRef.current) {
       videoRef.current.currentTime = seconds;
@@ -164,8 +176,14 @@ export function AnalysisDetailClient({ analysis }: { analysis: AnalysisDetail })
         </Button>
         <PageHeader
           title={analysis.title || "Analyzing…"}
-          description="Pipeline in progress"
+          description="Breakdown is still running — this page refreshes automatically."
         />
+        {analysis.transcript_provider === "caption_metadata" ? (
+          <p className="mb-4 rounded-xl border border-outline-variant/20 bg-surface-primary px-4 py-3 text-sm text-secondary">
+            Used on-screen caption because spoken transcript timed out. Retry
+            Analyze later for speech-to-text.
+          </p>
+        ) : null}
         <StageList stages={analysis.processing_stages ?? []} />
       </div>
     );
@@ -176,7 +194,7 @@ export function AnalysisDetailClient({ analysis }: { analysis: AnalysisDetail })
       <p className="text-sm text-secondary">
         Analysis result unavailable. Try re-running the analysis.
         {analysis.status === "failed"
-          ? " Media/transcript were kept if upload succeeded."
+          ? ` ${analysis.processing_error ?? "Media/transcript were kept if upload succeeded."}`
           : ""}
       </p>
     );
@@ -287,6 +305,10 @@ export function AnalysisDetailClient({ analysis }: { analysis: AnalysisDetail })
         <Badge variant={analysis.has_visual_evidence ? "success" : "warning"}>
           {analysis.has_visual_evidence ? "Visual evidence" : "Transcript only"}
         </Badge>
+        {analysis.transcript_provider === "caption_metadata" ||
+        analysis.has_audio_evidence === false ? (
+          <Badge variant="warning">Caption metadata (not spoken)</Badge>
+        ) : null}
         {analysis.analysis_version ? (
           <Badge variant="primary">v{analysis.analysis_version}</Badge>
         ) : null}

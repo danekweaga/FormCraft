@@ -1,5 +1,6 @@
 "use server";
 
+import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { persistCapturedFrames } from "@/lib/analyze/media/frames";
@@ -9,7 +10,10 @@ import {
   createSignedMediaUrl,
   uploadAnalysisMedia,
 } from "@/lib/analyze/media/store";
-import { ingestPublicVideoUrl } from "@/lib/analyze/ingest/url";
+import {
+  captionMetadataTranscript,
+  ingestPublicVideoUrl,
+} from "@/lib/analyze/ingest/url";
 import { runStagedAnalysis } from "@/lib/analyze/pipeline/run-analysis";
 import {
   createAnalysisInputSchema,
@@ -28,6 +32,7 @@ import {
   isPublicTiktokVideoUrl,
   resolveTiktokPublicVideo,
 } from "@/lib/research/discovery/tiktok-data-provider";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export type AnalyzeActionState = {
@@ -682,7 +687,8 @@ export async function breakDownResearchItemAction(
     .maybeSingle();
 
   let transcript = item.transcript?.trim() ?? previous?.transcript?.trim() ?? "";
-  let provider = item.transcript_provider ?? previous?.transcript_provider ?? "unavailable";
+  let provider =
+    item.transcript_provider ?? previous?.transcript_provider ?? "unavailable";
   let language = item.transcript_language ?? null;
   let timestampedTranscript = item.transcript_segments ?? null;
   let inputType:
@@ -692,6 +698,7 @@ export async function breakDownResearchItemAction(
     | "social_url"
     | "formcraft_source" =
     previous?.input_type === "youtube_url" ? "youtube_url" : "formcraft_source";
+  let hasAudioEvidence = transcript.length >= 20;
   let transcriptFailure: { reason: string; suggestion: string } | null = null;
 
   let sourceUrl = item.external_url;
@@ -714,29 +721,31 @@ export async function breakDownResearchItemAction(
           .eq("user_id", auth.user.id);
       } else {
         transcriptFailure = {
-          reason: "The saved TikTok link used a provider-internal ID and could not be repaired automatically.",
-          suggestion: "Refresh TikTok discovery, then analyze the newly imported result.",
+          reason:
+            "The saved TikTok link used a provider-internal ID and could not be repaired automatically.",
+          suggestion:
+            "Refresh TikTok discovery, then analyze the newly imported result.",
         };
       }
     } catch (error) {
       transcriptFailure = {
         reason:
-          error instanceof Error
-            ? error.message
-            : "TikTok link repair failed.",
+          error instanceof Error ? error.message : "TikTok link repair failed.",
         suggestion: "Refresh TikTok discovery and retry.",
       };
     }
   }
 
   if (!transcript && sourceUrl && !transcriptFailure) {
-    const ingested = await ingestPublicVideoUrl(sourceUrl);
+    // Keep STT short so we leave room for the queued LLM pass (60s total).
+    const ingested = await ingestPublicVideoUrl(sourceUrl, { maxPollMs: 20_000 });
     if (ingested.ok) {
       transcript = ingested.transcript;
       provider = ingested.transcriptProvider;
       language = ingested.transcriptLanguage;
       timestampedTranscript = ingested.timestampedTranscript;
       inputType = urlInputType(ingested.platform);
+      hasAudioEvidence = true;
       await auth.supabase
         .from("research_items")
         .update({
@@ -770,28 +779,170 @@ export async function breakDownResearchItemAction(
   }
 
   if (transcript.length < 20) {
+    const caption = captionMetadataTranscript({
+      title: item.title,
+      description: item.description,
+      hookText: item.hook_text,
+    });
+    if (caption) {
+      transcript = caption;
+      provider = "caption_metadata";
+      language = null;
+      timestampedTranscript = null;
+      hasAudioEvidence = false;
+      if (item.platform === "tiktok") inputType = "tiktok_url";
+      else if (item.platform === "instagram") inputType = "instagram_url";
+      else if (item.platform === "youtube") inputType = "youtube_url";
+    }
+  }
+
+  if (transcript.length < 20) {
     return {
       error: transcriptFailure
         ? `Transcript unavailable: ${transcriptFailure.reason} ${transcriptFailure.suggestion}`
-        : "This video has no saved transcript or public video link. Paste or upload its transcript in Analyze. FormCraft will not use the title or caption as the spoken hook.",
+        : "This video has no saved transcript, caption, or public video link. Paste or upload its transcript in Analyze.",
     };
   }
 
-  const result = await createTranscriptAnalysis({
-    title: item.title || "Research breakdown",
-    transcript,
-    mode: "deep",
-    subjectType: "viral_outlier",
-    sourceType: "external_research",
-    researchItemId: item.id,
-    inputType,
-    sourceUrl,
-    transcriptProvider: provider,
-    transcriptLanguage: language,
-    timestampedTranscript,
-    hasAudioEvidence: true,
+  const title = item.title || "Research breakdown";
+  const normalized = normalizeTranscriptText(transcript);
+  const { data: placeholder, error: placeholderError } = await auth.supabase
+    .from("video_analyses")
+    .insert({
+      user_id: auth.user.id,
+      title,
+      subject_type: "viral_outlier",
+      source_type: "external_research",
+      input_type: inputType,
+      analysis_mode: "deep",
+      status: "processing",
+      source_url: sourceUrl,
+      transcript: normalized,
+      raw_transcript: transcript,
+      normalized_transcript: normalized,
+      research_item_id: item.id,
+      has_visual_evidence: false,
+      has_audio_evidence: hasAudioEvidence,
+      transcript_provider: provider,
+      transcript_language: language,
+      timestamped_transcript: timestampedTranscript,
+      frames_analyzed: [],
+      analysis_version: 1,
+      processing_stages: [
+        {
+          id: "ingest",
+          label: "Research item loaded",
+          status: "done",
+        },
+        {
+          id: "transcript",
+          label: hasAudioEvidence
+            ? "Spoken transcript ready"
+            : "Using on-screen caption (spoken transcript timed out)",
+          status: "done",
+          detail: hasAudioEvidence
+            ? undefined
+            : "Caption is not spoken words — retry Analyze later for speech-to-text.",
+        },
+        { id: "structure", label: "Structure mapped", status: "active" },
+      ],
+      prompt_version: "growth-i-breakdown-v1",
+    })
+    .select("id")
+    .single();
+
+  if (placeholderError || !placeholder) {
+    return {
+      error: placeholderError?.message ?? "Could not start analysis.",
+    };
+  }
+
+  const analysisId = placeholder.id;
+  const userId = auth.user.id;
+  const timedSegments = Array.isArray(timestampedTranscript)
+    ? (timestampedTranscript as Array<{
+        startSeconds: number;
+        endSeconds: number;
+        text: string;
+      }>)
+    : undefined;
+
+  after(() => {
+    void (async () => {
+      const admin = createAdminClient();
+      try {
+        const staged = await runStagedAnalysis({
+          supabase: admin,
+          userId,
+          analysisId,
+          title,
+          transcript: normalized,
+          mode: "deep",
+          subjectType: "viral_outlier",
+          sourceType: "external_research",
+          researchItemId: item.id,
+          timedSegments,
+          frames: [],
+        });
+        await admin
+          .from("video_analyses")
+          .update({
+            status: "ready",
+            result: staged.result,
+            transcript_hash: staged.transcriptHash,
+            input_hash: staged.inputHash,
+            context_hash: staged.contextHash,
+            processing_stages: staged.stages,
+            model_name: staged.modelName,
+            prompt_version: staged.promptVersion,
+            estimated_cost_usd: staged.estimatedCostUsd,
+            knowledge_sources: staged.knowledgeSources,
+            has_audio_evidence: hasAudioEvidence,
+            processing_error: null,
+          })
+          .eq("id", analysisId)
+          .eq("user_id", userId);
+
+        await persistAnalysisEvidence({
+          supabase: admin,
+          userId,
+          analysisId,
+          result: staged.result,
+        });
+
+        const transcriptHook = staged.result.hooks[0]?.text?.trim() || null;
+        if (transcriptHook) {
+          await admin
+            .from("research_items")
+            .update({ hook_text: transcriptHook.slice(0, 500) })
+            .eq("id", item.id)
+            .eq("user_id", userId);
+        }
+      } catch (error) {
+        await admin
+          .from("video_analyses")
+          .update({
+            status: "failed",
+            processing_error:
+              error instanceof Error
+                ? error.message.slice(0, 500)
+                : "Analysis failed",
+          })
+          .eq("id", analysisId)
+          .eq("user_id", userId);
+        console.error(
+          `[analyze] deferred research breakdown failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    })();
   });
-  return result;
+
+  revalidatePath("/analyze");
+  revalidatePath(`/analyze/${analysisId}`);
+  revalidatePath("/research");
+  return { analysisId };
 }
 
 export async function reanalyzeTranscript(

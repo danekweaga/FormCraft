@@ -243,8 +243,11 @@ export function ResearchItemCard({
           <span className="truncate rounded-md bg-emerald-500/12 px-2 py-1.5 text-center text-emerald-600 dark:text-emerald-400">
             ↗ {outlierScore ?? "New"}
           </span>
-          <span className="truncate rounded-md bg-blue-500/12 px-2 py-1.5 text-center text-blue-600 dark:text-blue-400">
-            ◉ {views ?? "—"}
+          <span
+            className="truncate rounded-md bg-blue-500/12 px-2 py-1.5 text-center text-blue-600 dark:text-blue-400"
+            title={item.views == null ? "Views unknown from this provider" : undefined}
+          >
+            ◉ {views ?? "views?"}
           </span>
           <span className="truncate rounded-md bg-orange-500/12 px-2 py-1.5 text-center text-orange-600 dark:text-orange-400">
             ✦ {engagement ?? "—"}

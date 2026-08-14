@@ -17,6 +17,7 @@ export type PersonalizedFeedCandidate = {
   published_at: string | null;
   saved: boolean;
   analysis_model: string | null;
+  collection_method?: string | null;
   personalScore?: number;
   personalFit?: string | null;
   whyRelevant?: string[];
@@ -29,6 +30,8 @@ export type PersonalizedFeedOptions = {
   highPerformingTopics?: string[];
   maxAgeDays?: number;
   now?: Date;
+  /** Cap after mix slot-fill (default: keep all ranked). */
+  targetLength?: number;
 };
 
 export type PersonalizedFeedResult<T> = T & {
@@ -354,4 +357,77 @@ export function rankPersonalizedFeed<T extends PersonalizedFeedCandidate>(
   }
 
   return ranked;
+}
+
+function isSearchCollection(method: string | null | undefined): boolean {
+  if (!method) return false;
+  return (
+    method.includes("search") ||
+    method === "demo_fixture" ||
+    method === "official_business_discovery"
+  );
+}
+
+/**
+ * Product mix for For You (not a learned model):
+ * 50% niche search, 20% watchlist, 15% outliers, 10% adjacent search, 5% exploration.
+ */
+export function mixFeedByPolicy<T extends PersonalizedFeedCandidate>(
+  ranked: Array<PersonalizedFeedResult<T>>,
+  options: {
+    watchedCreatorIds?: string[];
+    targetLength?: number;
+  } = {},
+): Array<PersonalizedFeedResult<T>> {
+  const watched = new Set(options.watchedCreatorIds ?? []);
+  const target = Math.max(1, options.targetLength ?? ranked.length);
+  if (ranked.length === 0) return [];
+
+  const slots = {
+    discovery: Math.max(1, Math.round(target * 0.5)),
+    watchlist: Math.max(1, Math.round(target * 0.2)),
+    outliers: Math.max(1, Math.round(target * 0.15)),
+    adjacent: Math.max(1, Math.round(target * 0.1)),
+    exploration: Math.max(1, Math.round(target * 0.05)),
+  };
+
+  const used = new Set<string>();
+  const out: Array<PersonalizedFeedResult<T>> = [];
+
+  const take = (
+    predicate: (item: PersonalizedFeedResult<T>) => boolean,
+    count: number,
+  ) => {
+    let taken = 0;
+    for (const item of ranked) {
+      if (taken >= count || out.length >= target) break;
+      if (used.has(item.id) || !predicate(item)) continue;
+      used.add(item.id);
+      out.push(item);
+      taken += 1;
+    }
+  };
+
+  take(
+    (item) =>
+      isSearchCollection(item.collection_method) &&
+      !(item.external_creator_id && watched.has(item.external_creator_id)),
+    slots.discovery,
+  );
+  take(
+    (item) =>
+      Boolean(item.external_creator_id && watched.has(item.external_creator_id)),
+    slots.watchlist,
+  );
+  take((item) => (item.outlier_score ?? 0) >= 1.5, slots.outliers);
+  take(
+    (item) =>
+      isSearchCollection(item.collection_method) ||
+      !(item.external_creator_id && watched.has(item.external_creator_id)),
+    slots.adjacent,
+  );
+  take(() => true, slots.exploration);
+  take(() => true, target);
+
+  return out.slice(0, target);
 }

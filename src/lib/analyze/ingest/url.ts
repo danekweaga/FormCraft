@@ -56,8 +56,23 @@ function platformSuggestion(platform: SupadataPlatform): string {
   return "Tap Analyze again in a few seconds, or paste/upload the caption or transcript.";
 }
 
+/** On-screen caption/title when speech-to-text times out — not spoken evidence. */
+export function captionMetadataTranscript(fields: {
+  title?: string | null;
+  description?: string | null;
+  hookText?: string | null;
+}): string | null {
+  const text = [fields.description, fields.title, fields.hookText]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .join("\n\n")
+    .trim();
+  return text.length >= 20 ? text : null;
+}
+
 export async function ingestPublicVideoUrl(
   sourceUrl: string,
+  options?: { maxPollMs?: number },
 ): Promise<UrlIngestResult> {
   const trimmed = sourceUrl.trim();
   if (!trimmed) {
@@ -109,7 +124,9 @@ export async function ingestPublicVideoUrl(
 
   if (isSupadataConfigured()) {
     try {
-      const transcript = await fetchSupadataTranscript(trimmed);
+      const transcript = await fetchSupadataTranscript(trimmed, {
+        maxPollMs: options?.maxPollMs,
+      });
       const videoId = platform === "youtube" ? extractYouTubeId(trimmed) : null;
       return {
         ok: true,

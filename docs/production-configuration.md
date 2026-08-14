@@ -53,7 +53,7 @@ The `20260810170000_complete_growth_l_m_product_systems.sql` migration is applie
 
 `vercel.json` configures:
 
-- `/api/cron/research-scan`
+- `/api/cron/research-scan` every 2 hours (`0 */2 * * *`) — niche For You discovery. If the Vercel plan only allows daily cron, visit refresh still fills the feed when you open the app.
 - `/api/cron/watchlist-scan`
 - `/api/cron/owned-social-sync`
 - `/api/cron/weekly-review`

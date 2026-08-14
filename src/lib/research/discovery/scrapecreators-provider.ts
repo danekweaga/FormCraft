@@ -235,6 +235,7 @@ async function searchTiktok(params: {
   maxResults: number;
   minViews: number;
   retrievedAt: string;
+  sortBy?: "relevance" | "latest";
 }): Promise<SearchPostResult[]> {
   const q = compactDiscoveryQuery(params.query);
   const posts: SearchPostResult[] = [];
@@ -243,7 +244,7 @@ async function searchTiktok(params: {
     const body = await scrapecreatorsGet("/v1/tiktok/search/keyword", {
       query: q,
       date_posted: tiktokDatePosted(params.lookbackDays),
-      sort_by: "relevance",
+      sort_by: params.sortBy === "latest" ? "latest" : "relevance",
       trim: true,
       ...(cursor ? { cursor } : {}),
     });
@@ -325,12 +326,13 @@ async function searchYoutube(params: {
   maxResults: number;
   minViews: number;
   retrievedAt: string;
+  sortBy?: "relevance" | "latest";
 }): Promise<SearchPostResult[]> {
   const body = await scrapecreatorsGet("/v1/youtube/search", {
     query: compactDiscoveryQuery(params.query, 6),
     type: "shorts",
     uploadDate: youtubeUploadDate(params.lookbackDays),
-    sortBy: "relevance",
+    sortBy: params.sortBy === "latest" ? "date" : "relevance",
   });
   const items = [
     ...extractList(body, ["shorts"]),
@@ -425,6 +427,7 @@ export const scrapeCreatorsDiscoveryProvider: ContentDiscoveryProvider = {
       ).filter((p) => scrapeCreatorsPlatforms().includes(p)),
     );
 
+    const sortBy = input.sortBy ?? "relevance";
     const tasks: Array<Promise<SearchPostResult[]>> = [];
     if (wanted.has("tiktok")) {
       tasks.push(
@@ -434,6 +437,7 @@ export const scrapeCreatorsDiscoveryProvider: ContentDiscoveryProvider = {
           maxResults,
           minViews,
           retrievedAt,
+          sortBy,
         }),
       );
     }
@@ -456,6 +460,7 @@ export const scrapeCreatorsDiscoveryProvider: ContentDiscoveryProvider = {
           maxResults,
           minViews,
           retrievedAt,
+          sortBy,
         }),
       );
     }

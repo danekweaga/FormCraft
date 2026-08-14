@@ -17,6 +17,8 @@ export type SearchPostsInput = {
   maxResults?: number;
   minViews?: number;
   language?: string;
+  /** Prefer recency on incremental For You pulls. */
+  sortBy?: "relevance" | "latest";
 };
 
 export type SearchCreatorsInput = {

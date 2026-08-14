@@ -20,7 +20,7 @@ export default async function AnalyzeDetailPage({
   const { data: analysis } = await supabase
     .from("video_analyses")
     .select(
-      "id, title, analysis_mode, subject_type, source_type, status, has_visual_evidence, has_audio_evidence, model_name, prompt_version, created_at, result, transcript, storage_path, processing_stages, knowledge_sources, analysis_version, parent_analysis_id, saved, estimated_cost_usd",
+      "id, title, analysis_mode, subject_type, source_type, status, has_visual_evidence, has_audio_evidence, model_name, prompt_version, created_at, result, transcript, storage_path, processing_stages, knowledge_sources, analysis_version, parent_analysis_id, saved, estimated_cost_usd, transcript_provider, processing_error",
     )
     .eq("id", id)
     .eq("user_id", user.id)

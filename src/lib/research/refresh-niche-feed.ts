@@ -33,6 +33,21 @@ function laterTimestamp(
   return null;
 }
 
+async function clearRefreshClaim(params: {
+  supabase: SupabaseClient;
+  userId: string;
+  scanId: string;
+  parameters: Record<string, unknown>;
+}) {
+  const next = { ...params.parameters };
+  delete next.refresh_claimed_at;
+  await params.supabase
+    .from("research_scans")
+    .update({ parameters: next })
+    .eq("id", params.scanId)
+    .eq("user_id", params.userId);
+}
+
 /**
  * On app open, pull only videos posted since the last niche scan into the
  * research library. Watchlist creators stay on the dedicated monitor so this
@@ -93,11 +108,26 @@ export async function refreshNicheFeedIfStale(params: {
     return { ran: false, reason: "claimed" };
   }
 
-  await runResearchScan({
-    supabase: params.supabase,
-    userId: params.userId,
-    scanId: auto.scanId,
-  });
+  try {
+    await runResearchScan({
+      supabase: params.supabase,
+      userId: params.userId,
+      scanId: auto.scanId,
+    });
+  } catch (error) {
+    await clearRefreshClaim({
+      supabase: params.supabase,
+      userId: params.userId,
+      scanId: auto.scanId,
+      parameters,
+    });
+    console.error(
+      `[research] visit refresh failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return { ran: false, reason: "failed" };
+  }
   revalidatePath("/research");
   revalidatePath("/today");
   return { ran: true, reason: scan?.last_run_at ? "incremental" : "initial" };
