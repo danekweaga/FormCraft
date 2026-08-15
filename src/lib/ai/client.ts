@@ -127,6 +127,7 @@ export function createFormCraftAI(supabase: SupabaseClient): AIProvider {
         userId: input.userId,
         taskType: input.taskType,
         preferPremium: input.preferPremium || input.role === "premium",
+        role: input.role,
       });
       const model =
         input.modelName ??

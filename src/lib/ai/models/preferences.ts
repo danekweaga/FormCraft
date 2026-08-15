@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveModelName, resolveModelTier } from "./router";
 import type {
   ContextTaskType,
+  ModelTier,
   TaskModelSelection,
 } from "./types";
 
@@ -11,15 +12,28 @@ export function isValidOpenRouterModelId(value: string): boolean {
   return value.length <= 200 && MODEL_ID_PATTERN.test(value);
 }
 
+function roleToTier(
+  role: ModelTier | "multimodal" | undefined,
+): ModelTier | null {
+  if (!role) return null;
+  if (role === "multimodal") return "multimodal";
+  return role;
+}
+
 export async function resolveTaskModel(
   supabase: SupabaseClient,
   params: {
     userId: string;
     taskType: ContextTaskType;
     preferPremium?: boolean;
+    /** Explicit call-site tier wins over the task default when no user preference. */
+    role?: ModelTier | "multimodal";
   },
 ): Promise<TaskModelSelection> {
-  const modelTier = resolveModelTier(params.taskType, params.preferPremium);
+  const roleTier = roleToTier(params.role);
+  const modelTier = params.preferPremium
+    ? "premium"
+    : (roleTier ?? resolveModelTier(params.taskType));
   const { data } = await supabase
     .from("ai_model_preferences")
     .select("model_name")

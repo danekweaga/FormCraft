@@ -205,3 +205,85 @@ export async function generateWeeklyReviewAction(): Promise<{
     };
   }
 }
+
+export async function savePostToIdeaBankAction(
+  postId: string,
+): Promise<{ error?: string; success?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+  if (!postId) return { error: "Missing post." };
+
+  const { data: post } = await supabase
+    .from("content_posts")
+    .select("id, title, caption, external_url, platform, views, hook_text")
+    .eq("id", postId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!post) return { error: "Post not found." };
+
+  let collectionId: string | null = null;
+  const { data: existing } = await supabase
+    .from("knowledge_collections")
+    .select("id")
+    .eq("user_id", user.id)
+    .ilike("name", "Idea Bank")
+    .maybeSingle();
+  if (existing?.id) {
+    collectionId = existing.id;
+  } else {
+    const { data: created, error } = await supabase
+      .from("knowledge_collections")
+      .insert({
+        user_id: user.id,
+        name: "Idea Bank",
+        description:
+          "Saved posts from Content Strategy Audit — remake, analyze, or watch later.",
+      })
+      .select("id")
+      .single();
+    if (error || !created) {
+      return { error: error?.message ?? "Could not create Idea Bank." };
+    }
+    collectionId = created.id;
+  }
+
+  const title =
+    post.title?.trim() ||
+    post.hook_text?.trim() ||
+    post.caption?.trim().slice(0, 80) ||
+    "Saved post";
+  const body = [
+    `Platform: ${post.platform}`,
+    post.views != null ? `Views: ${post.views}` : null,
+    post.hook_text ? `Hook: ${post.hook_text}` : null,
+    post.external_url ? `URL: ${post.external_url}` : null,
+    "",
+    post.caption?.trim() || "",
+    "",
+    `My Content: /my-content/${post.id}`,
+  ]
+    .filter((line) => line !== null)
+    .join("\n");
+
+  const { error: noteError } = await supabase.from("knowledge_documents").insert({
+    user_id: user.id,
+    collection_id: collectionId,
+    title: `Idea · ${title}`.slice(0, 200),
+    description: "Saved from Content Strategy Audit",
+    source_type: "manual_note",
+    knowledge_type: "example",
+    raw_text: body,
+    include_in_ai: true,
+    importance: "normal",
+    processing_status: "ready",
+  });
+  if (noteError) return { error: noteError.message };
+
+  revalidatePath("/knowledge");
+  revalidatePath("/performance");
+  revalidatePath("/dashboard");
+  return { success: "Saved to Idea Bank." };
+}

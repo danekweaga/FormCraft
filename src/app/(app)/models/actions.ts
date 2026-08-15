@@ -79,6 +79,27 @@ export async function saveModelPreferences(
   return { success: "Model assignments saved." };
 }
 
+export async function resetModelPreferencesToDefaults(
+  _previous: ModelSettingsState,
+  _formData: FormData,
+): Promise<ModelSettingsState> {
+  void _formData;
+  const auth = await requireUser();
+  if (!auth) return { error: "You must be signed in." };
+
+  const { error } = await auth.supabase
+    .from("ai_model_preferences")
+    .delete()
+    .eq("user_id", auth.user.id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/models");
+  return {
+    success:
+      "Cleared personal overrides. Tasks now use FormCraft defaults: DeepSeek (cheap), Gemini 3.7 Flash (standard), Claude Sonnet 4.6 (premium).",
+  };
+}
+
 export async function testOpenRouterModel(
   _previous: ModelSettingsState,
   formData: FormData,

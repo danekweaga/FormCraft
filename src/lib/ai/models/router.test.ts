@@ -34,7 +34,9 @@ describe("resolveModelName", () => {
     expect(TASK_MODEL_TIER.content_analysis).toBe("premium");
     expect(TASK_MODEL_TIER.pre_publish_review).toBe("premium");
     expect(TASK_MODEL_TIER.editing_guidance).toBe("premium");
-    expect(TASK_MODEL_TIER.script_generation).toBe("standard");
+    expect(TASK_MODEL_TIER.script_generation).toBe("premium");
+    expect(TASK_MODEL_TIER.weekly_review).toBe("premium");
     expect(TASK_MODEL_TIER.content_classification).toBe("cheap");
+    expect(TASK_MODEL_TIER.lesson_generation).toBe("cheap");
   });
 });

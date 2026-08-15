@@ -29,21 +29,24 @@ export const CONTEXT_BUDGETS: Record<ModelTier, number> = {
 };
 
 export const TASK_MODEL_TIER: Record<ContextTaskType, ModelTier> = {
+  // Cheap = DeepSeek — tagging / light automation
   content_classification: "cheap",
   audience_analysis: "cheap",
-  lesson_generation: "standard",
+  lesson_generation: "cheap",
+  today_recommendation: "cheap",
+  // Standard = Gemini — mid-weight synthesis
   idea_evaluation: "standard",
-  content_analysis: "premium",
   experiment_analysis: "standard",
   roadmap_review: "standard",
-  performance_review: "standard",
-  weekly_review: "standard",
-  research_analysis: "standard",
   content_remix: "standard",
+  // Premium = Claude — deep creator judgment
+  content_analysis: "premium",
+  performance_review: "premium",
+  weekly_review: "premium",
+  research_analysis: "premium",
   pre_publish_review: "premium",
-  today_recommendation: "standard",
-  idea_generation: "standard",
-  script_generation: "standard",
+  idea_generation: "premium",
+  script_generation: "premium",
   editing_guidance: "premium",
 };
 

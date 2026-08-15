@@ -12,9 +12,11 @@ import {
 } from "@/lib/ai/models/types";
 import {
   saveModelPreferences,
+  resetModelPreferencesToDefaults,
   testOpenRouterModel,
   type ModelSettingsState,
 } from "./actions";
+import { DEFAULT_OPENROUTER_MODELS } from "@/lib/ai/models/router";
 
 type ModelOption = {
   id: string;
@@ -48,6 +50,10 @@ export function ModelSettingsForm({
     saveModelPreferences,
     initialState,
   );
+  const [resetState, resetAction, resetPending] = useActionState(
+    resetModelPreferencesToDefaults,
+    initialState,
+  );
   const [testState, testAction, testPending] = useActionState(
     testOpenRouterModel,
     initialState,
@@ -55,6 +61,45 @@ export function ModelSettingsForm({
 
   return (
     <div className="space-y-6">
+      <div className="rounded-lg border border-outline-variant/20 bg-surface-container-lowest p-4">
+        <p className="font-semibold text-on-background">FormCraft defaults</p>
+        <p className="mt-1 text-sm text-secondary">
+          Unless you override a task below, routing uses these OpenRouter models
+          by tier — not “everything on Gemini.”
+        </p>
+        <ul className="mt-3 grid gap-2 sm:grid-cols-3 text-sm">
+          <li>
+            <span className="font-semibold">Cheap</span>
+            <p className="text-xs text-secondary break-all">
+              {DEFAULT_OPENROUTER_MODELS.cheap}
+            </p>
+          </li>
+          <li>
+            <span className="font-semibold">Standard</span>
+            <p className="text-xs text-secondary break-all">
+              {DEFAULT_OPENROUTER_MODELS.standard}
+            </p>
+          </li>
+          <li>
+            <span className="font-semibold">Premium</span>
+            <p className="text-xs text-secondary break-all">
+              {DEFAULT_OPENROUTER_MODELS.premium}
+            </p>
+          </li>
+        </ul>
+        <form action={resetAction} className="mt-4">
+          <Button type="submit" variant="outline" disabled={resetPending}>
+            {resetPending ? "Resetting…" : "Reset all tasks to defaults"}
+          </Button>
+        </form>
+        {resetState.success ? (
+          <p className="mt-2 text-sm text-primary-container">{resetState.success}</p>
+        ) : null}
+        {resetState.error ? (
+          <p className="mt-2 text-sm text-error">{resetState.error}</p>
+        ) : null}
+      </div>
+
       <div className="rounded-lg border border-outline-variant/20 bg-surface-container-lowest p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

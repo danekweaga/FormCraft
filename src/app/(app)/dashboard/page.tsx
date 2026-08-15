@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { RefreshAllConnectedButton } from "@/app/(app)/connections/connection-actions";
 import { ContentRemix } from "@/app/(app)/performance/content-remix";
+import { ContentStrategyAudit } from "@/app/(app)/performance/content-strategy-audit";
 import { GenerateWeeklyReviewButton } from "@/app/(app)/performance/weekly-actions";
 import { MaterialIcon } from "@/components/layout/material-icon";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +18,6 @@ import {
 import {
   aggregateInstagramAccountTotals,
   buildAccountFollowerSeries,
-  buildDashboardTopicAudits,
   filterPostsByConnection,
   filterPostsByPreviousRange,
   percentageChange,
@@ -41,8 +41,7 @@ import { getInstagramAccountInsights } from "@/lib/social/instagram-account-insi
 import type { InstagramAccountInsights } from "@/lib/social/types";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardCharts } from "./dashboard-charts";
-import { TopicStrategyAudit } from "./topic-strategy-audit";
-
+import { takeRecentPostsForAudit } from "@/lib/my-content/strategy-audit";
 type SearchParams = Promise<{ range?: string; channel?: string }>;
 
 type ConnectionRow = {
@@ -288,7 +287,6 @@ export default async function DashboardPage({
     selectedSummary.postCount,
     previousSummary.postCount || null,
   );
-  const topics = buildDashboardTopicAudits(selectedPosts).slice(0, 8);
   const remix = buildRemixIngredients(selectedPosts);
   const recentVideos = [...selectedPosts]
     .filter((post) => typeof post.views === "number")
@@ -538,7 +536,7 @@ export default async function DashboardPage({
               Content strategy audit
             </h2>
             <p className="mt-1 text-secondary">
-              Topic patterns, supporting videos, and confidence based on {selectedPosts.length} selected post{selectedPosts.length === 1 ? "" : "s"}.
+              Topics, hooks, formats, and scriptwriting multipliers from your last 30 videos — play, analyze, or save clips to Idea Bank.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -553,7 +551,10 @@ export default async function DashboardPage({
 
         <Card className="border-outline-variant/20 bg-surface-primary paper-shadow">
           <CardContent className="p-5 md:p-6">
-            <TopicStrategyAudit audits={topics} />
+            <ContentStrategyAudit
+              posts={takeRecentPostsForAudit(selectedPosts, 30)}
+              sampleLabel="your last 30 videos"
+            />
           </CardContent>
         </Card>
       </section>

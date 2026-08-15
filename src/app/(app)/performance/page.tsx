@@ -41,6 +41,7 @@ import { getInstagramAccountInsights } from "@/lib/social/instagram-account-insi
 import type { InstagramAccountInsights } from "@/lib/social/types";
 import { createClient } from "@/lib/supabase/server";
 import { ContentRemix } from "./content-remix";
+import { ContentStrategyAudit } from "./content-strategy-audit";
 import { GrowthChart } from "./growth-chart";
 import { ImpressionsHeatmap } from "./impressions-heatmap";
 import { PeriodReviewPanel } from "./period-review-panel";
@@ -49,6 +50,7 @@ import {
   TopicClassificationButton,
 } from "./topic-classification-button";
 import { GenerateWeeklyReviewButton } from "./weekly-actions";
+import { takeRecentPostsForAudit } from "@/lib/my-content/strategy-audit";
 
 type SearchParams = Promise<{ range?: string }>;
 
@@ -281,6 +283,14 @@ export default async function PerformancePage({
       {allPosts.length > 0 ? (
         <div className="mb-6 space-y-6">
           <PeriodReviewPanel posts={allPosts} />
+          <Card className="border-outline-variant/20 bg-surface-primary paper-shadow">
+            <CardContent className="p-6">
+              <ContentStrategyAudit
+                posts={takeRecentPostsForAudit(allPosts, 30)}
+                sampleLabel="your last 30 videos"
+              />
+            </CardContent>
+          </Card>
           <Card className="border-outline-variant/20 bg-surface-primary paper-shadow">
             <CardContent className="p-6">
               <GrowthChart
