@@ -97,3 +97,62 @@ export async function attachExperimentPost(
     };
   }
 }
+
+export async function detachExperimentPost(
+  _prev: ExperimentActionState,
+  formData: FormData,
+): Promise<ExperimentActionState> {
+  const parsed = z
+    .object({
+      experimentId: z.string().uuid(),
+      postId: z.string().uuid(),
+    })
+    .safeParse({
+      experimentId: formData.get("experimentId"),
+      postId: formData.get("postId"),
+    });
+  if (!parsed.success) return { error: "Choose a valid experiment and post." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+
+  const { data: experiment } = await supabase
+    .from("content_experiments")
+    .select("id, post_ids")
+    .eq("id", parsed.data.experimentId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!experiment) return { error: "Experiment not found." };
+
+  const nextIds = ((experiment.post_ids as string[]) ?? []).filter(
+    (id) => id !== parsed.data.postId,
+  );
+  const { error } = await supabase
+    .from("content_experiments")
+    .update({ post_ids: nextIds })
+    .eq("id", experiment.id)
+    .eq("user_id", user.id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/experiments");
+  revalidatePath("/my-content");
+  return { success: true, message: "Post detached from experiment." };
+}
+
+export async function deleteExperimentAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user || !id) return;
+  await supabase
+    .from("content_experiments")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id);
+  revalidatePath("/experiments");
+}

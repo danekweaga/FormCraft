@@ -125,7 +125,23 @@ export async function saveCreatorProfile(
   };
 }
 
-export async function rewriteBioFromPostsAction(): Promise<BioRewriteActionState> {
+const mustIncludeSchema = z
+  .string()
+  .trim()
+  .max(500, "Keep must-include notes under 500 characters.");
+
+export async function rewriteBioFromPostsAction(
+  mustInclude = "",
+): Promise<BioRewriteActionState> {
+  const parsedMust = mustIncludeSchema.safeParse(mustInclude);
+  if (!parsedMust.success) {
+    return {
+      error:
+        parsedMust.error.issues[0]?.message ??
+        "Check the must-include notes for your bio.",
+    };
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -175,6 +191,7 @@ export async function rewriteBioFromPostsAction(): Promise<BioRewriteActionState
       audience: profile?.my_audience ?? "",
       pillars: profile?.content_pillars ?? [],
       currentBio: profile?.social_bio ?? "",
+      mustInclude: parsedMust.data,
       posts: mapped,
     });
     return { result, usedLlm };

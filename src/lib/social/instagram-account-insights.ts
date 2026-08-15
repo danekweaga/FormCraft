@@ -32,6 +32,7 @@ const instagramAccountInsightsSchema = z.object({
       date: z.string(),
       reach: nullableMetric,
       followerCount: nullableMetric,
+      views: nullableMetric.optional(),
     }),
   ),
   audience: z.object({

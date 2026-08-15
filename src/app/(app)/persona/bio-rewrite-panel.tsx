@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   rewriteBioFromPostsAction,
   type BioRewriteActionState,
@@ -17,6 +19,7 @@ export function BioRewritePanel({
 }) {
   const [pending, startTransition] = useTransition();
   const [state, setState] = useState<BioRewriteActionState>({});
+  const [mustInclude, setMustInclude] = useState("");
 
   const canRewrite = postCount >= 3;
 
@@ -35,8 +38,9 @@ export function BioRewritePanel({
           </h3>
           <p className="mt-1 text-xs leading-relaxed text-secondary">
             Draft Instagram-length bios from themes in your recent owned videos.
-            FormCraft never publishes to Instagram for you — apply a draft, then
-            save the profile.
+            Add anything that must stay in the bio, then rewrite. FormCraft never
+            publishes to Instagram for you — apply a draft, then save the
+            profile.
           </p>
         </div>
         <Button
@@ -46,13 +50,38 @@ export function BioRewritePanel({
           onClick={() =>
             startTransition(async () => {
               setState({});
-              const next = await rewriteBioFromPostsAction();
+              const next = await rewriteBioFromPostsAction(mustInclude);
               setState(next);
             })
           }
         >
           {pending ? "Rewriting…" : "Rewrite from my posts"}
         </Button>
+      </div>
+
+      <div className="mt-4 space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="bio_must_include">What to keep in the bio</Label>
+          <span className="text-xs text-secondary">
+            {mustInclude.length}/500
+          </span>
+        </div>
+        <Textarea
+          id="bio_must_include"
+          name="bio_must_include"
+          rows={4}
+          value={mustInclude}
+          onChange={(event) => setMustInclude(event.currentTarget.value)}
+          maxLength={500}
+          placeholder={
+            "Examples:\n• CS student @ Waterloo\n• Building in public\n• Link in bio for free Notion template\n• Soft CTA: DM “portfolio”"
+          }
+        />
+        <p className="text-xs leading-relaxed text-secondary">
+          Names, fixed lines, CTAs, or facts the rewrite should not drop. Separate
+          with new lines or commas. These take priority over post themes when
+          space is tight.
+        </p>
       </div>
 
       {!canRewrite ? (

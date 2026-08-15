@@ -23,6 +23,7 @@ import {
   buildGrowthSeries,
   buildYearHeatmap,
   snapshotWindowStart,
+  toDayKey,
   type MetricSnapshotRow,
 } from "@/lib/my-content/growth-series";
 import {
@@ -30,13 +31,19 @@ import {
   summarizeAccountPerformance,
 } from "@/lib/my-content/performance";
 import type { ContentPostRow } from "@/lib/my-content/schemas";
-import { buildAccountFollowerSeries } from "@/lib/my-content/account-dashboard";
+import {
+  accountInsightsFollowerGain,
+  accountInsightsViewsTotal,
+  buildAccountFollowerGainSeries,
+  buildAccountViewsSeries,
+} from "@/lib/my-content/account-dashboard";
 import { getInstagramAccountInsights } from "@/lib/social/instagram-account-insights";
 import type { InstagramAccountInsights } from "@/lib/social/types";
 import { createClient } from "@/lib/supabase/server";
 import { ContentRemix } from "./content-remix";
 import { GrowthChart } from "./growth-chart";
 import { ImpressionsHeatmap } from "./impressions-heatmap";
+import { PeriodReviewPanel } from "./period-review-panel";
 import {
   SavedTranscriptMatcher,
   TopicClassificationButton,
@@ -51,6 +58,16 @@ function number(value: number | null, suffix = "") {
 
 function labelForRange(range: PerformanceRange) {
   return range === "all" ? "All time" : `${range} days`;
+}
+
+function mapFromPoints(
+  points: Array<{ date: string; value: number }>,
+): Map<string, number> {
+  return new Map(points.map((point) => [point.date, point.value]));
+}
+
+function sumPoints(points: Array<{ date: string; value: number }>): number {
+  return points.reduce((total, point) => total + point.value, 0);
 }
 
 export default async function PerformancePage({
@@ -149,33 +166,79 @@ export default async function PerformancePage({
   const allPosts = (posts ?? []) as ContentPostRow[];
   const metricSnapshots = (snapshots ?? []) as MetricSnapshotRow[];
   const seriesDays = range === "all" ? 365 : Number(range);
+  const instagramInsights = (connections ?? [])
+    .map((connection) => getInstagramAccountInsights(connection.metadata))
+    .filter((insight): insight is InstagramAccountInsights => Boolean(insight));
+
+  const accountViewDays =
+    instagramInsights.length > 0
+      ? buildAccountViewsSeries({
+          insights: instagramInsights,
+          days: seriesDays,
+        })
+      : null;
+  const accountViewsTotal = accountInsightsViewsTotal(instagramInsights);
+  const hasDailyAccountViews = Boolean(
+    accountViewDays?.some((point) => point.value > 0),
+  );
   const impressionsSeries = buildGrowthSeries({
     posts: allPosts,
     snapshots: metricSnapshots,
     metric: "impressions",
     days: seriesDays,
+    externalDaily: hasDailyAccountViews
+      ? mapFromPoints(accountViewDays!)
+      : accountViewsTotal != null && accountViewsTotal > 0
+        ? new Map([[toDayKey(new Date()), accountViewsTotal]])
+        : null,
+    externalBasis: hasDailyAccountViews
+      ? "account_daily_views"
+      : accountViewsTotal != null && accountViewsTotal > 0
+        ? "account_period_views"
+        : undefined,
   });
-  const instagramInsights = (connections ?? [])
-    .map((connection) => getInstagramAccountInsights(connection.metadata))
-    .filter((insight): insight is InstagramAccountInsights => Boolean(insight));
-  const accountFollowerDays =
+
+  const followerGainDays =
     instagramInsights.length > 0
-      ? buildAccountFollowerSeries({
+      ? buildAccountFollowerGainSeries({
           insights: instagramInsights,
           days: seriesDays,
         })
       : null;
-  const followersSeries = buildGrowthSeries({
-    posts: allPosts,
-    snapshots: metricSnapshots,
-    metric: "followers",
-    days: seriesDays,
-    externalDaily:
-      accountFollowerDays && accountFollowerDays.some((point) => point.value > 0)
-        ? new Map(accountFollowerDays.map((point) => [point.date, point.value]))
-        : null,
-    externalBasis: "account_daily_followers",
-  });
+  const periodFollowerGain = accountInsightsFollowerGain(instagramInsights);
+  const gainFromDaily = followerGainDays ? sumPoints(followerGainDays) : 0;
+  const hasDailyFollowerGains = Boolean(
+    followerGainDays?.some((point) => point.value !== 0),
+  );
+  const preferPeriodFollows =
+    periodFollowerGain != null &&
+    periodFollowerGain !== 0 &&
+    (!hasDailyFollowerGains ||
+      Math.abs(gainFromDaily) < Math.abs(periodFollowerGain) * 0.5);
+  const followersSeries = preferPeriodFollows
+    ? buildGrowthSeries({
+        posts: allPosts,
+        snapshots: metricSnapshots,
+        metric: "followers",
+        days: seriesDays,
+        externalDaily: new Map([[toDayKey(new Date()), periodFollowerGain!]]),
+        externalBasis: "account_period_follows",
+      })
+    : hasDailyFollowerGains && followerGainDays
+      ? buildGrowthSeries({
+          posts: allPosts,
+          snapshots: metricSnapshots,
+          metric: "followers",
+          days: seriesDays,
+          externalDaily: mapFromPoints(followerGainDays),
+          externalBasis: "account_daily_followers",
+        })
+      : buildGrowthSeries({
+          posts: allPosts,
+          snapshots: metricSnapshots,
+          metric: "followers",
+          days: seriesDays,
+        });
   const heatmap = buildYearHeatmap({
     posts: allPosts,
     snapshots: metricSnapshots,
@@ -217,6 +280,7 @@ export default async function PerformancePage({
 
       {allPosts.length > 0 ? (
         <div className="mb-6 space-y-6">
+          <PeriodReviewPanel posts={allPosts} />
           <Card className="border-outline-variant/20 bg-surface-primary paper-shadow">
             <CardContent className="p-6">
               <GrowthChart

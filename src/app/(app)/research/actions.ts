@@ -1366,6 +1366,61 @@ export async function toggleWatchlistPausedAction(formData: FormData) {
   revalidatePath("/research");
 }
 
+export async function deleteWatchlistAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user || !id) return;
+  await supabase
+    .from("research_watchlist_members")
+    .delete()
+    .eq("watchlist_id", id)
+    .eq("user_id", user.id);
+  await supabase
+    .from("research_watchlists")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id);
+  revalidatePath("/research");
+  revalidatePath("/creators");
+}
+
+export async function removeCreatorFromWatchlistAction(formData: FormData) {
+  const watchlistId = String(formData.get("watchlistId") ?? "");
+  const creatorId = String(formData.get("creatorId") ?? "");
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user || !watchlistId || !creatorId) return;
+  await supabase
+    .from("research_watchlist_members")
+    .delete()
+    .eq("watchlist_id", watchlistId)
+    .eq("external_creator_id", creatorId)
+    .eq("user_id", user.id);
+  revalidatePath("/research");
+  revalidatePath("/creators");
+  revalidatePath(`/research/creators/${creatorId}`);
+}
+
+export async function deleteSavedResearchFilterAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user || !id) return;
+  await supabase
+    .from("research_scans")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id);
+  revalidatePath("/research");
+}
+
 export async function saveResearchFilterAction(
   _prev: ResearchActionState,
   formData: FormData,

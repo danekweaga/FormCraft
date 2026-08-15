@@ -66,6 +66,8 @@ export type InstagramAccountInsightDay = {
   date: string;
   reach: number | null;
   followerCount: number | null;
+  /** Daily account views when Meta returns them; older syncs may omit this. */
+  views?: number | null;
 };
 
 export type InstagramAccountInsights = {

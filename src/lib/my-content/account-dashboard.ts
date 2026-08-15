@@ -114,7 +114,108 @@ export function buildAccountFollowerSeries(params: {
   for (const insight of params.insights) {
     for (const point of insight.daily) {
       if (typeof point.followerCount !== "number") continue;
-      values.set(point.date, (values.get(point.date) ?? 0) + point.followerCount);
+      // Prefer the highest reading if multiple connections share a day.
+      values.set(
+        point.date,
+        Math.max(values.get(point.date) ?? 0, point.followerCount),
+      );
+    }
+  }
+
+  const points: DashboardPoint[] = [];
+  let lastKnown: number | null = null;
+  for (let time = start.getTime(); time <= end.getTime(); time += DAY_MS) {
+    const date = dateKey(new Date(time));
+    const known = values.get(date);
+    if (typeof known === "number") lastKnown = known;
+    points.push({ date, value: lastKnown ?? 0 });
+  }
+  return points;
+}
+
+/**
+ * Day-over-day follower change from absolute Instagram follower_count readings.
+ * Missing days stay at 0 gain (we do not invent a shape between sparse syncs).
+ */
+export function buildAccountFollowerGainSeries(params: {
+  insights: InstagramAccountInsights[];
+  days: number;
+  now?: Date;
+}): DashboardPoint[] {
+  const now = params.now ?? new Date();
+  const end = new Date(`${dateKey(now)}T00:00:00.000Z`);
+  const start = new Date(end.getTime() - (params.days - 1) * DAY_MS);
+  const known = new Map<string, number>();
+
+  for (const insight of params.insights) {
+    for (const point of insight.daily) {
+      if (typeof point.followerCount !== "number") continue;
+      known.set(
+        point.date,
+        Math.max(known.get(point.date) ?? 0, point.followerCount),
+      );
+    }
+  }
+
+  const ordered = [...known.entries()]
+    .filter(([date]) => {
+      const time = new Date(`${date}T00:00:00.000Z`).getTime();
+      return time >= start.getTime() && time <= end.getTime();
+    })
+    .sort((a, b) => a[0].localeCompare(b[0]));
+
+  const gains = new Map<string, number>();
+  for (let index = 1; index < ordered.length; index += 1) {
+    const [date, count] = ordered[index]!;
+    const previous = ordered[index - 1]![1];
+    gains.set(date, count - previous);
+  }
+
+  const points: DashboardPoint[] = [];
+  for (let time = start.getTime(); time <= end.getTime(); time += DAY_MS) {
+    const date = dateKey(new Date(time));
+    points.push({ date, value: gains.get(date) ?? 0 });
+  }
+  return points;
+}
+
+/** Net follows reported by Instagram for the insights window (follows − unfollows). */
+export function accountInsightsFollowerGain(
+  insights: InstagramAccountInsights[],
+): number | null {
+  let follows = 0;
+  let unfollows = 0;
+  let sawFollows = false;
+
+  for (const insight of insights) {
+    if (typeof insight.totals.follows === "number") {
+      follows += insight.totals.follows;
+      sawFollows = true;
+    }
+    if (typeof insight.totals.unfollows === "number") {
+      unfollows += insight.totals.unfollows;
+    }
+  }
+
+  if (!sawFollows) return null;
+  return follows - unfollows;
+}
+
+export function buildAccountViewsSeries(params: {
+  insights: InstagramAccountInsights[];
+  days: number;
+  now?: Date;
+}): DashboardPoint[] {
+  const now = params.now ?? new Date();
+  const end = new Date(`${dateKey(now)}T00:00:00.000Z`);
+  const start = new Date(end.getTime() - (params.days - 1) * DAY_MS);
+  const values = new Map<string, number>();
+
+  for (const insight of params.insights) {
+    for (const point of insight.daily) {
+      const views = point.views;
+      if (typeof views !== "number") continue;
+      values.set(point.date, (values.get(point.date) ?? 0) + views);
     }
   }
 
@@ -124,6 +225,12 @@ export function buildAccountFollowerSeries(params: {
     points.push({ date, value: values.get(date) ?? 0 });
   }
   return points;
+}
+
+export function accountInsightsViewsTotal(
+  insights: InstagramAccountInsights[],
+): number | null {
+  return sumAvailable(insights.map((insight) => insight.totals.views));
 }
 
 export function aggregateInstagramAccountTotals(

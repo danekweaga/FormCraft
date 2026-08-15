@@ -5,15 +5,26 @@ import { AddToCanvasButton } from "@/components/canvas/add-to-canvas-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
+import { BuildFromHookStudio } from "./build-from-hook";
 import { CreateCaptureForm } from "./create-capture-form";
 import { CreateMyVersion } from "./create-my-version";
 
 export default async function CreatePage({
   searchParams,
 }: {
-  searchParams: Promise<{ researchItem?: string }>;
+  searchParams: Promise<{
+    researchItem?: string;
+    hook?: string;
+    hookType?: string;
+    topic?: string;
+  }>;
 }) {
-  const { researchItem } = await searchParams;
+  const params = await searchParams;
+  const researchItem = params.researchItem;
+  const hook = params.hook?.trim() ?? "";
+  const hookType = params.hookType?.trim() || null;
+  const topic = params.topic?.trim() || null;
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -33,10 +44,12 @@ export default async function CreatePage({
     <div>
       <PageHeader
         title="Build"
-        description="Move from an evidence-backed opportunity to your spin, idea, script, packaging, and Canvas lineage without bouncing between disconnected tools."
+        description="Start from a hook or research opportunity, dump your ideas, draft a script, then revise what you like and change what you don’t — or paste a script for FormCraft to grade and improve."
       />
 
-      {source ? (
+      {hook ? (
+        <BuildFromHookStudio hook={hook} hookType={hookType} topic={topic} />
+      ) : source ? (
         <CreateMyVersion
           source={{
             id: source.id,
@@ -55,13 +68,28 @@ export default async function CreatePage({
           <CreateCaptureForm />
           <Card className="border-outline-variant/20 bg-surface-primary paper-shadow">
             <CardHeader>
-              <CardTitle>Start from an opportunity</CardTitle>
-              <CardDescription>Use Discover to choose a real outlier or saved reference, then Create My Version asks for your spin before writing anything.</CardDescription>
+              <CardTitle>Start from a hook or opportunity</CardTitle>
+              <CardDescription>
+                Open Hooks and hit Build on any template, or pick a real outlier in
+                Discover and Create My Version.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Button asChild><Link href="/research?mode=for-you">Find content opportunities</Link></Button>
+              <div className="flex flex-wrap gap-2">
+                <Button asChild>
+                  <Link href="/hooks">Browse Hooks</Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/research?mode=for-you">Find opportunities</Link>
+                </Button>
+              </div>
               <div>
-                <AddToCanvasButton nodeType="draft" title="Blank draft" body="Start drafting here" label="Add blank draft to Canvas" />
+                <AddToCanvasButton
+                  nodeType="draft"
+                  title="Blank draft"
+                  body="Start drafting here"
+                  label="Add blank draft to Canvas"
+                />
               </div>
             </CardContent>
           </Card>

@@ -86,12 +86,31 @@ export function postsWithUsableText(posts: BioRewritePost[]): BioRewritePost[] {
   });
 }
 
+function mustIncludeLines(mustInclude: string): string[] {
+  return mustInclude
+    .split(/[\n,]+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function weaveMustInclude(base: string, mustInclude: string): string {
+  const bits = mustIncludeLines(mustInclude);
+  if (bits.length === 0) return base.slice(0, 150);
+  const extras = bits.join(" · ");
+  const joined = base.trim()
+    ? `${base.trim()}\n${extras}`
+    : extras;
+  return joined.slice(0, 150);
+}
+
 /** Heuristic fallback when the model is unavailable. */
 export function heuristicBioRewrite(params: {
   whatIMake: string;
   audience: string;
   pillars: string[];
   currentBio: string;
+  mustInclude?: string;
   posts: BioRewritePost[];
 }): BioRewriteResult {
   const themes = countPostThemes(params.posts)
@@ -104,24 +123,33 @@ export function heuristicBioRewrite(params: {
     audience: params.audience,
     pillars: params.pillars.length > 0 ? params.pillars : themeNames,
   });
+  const must = params.mustInclude?.trim() ?? "";
 
   const variants: BioRewriteResult["variants"] = [];
   if (fromPosts) {
     const audienceBit = params.audience.trim().split(/\s+/).slice(0, 6).join(" ");
-    let bio = audienceBit
-      ? `${fromPosts}\nFor ${audienceBit}`.slice(0, 150)
-      : fromPosts.slice(0, 150);
+    const base = audienceBit
+      ? `${fromPosts}\nFor ${audienceBit}`
+      : fromPosts;
     variants.push({
-      bio,
-      rationale:
-        "Built from the themes that show up most often in your recent owned posts.",
+      bio: weaveMustInclude(base, must),
+      rationale: must
+        ? "Built from recurring post themes, then folded in what you asked to keep."
+        : "Built from the themes that show up most often in your recent owned posts.",
     });
   }
   if (strategy && strategy !== variants[0]?.bio) {
     variants.push({
-      bio: strategy.slice(0, 150),
-      rationale:
-        "Combines your saved strategy with the pillars inferred from recent posts.",
+      bio: weaveMustInclude(strategy, must),
+      rationale: must
+        ? "Combines strategy, post pillars, and the lines you marked as must-include."
+        : "Combines your saved strategy with the pillars inferred from recent posts.",
+    });
+  }
+  if (must && variants.length === 0) {
+    variants.push({
+      bio: weaveMustInclude("", must),
+      rationale: "Started from the must-include notes you provided.",
     });
   }
   if (variants.length === 0 && params.currentBio.trim()) {
@@ -150,14 +178,17 @@ export async function rewriteBioFromPosts(params: {
   audience: string;
   pillars: string[];
   currentBio: string;
+  mustInclude?: string;
   posts: BioRewritePost[];
 }): Promise<{ result: BioRewriteResult; usedLlm: boolean }> {
   const usable = postsWithUsableText(params.posts).slice(0, 40);
+  const mustInclude = (params.mustInclude ?? "").trim().slice(0, 500);
   const fallback = heuristicBioRewrite({
     whatIMake: params.whatIMake,
     audience: params.audience,
     pillars: params.pillars,
     currentBio: params.currentBio,
+    mustInclude,
     posts: usable,
   });
 
@@ -184,7 +215,7 @@ export async function rewriteBioFromPosts(params: {
       userId: params.userId,
       taskType: "idea_generation",
       role: "standard",
-      promptVersion: "bio-rewrite-from-posts-v1",
+      promptVersion: "bio-rewrite-from-posts-v2",
       schema: bioRewriteSchema,
       maxOutputTokens: 900,
       messages: [
@@ -197,6 +228,8 @@ export async function rewriteBioFromPosts(params: {
             "- Reflect recurring themes in the posts, not aspirational niches they never cover.",
             "- Do not invent credentials, follower counts, job titles, or links.",
             "- Current bio is optional tone reference only.",
+            "- If the creator lists must-include notes, weave those facts/phrases into every variant when space allows. Prefer their exact wording for names, CTAs, and fixed lines.",
+            "- Must-include notes win over post themes when they conflict for limited character space.",
             "- Return 2-3 variants with short rationales.",
             "Return JSON matching the schema exactly.",
           ].join("\n"),
@@ -209,6 +242,7 @@ export async function rewriteBioFromPosts(params: {
             `Saved audience:\n${params.audience || "(empty)"}`,
             `Saved pillars: ${params.pillars.join(", ") || "(none)"}`,
             `Current bio:\n${params.currentBio || "(empty)"}`,
+            `Must include in the bio (creator-requested — prioritize):\n${mustInclude || "(none)"}`,
             `Observed theme counts: ${themes || "(none)"}`,
             `Recent owned posts:\n${evidence}`,
           ].join("\n\n"),

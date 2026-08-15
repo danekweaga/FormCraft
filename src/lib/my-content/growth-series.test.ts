@@ -152,22 +152,35 @@ describe("buildGrowthSeries", () => {
     expect(series.basis).toBe("publish_date_attribution");
   });
 
-  it("can plot Instagram account follower totals via externalDaily", () => {
+  it("can plot Instagram account follower gains via externalDaily", () => {
     const series = buildGrowthSeries({
       posts: [post({ id: "a", followers_gained: null })],
       metric: "followers",
       days: 3,
       now: NOW,
       externalDaily: new Map([
-        ["2026-08-07", 1000],
-        ["2026-08-08", 1010],
-        ["2026-08-09", 1025],
+        ["2026-08-07", 0],
+        ["2026-08-08", 10],
+        ["2026-08-09", 15],
       ]),
       externalBasis: "account_daily_followers",
     });
     expect(series.basis).toBe("account_daily_followers");
-    expect(series.total).toBe(1025);
-    expect(series.points.at(-1)?.value).toBe(1025);
+    expect(series.total).toBe(25);
+    expect(series.points.at(-1)?.value).toBe(15);
+  });
+
+  it("sums period follow totals credited to one day", () => {
+    const series = buildGrowthSeries({
+      posts: [post({ id: "a", followers_gained: null })],
+      metric: "followers",
+      days: 3,
+      now: NOW,
+      externalDaily: new Map([["2026-08-09", 155]]),
+      externalBasis: "account_period_follows",
+    });
+    expect(series.basis).toBe("account_period_follows");
+    expect(series.total).toBe(155);
   });
 
   it("returns zero-valued days rather than gaps", () => {

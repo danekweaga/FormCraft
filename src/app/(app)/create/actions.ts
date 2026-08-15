@@ -482,3 +482,472 @@ export async function generateScriptFromDirectionAction(
     fallbackReason: ai.fallbackReason,
   };
 }
+
+const scriptReviewSchema = z.object({
+  overallGrade: z.enum(["A", "B", "C", "D"]),
+  summary: z.string(),
+  strengths: z.array(z.string()).min(1).max(6),
+  weaknesses: z.array(z.string()).min(1).max(6),
+  keepAsIs: z.array(z.string()).max(6).default([]),
+  changeNext: z.array(z.string()).max(6).default([]),
+  improvedScript: z.string(),
+  title: z.string().default("Revised script"),
+});
+
+export type ScriptReviewResult = z.infer<typeof scriptReviewSchema>;
+
+export type HookBuildState = {
+  error?: string;
+  package?: ScriptPackage;
+  review?: ScriptReviewResult;
+  boardId?: string;
+  scriptNodeId?: string;
+  usedLlm?: boolean;
+  fallbackReason?: string;
+  mode?: "generate" | "revise" | "grade";
+};
+
+async function ensureHookBuildBoard(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  userId: string;
+  title: string;
+}) {
+  const { data: existing } = await params.supabase
+    .from("canvas_boards")
+    .select("id")
+    .eq("user_id", params.userId)
+    .ilike("title", "Hook builds")
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existing?.id) return existing.id;
+
+  const { data: created, error } = await params.supabase
+    .from("canvas_boards")
+    .insert({
+      user_id: params.userId,
+      title: "Hook builds",
+      description: "Scripts started from the Hooks library.",
+    })
+    .select("id")
+    .single();
+  if (error || !created) throw new Error(error?.message ?? "Could not create Hook builds board.");
+  return created.id;
+}
+
+export async function buildScriptFromHookAction(
+  _previous: HookBuildState,
+  formData: FormData,
+): Promise<HookBuildState> {
+  const hook = String(formData.get("hook") ?? "").trim();
+  const ideas = String(formData.get("ideas") ?? "").trim();
+  const hookType = String(formData.get("hookType") ?? "").trim();
+  const topic = String(formData.get("topic") ?? "").trim();
+  if (hook.length < 4) return { error: "Pick a hook first." };
+  if (ideas.length < 20) {
+    return { error: "Paste at least a short idea dump (20+ characters) before generating." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+
+  const context = await buildFormCraftContext(supabase, {
+    userId: user.id,
+    taskType: "script_generation",
+    query: `${hook} ${ideas}`,
+  });
+
+  const fallback: ScriptPackage = {
+    title: topic || "Hook-led draft",
+    script: [
+      hook,
+      "",
+      `Here's my take: ${ideas.slice(0, 400)}`,
+      "",
+      "Keep the promise from the hook, deliver one clear proof beat, then land the takeaway.",
+      "",
+      "If this helped, follow for the next one.",
+    ].join("\n"),
+    caption: `${hook}\n\n${ideas.slice(0, 180)}`,
+    hashtags: [],
+    searchTerms: (topic || hook).split(/\s+/).slice(0, 6),
+    coverText: hook.slice(0, 60),
+    thumbnailConcept: "Face + on-screen text that matches the hook promise.",
+    openingVisual: "Show the subject of the hook in frame one.",
+    rehooks: ["But here's the part people miss.", "So what do you actually do?"],
+    proofBeats: ["One concrete example from your ideas"],
+    payoff: "One usable takeaway that fulfills the hook.",
+    primaryCTA: "Follow for more.",
+    qualityGateStatus: "Revise",
+    qualityGateNotes: ["Replace placeholders with real proof before publishing."],
+  };
+
+  const ai = await tryStructuredAI({
+    supabase,
+    fallback,
+    input: {
+      userId: user.id,
+      taskType: "script_generation",
+      role: "standard",
+      promptVersion: "hook-build-from-ideas-v1",
+      modelName: context.modelName,
+      cacheKey: hashAiInput(["hook-build-from-ideas-v1", hook, ideas, context.provenance]),
+      maxOutputTokens: 2400,
+      temperature: 0.5,
+      schema: scriptPackageSchema,
+      messages: [
+        {
+          role: "system",
+          content: [
+            "You write short-form scripts starting from a chosen hook and the creator's rough ideas.",
+            "Keep the hook's promise. Turn messy notes into natural spoken script. Do not invent proof or achievements.",
+            "Return a complete script package JSON matching the schema.",
+            HOOK_MACHINE_SYSTEM_PROMPT,
+            buildHookStoryPromptContext({
+              objective: "trust",
+              format: "talking head",
+              query: `${hook} ${ideas}`,
+              proofAvailable: false,
+            }),
+            contextToPromptBlock(context),
+          ].join("\n\n"),
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            hook,
+            hookType: hookType || null,
+            topic: topic || null,
+            creatorIdeas: ideas,
+          }),
+        },
+      ],
+    },
+  });
+
+  if (!ai.usedLlm) {
+    return {
+      error:
+        ai.fallbackReason ??
+        "OpenRouter did not write this script. Check OPENROUTER_API_KEY, then try again.",
+      mode: "generate",
+    };
+  }
+
+  try {
+    const boardId = await ensureHookBuildBoard({
+      supabase,
+      userId: user.id,
+      title: "Hook builds",
+    });
+    const scriptNode = await insertCanvasNode({
+      supabase,
+      userId: user.id,
+      boardId,
+      nodeType: "script",
+      title: ai.data.title,
+      body: ai.data.script,
+      payload: {
+        packaging: ai.data,
+        sourceHook: hook,
+        creatorIdeas: ideas,
+        mode: "hook_build",
+      },
+    });
+    for (const path of ["/create", "/hooks", `/canvas/${boardId}`, "/pre-publish"]) {
+      revalidatePath(path);
+    }
+    return {
+      package: ai.data,
+      boardId,
+      scriptNodeId: scriptNode.id,
+      usedLlm: true,
+      mode: "generate",
+    };
+  } catch (error) {
+    return {
+      package: ai.data,
+      usedLlm: true,
+      mode: "generate",
+      fallbackReason:
+        error instanceof Error
+          ? `Script ready, but Canvas save failed: ${error.message}`
+          : "Script ready, but Canvas save failed.",
+    };
+  }
+}
+
+export async function reviseScriptWithFeedbackAction(
+  _previous: HookBuildState,
+  formData: FormData,
+): Promise<HookBuildState> {
+  const hook = String(formData.get("hook") ?? "").trim();
+  const currentScript = String(formData.get("currentScript") ?? "").trim();
+  const likeParts = String(formData.get("likeParts") ?? "").trim();
+  const changeParts = String(formData.get("changeParts") ?? "").trim();
+  const boardId = String(formData.get("boardId") ?? "").trim();
+  const scriptNodeId = String(formData.get("scriptNodeId") ?? "").trim();
+
+  if (currentScript.length < 40) return { error: "Generate or paste a script first." };
+  if (likeParts.length < 4 && changeParts.length < 4) {
+    return { error: "Say what you like and/or what you want changed." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+
+  const context = await buildFormCraftContext(supabase, {
+    userId: user.id,
+    taskType: "script_generation",
+    query: `${hook} revise script`,
+  });
+
+  const fallback: ScriptPackage = {
+    title: "Revised draft",
+    script: currentScript,
+    caption: currentScript.slice(0, 180),
+    hashtags: [],
+    searchTerms: [],
+    coverText: (hook || currentScript).slice(0, 60),
+    thumbnailConcept: "Keep packaging aligned with the revised hook promise.",
+    openingVisual: "Match frame one to the revised opening line.",
+    rehooks: [],
+    proofBeats: [],
+    payoff: "Fulfill the opening promise.",
+    primaryCTA: "Follow for more.",
+    qualityGateStatus: "Revise",
+    qualityGateNotes: ["Manual revision needed — AI unavailable."],
+  };
+
+  const ai = await tryStructuredAI({
+    supabase,
+    fallback,
+    input: {
+      userId: user.id,
+      taskType: "script_generation",
+      role: "standard",
+      promptVersion: "hook-build-revise-v1",
+      modelName: context.modelName,
+      cacheKey: hashAiInput([
+        "hook-build-revise-v1",
+        currentScript,
+        likeParts,
+        changeParts,
+        context.provenance,
+      ]),
+      maxOutputTokens: 2400,
+      temperature: 0.45,
+      schema: scriptPackageSchema,
+      messages: [
+        {
+          role: "system",
+          content: [
+            "Revise a short-form script using creator feedback.",
+            "Preserve parts they like. Change only what they ask to change, unless a tiny fix is needed for clarity.",
+            "Do not invent proof. Keep voice natural and spoken.",
+            contextToPromptBlock(context),
+          ].join("\n\n"),
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            hook: hook || null,
+            currentScript,
+            likeParts,
+            changeParts,
+          }),
+        },
+      ],
+    },
+  });
+
+  if (!ai.usedLlm) {
+    return {
+      error:
+        ai.fallbackReason ??
+        "OpenRouter did not revise this script. Check OPENROUTER_API_KEY, then try again.",
+      mode: "revise",
+    };
+  }
+
+  if (boardId && scriptNodeId) {
+    await supabase
+      .from("canvas_nodes")
+      .update({
+        title: ai.data.title,
+        body: ai.data.script,
+        payload: {
+          packaging: ai.data,
+          sourceHook: hook,
+          feedback: { likeParts, changeParts },
+          mode: "hook_revise",
+        },
+      })
+      .eq("id", scriptNodeId)
+      .eq("user_id", user.id)
+      .eq("board_id", boardId);
+    revalidatePath(`/canvas/${boardId}`);
+  }
+
+  revalidatePath("/create");
+  return {
+    package: ai.data,
+    boardId: boardId || undefined,
+    scriptNodeId: scriptNodeId || undefined,
+    usedLlm: true,
+    mode: "revise",
+  };
+}
+
+export async function gradeAndImproveScriptAction(
+  _previous: HookBuildState,
+  formData: FormData,
+): Promise<HookBuildState> {
+  const hook = String(formData.get("hook") ?? "").trim();
+  const pastedScript = String(formData.get("pastedScript") ?? "").trim();
+  if (pastedScript.length < 40) {
+    return { error: "Paste a full script (40+ characters) to grade and improve." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+
+  const context = await buildFormCraftContext(supabase, {
+    userId: user.id,
+    taskType: "pre_publish_review",
+    query: `${hook} grade script`,
+  });
+
+  const fallback: ScriptReviewResult = {
+    overallGrade: "C",
+    summary: "Heuristic review only — AI unavailable.",
+    strengths: ["You have a draft to iterate on."],
+    weaknesses: ["Needs a clearer hook-to-payoff line and tighter spoken pacing."],
+    keepAsIs: [],
+    changeNext: ["Tighten the opening.", "Add one concrete proof beat."],
+    improvedScript: pastedScript,
+    title: "Graded draft",
+  };
+
+  const ai = await tryStructuredAI({
+    supabase,
+    fallback,
+    input: {
+      userId: user.id,
+      taskType: "pre_publish_review",
+      role: "premium",
+      promptVersion: "hook-build-grade-improve-v1",
+      modelName: context.modelName,
+      cacheKey: hashAiInput([
+        "hook-build-grade-improve-v1",
+        pastedScript,
+        hook,
+        context.provenance,
+      ]),
+      maxOutputTokens: 2600,
+      temperature: 0.4,
+      schema: scriptReviewSchema,
+      messages: [
+        {
+          role: "system",
+          content: [
+            "Grade a short-form creator script and return an improved rewrite.",
+            "Be specific about what works and what to change. Do not invent proof or credentials.",
+            "If an opening hook is provided, judge alignment between hook and payoff.",
+            "improvedScript must be a full spoken draft, not notes.",
+            contextToPromptBlock(context),
+          ].join("\n\n"),
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            optionalHook: hook || null,
+            pastedScript,
+          }),
+        },
+      ],
+    },
+  });
+
+  if (!ai.usedLlm) {
+    return {
+      error:
+        ai.fallbackReason ??
+        "OpenRouter did not grade this script. Check OPENROUTER_API_KEY, then try again.",
+      mode: "grade",
+    };
+  }
+
+  const improvedPackage: ScriptPackage = {
+    title: ai.data.title || "Improved script",
+    script: ai.data.improvedScript,
+    caption: ai.data.improvedScript.slice(0, 200),
+    hashtags: [],
+    searchTerms: [],
+    coverText: (hook || ai.data.improvedScript).slice(0, 60),
+    thumbnailConcept: "Match the improved opening promise.",
+    openingVisual: "Open on the improved hook visual.",
+    rehooks: ai.data.changeNext.slice(0, 3),
+    proofBeats: ai.data.strengths.slice(0, 3),
+    payoff: "Deliver the promised takeaway cleanly.",
+    primaryCTA: "Follow for more.",
+    qualityGateStatus:
+      ai.data.overallGrade === "A" || ai.data.overallGrade === "B"
+        ? "Ready"
+        : "Revise",
+    qualityGateNotes: [
+      `Grade ${ai.data.overallGrade}: ${ai.data.summary}`,
+      ...ai.data.changeNext.slice(0, 4),
+    ],
+  };
+
+  try {
+    const boardId = await ensureHookBuildBoard({
+      supabase,
+      userId: user.id,
+      title: "Hook builds",
+    });
+    const scriptNode = await insertCanvasNode({
+      supabase,
+      userId: user.id,
+      boardId,
+      nodeType: "script",
+      title: improvedPackage.title,
+      body: improvedPackage.script,
+      payload: {
+        packaging: improvedPackage,
+        review: ai.data,
+        sourceHook: hook || null,
+        mode: "grade_improve",
+      },
+    });
+    for (const path of ["/create", `/canvas/${boardId}`, "/pre-publish"]) {
+      revalidatePath(path);
+    }
+    return {
+      package: improvedPackage,
+      review: ai.data,
+      boardId,
+      scriptNodeId: scriptNode.id,
+      usedLlm: true,
+      mode: "grade",
+    };
+  } catch {
+    return {
+      package: improvedPackage,
+      review: ai.data,
+      usedLlm: true,
+      mode: "grade",
+    };
+  }
+}
+

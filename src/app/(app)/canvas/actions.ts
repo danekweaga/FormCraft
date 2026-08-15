@@ -902,6 +902,38 @@ export async function renameBoardAction(formData: FormData) {
   revalidateBoard(boardId);
 }
 
+export async function deleteBoardAction(formData: FormData) {
+  const auth = await requireUser();
+  if (!auth.supabase || !auth.user) return;
+  const boardId = String(formData.get("boardId") ?? "");
+  if (!boardId) return;
+
+  const { data: owned } = await auth.supabase
+    .from("canvas_boards")
+    .select("id")
+    .eq("id", boardId)
+    .eq("user_id", auth.user.id)
+    .maybeSingle();
+  if (!owned) return;
+
+  await auth.supabase.from("canvas_edges").delete().eq("board_id", boardId);
+  const { data: nodes } = await auth.supabase
+    .from("canvas_nodes")
+    .select("id")
+    .eq("board_id", boardId);
+  const nodeIds = (nodes ?? []).map((node) => node.id);
+  if (nodeIds.length > 0) {
+    await auth.supabase.from("canvas_nodes").delete().in("id", nodeIds);
+  }
+  await auth.supabase
+    .from("canvas_boards")
+    .delete()
+    .eq("id", boardId)
+    .eq("user_id", auth.user.id);
+  revalidatePath("/canvas");
+  redirect("/canvas");
+}
+
 export async function addEntityToCanvasAction(formData: FormData) {
   const auth = await requireUser();
   if (!auth.supabase || !auth.user) return { error: "Not signed in" };

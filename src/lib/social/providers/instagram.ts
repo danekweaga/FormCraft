@@ -119,6 +119,19 @@ function breakdownValues(row: InsightRow | undefined): InstagramInsightBreakdown
   });
 }
 
+function breakdownValue(
+  items: InstagramInsightBreakdown[],
+  labels: string[],
+): number | null {
+  for (const label of labels) {
+    const hit = items.find(
+      (item) => item.label.trim().toUpperCase() === label.toUpperCase(),
+    );
+    if (hit) return hit.value;
+  }
+  return null;
+}
+
 /** Instagram Login authorize URL. force_reauth is required after Facebook invalidates a session. */
 export function buildInstagramAuthorizationUrl(params: {
   appId: string;
@@ -434,7 +447,7 @@ export const instagramOwnedProvider: OwnedSocialProvider = {
     const dailyResponse = await graphGet<InsightResponse>(
       `/${profile.id}/insights`,
       tokens.accessToken,
-      { ...windowParams, metric: "reach,follower_count" },
+      { ...windowParams, metric: "views,reach,follower_count" },
     );
     const dailyByDate = new Map<string, InstagramAccountInsightDay>();
     for (const row of dailyResponse.data ?? []) {
@@ -445,9 +458,11 @@ export const instagramOwnedProvider: OwnedSocialProvider = {
           date,
           reach: null,
           followerCount: null,
+          views: null,
         };
         const numericValue =
           typeof value.value === "number" ? value.value : null;
+        if (row.name === "views") current.views = numericValue;
         if (row.name === "reach") current.reach = numericValue;
         if (row.name === "follower_count") current.followerCount = numericValue;
         dailyByDate.set(date, current);
@@ -464,9 +479,22 @@ export const instagramOwnedProvider: OwnedSocialProvider = {
         breakdown: "follow_type",
       },
     );
-    const followBreakdown = breakdownValues(followResponse.data?.[0]);
-    const followValue = (label: string) =>
-      followBreakdown.find((item) => item.label === label)?.value ?? null;
+    const followRow = followResponse.data?.[0];
+    const followBreakdown = breakdownValues(followRow);
+    const followsFromBreakdown = breakdownValue(followBreakdown, [
+      "FOLLOWER",
+      "FOLLOW",
+      "FOLLOWS",
+    ]);
+    const unfollowsFromBreakdown = breakdownValue(followBreakdown, [
+      "NON_FOLLOWER",
+      "UNFOLLOW",
+      "UNFOLLOWS",
+    ]);
+    const followsTotalValue =
+      typeof followRow?.total_value?.value === "number"
+        ? followRow.total_value.value
+        : null;
 
     const audience = {
       gender: [] as InstagramInsightBreakdown[],
@@ -514,8 +542,8 @@ export const instagramOwnedProvider: OwnedSocialProvider = {
         saves: total("saves"),
         replies: total("replies"),
         profileLinksTaps: total("profile_links_taps"),
-        follows: followValue("FOLLOWER"),
-        unfollows: followValue("NON_FOLLOWER"),
+        follows: followsFromBreakdown ?? followsTotalValue,
+        unfollows: unfollowsFromBreakdown,
       },
       daily: [...dailyByDate.values()].sort((a, b) =>
         a.date.localeCompare(b.date),

@@ -138,7 +138,22 @@ export function HooksLibrary({ items }: { items: HookLibraryItem[] }) {
                 </div>
                 <div className="shrink-0 lg:text-right">
                   <p className="text-sm font-semibold text-on-background">{metric(item)}</p>
-                  <div className="mt-3 flex gap-2 lg:justify-end">
+                  <div className="mt-3 flex flex-wrap gap-2 lg:justify-end">
+                    <Button asChild size="sm">
+                      <Link
+                        href={`/create?hook=${encodeURIComponent(item.hook)}${
+                          item.hookType
+                            ? `&hookType=${encodeURIComponent(item.hookType)}`
+                            : ""
+                        }${
+                          item.topic
+                            ? `&topic=${encodeURIComponent(item.topic)}`
+                            : ""
+                        }`}
+                      >
+                        Build
+                      </Link>
+                    </Button>
                     {item.sourceKind === "starter" ? (
                       <Button type="button" size="sm" variant="outline" onClick={() => void copyTemplate(item)}>
                         {copiedId === item.id ? "Copied" : "Copy template"}
@@ -149,7 +164,7 @@ export function HooksLibrary({ items }: { items: HookLibraryItem[] }) {
                       </Button>
                     )}
                     {item.researchItemId ? (
-                      <Button asChild size="sm">
+                      <Button asChild size="sm" variant="outline">
                         <Link href={`/create?researchItem=${encodeURIComponent(item.researchItemId)}`}>Create my version</Link>
                       </Button>
                     ) : null}

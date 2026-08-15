@@ -9,7 +9,10 @@ export type GrowthMetric = "impressions" | "followers";
 export type GrowthBasis =
   | "measured_daily_change"
   | "publish_date_attribution"
-  | "account_daily_followers";
+  | "account_daily_followers"
+  | "account_period_follows"
+  | "account_daily_views"
+  | "account_period_views";
 
 export type MetricSnapshotRow = {
   content_post_id: string;
@@ -200,6 +203,8 @@ export function buildGrowthSeries(params: {
   /** Optional absolute/daily series override (e.g. Instagram account insights). */
   externalDaily?: Map<string, number> | null;
   externalBasis?: GrowthBasis;
+  /** How to roll external daily points into `total`. Defaults to sum. */
+  externalTotalMode?: "sum" | "latest";
 }): GrowthSeries {
   const { posts, snapshots = [], metric, days } = params;
   const now = params.now ?? new Date();
@@ -231,7 +236,7 @@ export function buildGrowthSeries(params: {
   if (params.externalDaily && params.externalDaily.size > 0) {
     basis = params.externalBasis ?? "account_daily_followers";
     source = params.externalDaily;
-    totalMode = basis === "account_daily_followers" ? "latest" : "sum";
+    totalMode = params.externalTotalMode ?? "sum";
   } else if (measured && shouldPreferMeasuredDailyChange(measured, attributed)) {
     basis = "measured_daily_change";
     source = measured;
@@ -361,7 +366,16 @@ export function growthBasisLabel(basis: GrowthBasis): string {
     return "Measured daily change between metric snapshots";
   }
   if (basis === "account_daily_followers") {
-    return "Daily follower totals from Instagram account insights";
+    return "Daily follower change from Instagram account follower totals";
+  }
+  if (basis === "account_period_follows") {
+    return "Period follows from Instagram account insights";
+  }
+  if (basis === "account_daily_views") {
+    return "Daily account views from Instagram insights";
+  }
+  if (basis === "account_period_views") {
+    return "Period account views from Instagram insights";
   }
   return "Lifetime metrics credited to each post's publish date";
 }

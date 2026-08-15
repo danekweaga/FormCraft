@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAccountFollowerGainSeries,
   buildAccountFollowerSeries,
+  buildAccountViewsSeries,
+  accountInsightsFollowerGain,
+  accountInsightsViewsTotal,
   buildCumulativePoints,
   buildDashboardTopicAudits,
   filterPostsByPreviousRange,
@@ -73,7 +77,7 @@ describe("account dashboard", () => {
     expect(audits[0]?.supportingPosts).toHaveLength(2);
   });
 
-  it("fills missing account-insight days with zero", () => {
+  it("forward-fills absolute follower totals across missing days", () => {
     const points = buildAccountFollowerSeries({
       insights: [
         {
@@ -92,19 +96,75 @@ describe("account dashboard", () => {
             saves: null,
             replies: null,
             profileLinksTaps: null,
-            follows: null,
-            unfollows: null,
+            follows: 12,
+            unfollows: 2,
           },
-          daily: [{ date: "2026-08-10", reach: 1, followerCount: 4 }],
+          daily: [{ date: "2026-08-09", reach: 1, followerCount: 100 }],
           audience: { gender: [], age: [], country: [], city: [] },
         },
       ],
-      days: 2,
+      days: 3,
       now: new Date("2026-08-10T12:00:00.000Z"),
     });
     expect(points).toEqual([
-      { date: "2026-08-09", value: 0 },
-      { date: "2026-08-10", value: 4 },
+      { date: "2026-08-08", value: 0 },
+      { date: "2026-08-09", value: 100 },
+      { date: "2026-08-10", value: 100 },
+    ]);
+  });
+
+  it("derives daily follower gains and period net follows", () => {
+    const insights = [
+      {
+        capturedAt: "2026-08-10T12:00:00.000Z",
+        rangeStart: "2026-08-01T00:00:00.000Z",
+        rangeEnd: "2026-08-10T00:00:00.000Z",
+        totals: {
+          views: 500,
+          reach: null,
+          profileViews: null,
+          accountsEngaged: null,
+          totalInteractions: null,
+          likes: null,
+          comments: null,
+          shares: null,
+          saves: null,
+          replies: null,
+          profileLinksTaps: null,
+          follows: 155,
+          unfollows: 0,
+        },
+        daily: [
+          { date: "2026-08-08", reach: null, followerCount: 1000, views: 40 },
+          { date: "2026-08-09", reach: null, followerCount: 1040, views: 60 },
+          { date: "2026-08-10", reach: null, followerCount: 1155, views: 80 },
+        ],
+        audience: { gender: [], age: [], country: [], city: [] },
+      },
+    ];
+    expect(accountInsightsFollowerGain(insights)).toBe(155);
+    expect(accountInsightsViewsTotal(insights)).toBe(500);
+    expect(
+      buildAccountFollowerGainSeries({
+        insights,
+        days: 3,
+        now: new Date("2026-08-10T12:00:00.000Z"),
+      }),
+    ).toEqual([
+      { date: "2026-08-08", value: 0 },
+      { date: "2026-08-09", value: 40 },
+      { date: "2026-08-10", value: 115 },
+    ]);
+    expect(
+      buildAccountViewsSeries({
+        insights,
+        days: 3,
+        now: new Date("2026-08-10T12:00:00.000Z"),
+      }),
+    ).toEqual([
+      { date: "2026-08-08", value: 40 },
+      { date: "2026-08-09", value: 60 },
+      { date: "2026-08-10", value: 80 },
     ]);
   });
 });

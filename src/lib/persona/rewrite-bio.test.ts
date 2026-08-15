@@ -55,4 +55,36 @@ describe("rewrite-bio heuristics", () => {
     expect(result.variants[0]!.bio.length).toBeLessThanOrEqual(150);
     expect(result.observedThemes).toContain("Portfolio projects");
   });
+
+  it("folds must-include notes into heuristic drafts", () => {
+    const result = heuristicBioRewrite({
+      whatIMake: "I make CS content.",
+      audience: "students",
+      pillars: ["Projects"],
+      currentBio: "",
+      mustInclude: "CS student\nBuilding in public",
+      posts: [
+        {
+          title: "Ship a project",
+          caption: "One tip",
+          topic: "Projects",
+          contentPillar: "Projects",
+        },
+        {
+          title: "Another tip",
+          caption: "Two tip",
+          topic: "Projects",
+          contentPillar: "Projects",
+        },
+        {
+          title: "Third tip",
+          caption: "Three tip",
+          topic: "Projects",
+          contentPillar: "Projects",
+        },
+      ],
+    });
+    expect(result.variants[0]!.bio).toMatch(/CS student/);
+    expect(result.variants[0]!.bio).toMatch(/Building in public/);
+  });
 });
