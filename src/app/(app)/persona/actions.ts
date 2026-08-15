@@ -34,6 +34,7 @@ const creatorProfileSchema = z.object({
     .string()
     .trim()
     .max(150, "Keep the social bio within 150 characters."),
+  bio_must_include: z.string().trim().max(500).optional().default(""),
   content_pillars: z
     .string()
     .trim()
@@ -62,6 +63,7 @@ export async function saveCreatorProfile(
     content_style: formData.get("content_style"),
     script_style: formData.get("script_style"),
     social_bio: formData.get("social_bio"),
+    bio_must_include: formData.get("bio_must_include") ?? "",
     content_pillars: formData.get("content_pillars"),
   });
 
@@ -95,6 +97,7 @@ export async function saveCreatorProfile(
     content_style: parsed.data.content_style,
     script_style: parsed.data.script_style,
     social_bio: parsed.data.social_bio,
+    bio_must_include: parsed.data.bio_must_include || null,
   };
   const { error } = await supabase.from("profiles").upsert(
     {
@@ -184,6 +187,16 @@ export async function rewriteBioFromPostsAction(
   }
 
   try {
+    await supabase
+      .from("profiles")
+      .upsert(
+        {
+          id: user.id,
+          bio_must_include: parsedMust.data || null,
+        },
+        { onConflict: "id" },
+      );
+
     const { result, usedLlm } = await rewriteBioFromPosts({
       supabase,
       userId: user.id,
@@ -194,6 +207,7 @@ export async function rewriteBioFromPostsAction(
       mustInclude: parsedMust.data,
       posts: mapped,
     });
+    revalidatePath("/persona");
     return { result, usedLlm };
   } catch (error) {
     return {

@@ -116,3 +116,32 @@ export async function createMilestone(
   revalidatePath("/roadmap");
   return { success: true };
 }
+
+export async function deleteRoadmapAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const auth = await requireUser();
+  if (auth.error || !auth.supabase || !auth.user || !id) return;
+
+  await auth.supabase
+    .from("creator_roadmaps")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", auth.user.id);
+
+  revalidatePath("/roadmap");
+  revalidatePath("/today");
+}
+
+export async function deleteMilestoneAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const auth = await requireUser();
+  if (auth.error || !auth.supabase || !auth.user || !id) return;
+
+  await auth.supabase
+    .from("roadmap_milestones")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", auth.user.id);
+
+  revalidatePath("/roadmap");
+}

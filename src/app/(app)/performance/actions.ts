@@ -287,3 +287,24 @@ export async function savePostToIdeaBankAction(
   revalidatePath("/dashboard");
   return { success: "Saved to Idea Bank." };
 }
+
+export async function deleteWeeklyReportAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  await supabase
+    .from("content_weekly_reports")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id);
+
+  revalidatePath("/performance");
+  revalidatePath("/dashboard");
+  revalidatePath("/today");
+}

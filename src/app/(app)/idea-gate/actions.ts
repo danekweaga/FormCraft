@@ -93,3 +93,22 @@ export async function evaluateIdea(
   revalidatePath("/idea-gate");
   return { success: true, evaluationId: data.id };
 }
+
+export async function deleteIdeaGateEvaluationAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  await supabase
+    .from("idea_gate_evaluations")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id);
+
+  revalidatePath("/idea-gate");
+}

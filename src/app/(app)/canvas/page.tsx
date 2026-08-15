@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SYSTEM_CANVAS_TEMPLATES } from "@/lib/canvas/templates";
 import { createClient } from "@/lib/supabase/server";
@@ -10,6 +11,7 @@ import {
   createBlankBoardAction,
   createBoardFromSavedTemplateAction,
   createBoardFromTemplateAction,
+  deleteBoardAction,
   deleteSavedTemplateAction,
 } from "./actions";
 
@@ -56,11 +58,11 @@ export default async function CanvasIndexPage() {
       ) : (
         <ul className="mb-8 grid gap-3 sm:grid-cols-2">
           {boards?.map((b) => (
-            <li key={b.id}>
-              <Link
-                href={`/canvas/${b.id}`}
-                className="block rounded-xl border border-outline-variant/20 bg-surface-primary p-4 paper-shadow transition hover:border-primary/40"
-              >
+            <li
+              key={b.id}
+              className="rounded-xl border border-outline-variant/20 bg-surface-primary p-4 paper-shadow transition hover:border-primary/40"
+            >
+              <Link href={`/canvas/${b.id}`} className="block">
                 <div className="flex flex-wrap gap-2">
                   {b.template_key ? (
                     <Badge variant="primary">{b.template_key}</Badge>
@@ -74,6 +76,15 @@ export default async function CanvasIndexPage() {
                   Updated {new Date(b.updated_at).toLocaleString()}
                 </p>
               </Link>
+              <form action={deleteBoardAction} className="mt-3">
+                <input type="hidden" name="boardId" value={b.id} />
+                <ConfirmDeleteButton
+                  label="Delete"
+                  confirmMessage="Delete this board and all its nodes permanently?"
+                  variant="ghost"
+                  className="text-error"
+                />
+              </form>
             </li>
           ))}
         </ul>

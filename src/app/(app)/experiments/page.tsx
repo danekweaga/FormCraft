@@ -4,9 +4,11 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AddToCanvasButton } from "@/components/canvas/add-to-canvas-button";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import { interpretExperimentAggregate } from "@/lib/intelligence/experiment-interpret";
 import { computeExperimentAggregate } from "@/lib/intelligence/experiment-stats";
 import { createClient } from "@/lib/supabase/server";
+import { deleteExperimentAction } from "./actions";
 import { AttachPostForm } from "./attach-post-form";
 import { CreateExperimentForm } from "./experiment-form";
 
@@ -83,6 +85,10 @@ export default async function ExperimentsPage() {
               const bundle = statsById.get(experiment.id);
               const stats = bundle?.stats;
               const interpretation = bundle?.interpretation;
+              const attachedIds = (experiment.post_ids as string[]) ?? [];
+              const attachedPosts = postOptions.filter((post) =>
+                attachedIds.includes(post.id),
+              );
               return (
                 <li key={experiment.id} className="space-y-3">
                   <div className="rounded-xl border border-outline-variant/20 bg-surface-primary p-5 paper-shadow">
@@ -100,17 +106,27 @@ export default async function ExperimentsPage() {
                     <p className="mt-3 text-sm leading-relaxed text-on-background">
                       {experiment.hypothesis}
                     </p>
-                    <div className="mt-3">
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       <AddToCanvasButton
                         nodeType="experiment"
                         title={experiment.hypothesis.slice(0, 80)}
                         body={experiment.primary_variable}
                         entityId={experiment.id}
                       />
+                      <form action={deleteExperimentAction}>
+                        <input type="hidden" name="id" value={experiment.id} />
+                        <ConfirmDeleteButton
+                          label="Delete"
+                          confirmMessage="Delete this experiment permanently?"
+                          variant="ghost"
+                          className="text-error"
+                        />
+                      </form>
                     </div>
                     <AttachPostForm
                       experimentId={experiment.id}
                       posts={postOptions}
+                      attachedPosts={attachedPosts}
                     />
                   </div>
                   {stats && interpretation ? (

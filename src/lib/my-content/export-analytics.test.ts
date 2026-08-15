@@ -56,6 +56,6 @@ describe("performanceExportFilename", () => {
   it("embeds range and date", () => {
     expect(
       performanceExportFilename("30", new Date("2026-08-15T00:00:00.000Z")),
-    ).toBe("formcraft-performance-30-2026-08-15.csv");
+    ).toBe("formcraft-performance-30-2026-08-15.xlsx");
   });
 });

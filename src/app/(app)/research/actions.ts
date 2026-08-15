@@ -294,6 +294,7 @@ export async function saveResearchReferenceAction(
       description: notes || null,
       hook_text: transcriptGrounded ? result?.analysis.hookText ?? null : null,
       topic: result?.analysis.topic ?? null,
+      format: result?.analysis.format ?? null,
       analysis: result?.analysis ?? {},
       analysis_model: result?.model ?? null,
       transcript: transcript || null,
@@ -434,6 +435,7 @@ export async function analyzeResearchItemAction(
       analysis_model: result.model,
       hook_text: transcriptGrounded ? result.analysis.hookText : null,
       topic: result.analysis.topic ?? item.topic,
+      format: result.analysis.format ?? null,
     })
     .eq("id", id)
     .eq("user_id", user.id);

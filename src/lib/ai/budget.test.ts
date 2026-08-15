@@ -15,8 +15,14 @@ describe("AI budget + routing", () => {
     process.env = { ...prev };
   });
 
-  it("reads budget env defaults", () => {
+  it("reads budget env overrides", () => {
     expect(getAiBudgets()).toEqual({ dailyUsd: 1, monthlyUsd: 10 });
+  });
+
+  it("defaults to $10/day and $100/month when env unset", () => {
+    delete process.env.DAILY_AI_BUDGET_USD;
+    delete process.env.MONTHLY_AI_BUDGET_USD;
+    expect(getAiBudgets()).toEqual({ dailyUsd: 10, monthlyUsd: 100 });
   });
 
   it("routes vision to multimodal and premium only on request", () => {

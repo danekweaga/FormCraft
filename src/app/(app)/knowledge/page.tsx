@@ -13,6 +13,8 @@ import {
   KnowledgePageActions,
   ProcessingStatusBadge,
 } from "./knowledge-actions";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
+import { deleteCollection } from "./actions";
 
 type SearchParams = Promise<{ q?: string; collection?: string }>;
 
@@ -163,18 +165,35 @@ export default async function KnowledgePage({
               </p>
               <nav className="space-y-1">
                 {collections!.map((col) => (
-                  <Link
+                  <div
                     key={col.id}
-                    href={buildCollectionHref(col.id, q)}
                     className={cn(
-                      "block rounded-lg px-3 py-2 text-sm transition-colors",
+                      "flex items-center gap-1 rounded-lg pr-1",
                       collection === col.id
-                        ? "bg-surface-container-low font-medium text-on-background"
-                        : "text-secondary hover:bg-surface-container-lowest hover:text-on-background",
+                        ? "bg-surface-container-low"
+                        : "hover:bg-surface-container-lowest",
                     )}
                   >
-                    {col.name}
-                  </Link>
+                    <Link
+                      href={buildCollectionHref(col.id, q)}
+                      className={cn(
+                        "min-w-0 flex-1 truncate px-3 py-2 text-sm transition-colors",
+                        collection === col.id
+                          ? "font-medium text-on-background"
+                          : "text-secondary hover:text-on-background",
+                      )}
+                    >
+                      {col.name}
+                    </Link>
+                    <form action={deleteCollection}>
+                      <input type="hidden" name="id" value={col.id} />
+                      <ConfirmDeleteButton
+                        size="sm"
+                        className="px-2"
+                        confirmMessage="Delete this collection? Documents stay; they become unassigned."
+                      />
+                    </form>
+                  </div>
                 ))}
               </nav>
             </>

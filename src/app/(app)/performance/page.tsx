@@ -51,6 +51,8 @@ import {
 } from "./topic-classification-button";
 import { GenerateWeeklyReviewButton } from "./weekly-actions";
 import { takeRecentPostsForAudit } from "@/lib/my-content/strategy-audit";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
+import { deleteWeeklyReportAction } from "./actions";
 
 type SearchParams = Promise<{ range?: string }>;
 
@@ -241,10 +243,24 @@ export default async function PerformancePage({
           metric: "followers",
           days: seriesDays,
         });
+  const heatmapViewDays =
+    instagramInsights.length > 0
+      ? buildAccountViewsSeries({
+          insights: instagramInsights,
+          days: 53 * 7,
+        })
+      : null;
+  const hasHeatmapAccountViews = Boolean(
+    heatmapViewDays?.some((point) => point.value > 0),
+  );
   const heatmap = buildYearHeatmap({
     posts: allPosts,
     snapshots: metricSnapshots,
     metric: "impressions",
+    externalDaily: hasHeatmapAccountViews
+      ? mapFromPoints(heatmapViewDays!)
+      : null,
+    externalBasis: hasHeatmapAccountViews ? "account_daily_views" : undefined,
   });
 
   return (
@@ -256,7 +272,7 @@ export default async function PerformancePage({
           <div className="flex flex-wrap items-center gap-2">
             <Button asChild variant="outline" size="sm">
               <a href={`/api/performance/export?range=${range}`}>
-                Export Excel CSV
+                Export Excel
               </a>
             </Button>
             <GenerateWeeklyReviewButton />
@@ -492,6 +508,12 @@ export default async function PerformancePage({
             Week of {latest?.week_start} → {latest?.week_end}
             {report.usedLlm ? " · LLM-assisted" : " · Deterministic summary"}
           </p>
+          {latest?.id ? (
+            <form action={deleteWeeklyReportAction}>
+              <input type="hidden" name="id" value={latest.id} />
+              <ConfirmDeleteButton confirmMessage="Delete this weekly report permanently?" />
+            </form>
+          ) : null}
         </div>
       )}
     </div>

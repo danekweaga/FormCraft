@@ -168,6 +168,7 @@ export async function runContentIntelligenceJob(): Promise<{
   classified?: number;
   lessons?: number;
   insights?: number;
+  remainingUnclassified?: number;
   details?: string[];
 }> {
   const auth = await requireUser();
@@ -176,127 +177,21 @@ export async function runContentIntelligenceJob(): Promise<{
   }
 
   try {
-    const { classifyPost } = await import("@/lib/intelligence/classify-post");
-    const { generateSuggestedLessons } = await import(
-      "@/lib/intelligence/lesson-engine"
+    const { runContentIntelligencePass } = await import(
+      "@/lib/intelligence/run-pass"
     );
-    const { refreshAudienceInsights } = await import(
-      "@/lib/intelligence/audience-insights"
-    );
-    const { resolveTaskModel } = await import(
-      "@/lib/ai/models/preferences"
-    );
-    const classificationModel = await resolveTaskModel(auth.supabase, {
-      userId: auth.user.id,
-      taskType: "content_classification",
-    });
-
-    // Cap AI classifications per pass so the 60s server-action budget is not blown.
-    const MAX_CLASSIFY_PER_PASS = 5;
-
-    const { data: unclassified, error: listError } = await auth.supabase
-      .from("content_posts")
-      .select(
-        "id, title, caption, transcript, format, duration_seconds, classification_locked, classification",
-      )
-      .eq("user_id", auth.user.id)
-      .eq("classification_locked", false)
-      .order("published_at", { ascending: false, nullsFirst: false })
-      .limit(40);
-
-    if (listError) return { error: listError.message };
-
-    let classified = 0;
-    let skippedAlready = 0;
-    let remaining = 0;
-    const details: string[] = [];
-
-    for (const post of unclassified ?? []) {
-      const existing = post.classification as Record<string, unknown> | null;
-      const onlyQueuedStub =
-        existing != null &&
-        existing.queued === true &&
-        Object.keys(existing).every((k) =>
-          ["queued", "source", "note"].includes(k),
-        );
-      const alreadyClassified =
-        existing &&
-        existing.queued !== true &&
-        typeof existing.content_mode === "string";
-      if (alreadyClassified && !onlyQueuedStub) {
-        skippedAlready += 1;
-        continue;
-      }
-
-      if (classified >= MAX_CLASSIFY_PER_PASS) {
-        remaining += 1;
-        continue;
-      }
-
-      const { classification, model } = await classifyPost({
-        title: post.title,
-        caption: post.caption,
-        transcript: post.transcript,
-        format: post.format,
-        durationSeconds: post.duration_seconds,
-        modelName: classificationModel.modelName,
-        modelTier: classificationModel.modelTier,
-        supabase: auth.supabase,
-        userId: auth.user.id,
-      });
-      const { error: updateError } = await auth.supabase
-        .from("content_posts")
-        .update({
-          classification,
-          topic: classification.topic,
-          content_pillar: classification.content_pillar,
-          format: classification.format ?? post.format,
-          classification_confidence: classification.confidence,
-          classification_model: model,
-          classified_at: new Date().toISOString(),
-        })
-        .eq("id", post.id)
-        .eq("user_id", auth.user.id);
-      if (updateError) return { error: updateError.message };
-      classified += 1;
-    }
-
-    if ((unclassified?.length ?? 0) === 0) {
-      details.push("No posts found to classify. Sync Instagram first.");
-    } else if (classified === 0 && remaining === 0) {
-      details.push("Posts already classified — skipped reclassification.");
-    } else if (remaining > 0) {
-      details.push(
-        `Classified ${classified} this pass · ${remaining} still need a pass. Run again to continue.`,
-      );
-    } else if (skippedAlready > 0) {
-      details.push(`Skipped ${skippedAlready} already-classified posts.`);
-    }
-
-    const lessonResult = await generateSuggestedLessons({
+    const result = await runContentIntelligencePass({
       supabase: auth.supabase,
       userId: auth.user.id,
+      skipAiExtras: true,
     });
-    details.push(...lessonResult.reasons);
-
-    const insights = await refreshAudienceInsights({
-      supabase: auth.supabase,
-      userId: auth.user.id,
-    });
-    if (insights === 0) {
-      details.push(
-        "No audience insights yet — paste 3+ comments on Audience (IG comment import not enabled).",
-      );
-    }
-
-    revalidatePath("/my-content");
-    revalidatePath("/audience");
-    revalidatePath("/today");
+    if (result.error) return { error: result.error, details: result.details };
     return {
-      classified,
-      lessons: lessonResult.created,
-      insights,
-      details,
+      classified: result.classified,
+      lessons: result.lessons,
+      insights: result.insights,
+      remainingUnclassified: result.remainingUnclassified,
+      details: result.details,
     };
   } catch (error) {
     return {
@@ -319,4 +214,10 @@ export async function deletePost(id: string): Promise<{ error?: string }> {
 
   revalidatePath("/my-content");
   return {};
+}
+
+export async function deletePostAction(formData: FormData): Promise<void> {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await deletePost(id);
 }

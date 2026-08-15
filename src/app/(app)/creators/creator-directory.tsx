@@ -5,8 +5,12 @@ import Link from "next/link";
 import { Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import { CREATOR_CATALOG } from "@/data/creator-catalog";
-import { followCreatorFromCatalogAction } from "./actions";
+import {
+  followCreatorFromCatalogAction,
+  unfollowCreatorFromCatalogAction,
+} from "./actions";
 
 const platforms = ["all", "instagram", "tiktok", "youtube"] as const;
 
@@ -74,9 +78,19 @@ export function CreatorDirectory({ followed }: { followed: string[] }) {
               </div>
               <div className="mt-4 flex items-center gap-2">
                 {isFollowed ? (
-                  <Button asChild size="sm" variant="outline">
-                    <Link href="/research?mode=watchlists">Following</Link>
-                  </Button>
+                  <>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/research?mode=watchlists">Following</Link>
+                    </Button>
+                    <form action={unfollowCreatorFromCatalogAction}>
+                      <input type="hidden" name="username" value={entry.username} />
+                      <input type="hidden" name="platform" value={entry.platform} />
+                      <ConfirmDeleteButton
+                        label="Unfollow"
+                        confirmMessage={`Unfollow @${entry.username}? They will be removed from your creator watchlists.`}
+                      />
+                    </form>
+                  </>
                 ) : (
                   <form action={followCreatorFromCatalogAction}>
                     <input type="hidden" name="username" value={entry.username} />

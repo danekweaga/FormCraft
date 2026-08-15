@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CREATOR_CATALOG } from "@/data/creator-catalog";
 import { searchablePlatforms } from "@/lib/research/discovery/registry";
@@ -33,8 +34,10 @@ import {
 import type { NicheBrief } from "@/lib/research/niche-brief";
 import { createClient } from "@/lib/supabase/server";
 import {
+  deleteWatchlistAction,
   generateNicheBriefAction,
   pullCreatorPostsFormAction,
+  removeCreatorFromWatchlistAction,
   toggleWatchlistPausedAction,
 } from "./actions";
 import { ContentGapsPanel } from "./content-gaps-panel";
@@ -933,20 +936,28 @@ export default async function ResearchPage({
                       <Badge variant="default">
                         {members.length} creator{members.length === 1 ? "" : "s"}
                       </Badge>
-                      <form
-                        action={toggleWatchlistPausedAction}
-                        className="ml-auto"
-                      >
-                        <input type="hidden" name="id" value={w.id} />
-                        <input
-                          type="hidden"
-                          name="paused"
-                          value={w.paused ? "false" : "true"}
-                        />
-                        <Button type="submit" size="sm" variant="ghost">
-                          {w.paused ? "Resume" : "Pause"}
-                        </Button>
-                      </form>
+                      <div className="ml-auto flex flex-wrap items-center gap-1">
+                        <form action={toggleWatchlistPausedAction}>
+                          <input type="hidden" name="id" value={w.id} />
+                          <input
+                            type="hidden"
+                            name="paused"
+                            value={w.paused ? "false" : "true"}
+                          />
+                          <Button type="submit" size="sm" variant="ghost">
+                            {w.paused ? "Resume" : "Pause"}
+                          </Button>
+                        </form>
+                        <form action={deleteWatchlistAction}>
+                          <input type="hidden" name="id" value={w.id} />
+                          <ConfirmDeleteButton
+                            label="Delete"
+                            confirmMessage={`Delete watchlist “${w.name}” and its members?`}
+                            variant="ghost"
+                            className="text-error"
+                          />
+                        </form>
+                      </div>
                     </div>
                     <p className="mt-2 text-sm text-secondary">
                       {w.description || "No description"}
@@ -982,6 +993,16 @@ export default async function ResearchPage({
                                 </Button>
                               </form>
                             ) : null}
+                            <form action={removeCreatorFromWatchlistAction}>
+                              <input type="hidden" name="watchlistId" value={w.id} />
+                              <input type="hidden" name="creatorId" value={c.id} />
+                              <ConfirmDeleteButton
+                                label="Remove"
+                                confirmMessage={`Remove @${c.handle || c.display_name} from this watchlist?`}
+                                variant="ghost"
+                                className="h-6 px-1.5 text-[10px] text-error"
+                              />
+                            </form>
                           </li>
                         ))}
                       </ul>

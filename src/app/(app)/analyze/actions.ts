@@ -1413,3 +1413,62 @@ export async function addAnalysisToCanvasAction(formData: FormData) {
   revalidatePath(`/canvas/${boardId}`);
   revalidatePath(`/analyze/${analysisId}`);
 }
+
+export async function deleteVideoAnalysisAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const auth = await requireUser();
+  if (auth.error || !auth.supabase || !auth.user || !id) return;
+
+  const { data: analysis } = await auth.supabase
+    .from("video_analyses")
+    .select("id, storage_path")
+    .eq("id", id)
+    .eq("user_id", auth.user.id)
+    .maybeSingle();
+  if (!analysis) return;
+
+  if (analysis.storage_path) {
+    await auth.supabase.storage
+      .from("analysis-media")
+      .remove([analysis.storage_path]);
+  }
+
+  await auth.supabase
+    .from("video_analyses")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", auth.user.id);
+
+  revalidatePath("/analyze");
+  redirect("/analyze");
+}
+
+export async function deleteSavedPatternAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const auth = await requireUser();
+  if (auth.error || !auth.supabase || !auth.user || !id) return;
+
+  await auth.supabase
+    .from("saved_patterns")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", auth.user.id);
+
+  revalidatePath("/analyze");
+  revalidatePath("/library");
+}
+
+export async function deleteAnalysisComparisonAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const auth = await requireUser();
+  if (auth.error || !auth.supabase || !auth.user || !id) return;
+
+  await auth.supabase
+    .from("analysis_comparisons")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", auth.user.id);
+
+  revalidatePath("/analyze");
+  redirect("/analyze?tab=compare");
+}

@@ -119,7 +119,10 @@ async function insertLessonIfNew(params: {
 export async function generateSuggestedLessons(params: {
   supabase: SupabaseClient;
   userId: string;
+  /** When false, skip LLM polish on lesson wording (faster intelligence pass). */
+  interpretWithAi?: boolean;
 }): Promise<LessonGenerationResult> {
+  const polishAi = params.interpretWithAi !== false;
   const reasons: string[] = [];
   const { data: posts, error } = await params.supabase
     .from("content_posts")
@@ -264,7 +267,7 @@ export async function generateSuggestedLessons(params: {
             },
           },
           postIds: [...personal, ...advice].map((p) => p.id),
-          interpretWithAi: true,
+          interpretWithAi: polishAi,
         });
         if (inserted) created += 1;
       }
@@ -305,7 +308,7 @@ export async function generateSuggestedLessons(params: {
           contrarian: { posts: contrarian.length, median_relative_views: cMed },
           question: { posts: question.length, median_relative_views: qMed },
         },
-        interpretWithAi: true,
+        interpretWithAi: polishAi,
       });
       if (inserted) created += 1;
     }

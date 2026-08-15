@@ -11,10 +11,12 @@ import { createClient } from "@/lib/supabase/server";
 import {
   acceptRepurposingOpportunityAction,
   createSeriesAction,
+  deleteSeriesAction,
   dismissRepurposingOpportunityAction,
   refreshRepurposingOpportunitiesAction,
   updateSeriesItemStatusAction,
 } from "./actions";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 
 type PageProps = { searchParams: Promise<{ error?: string; scanned?: string }> };
 
@@ -134,7 +136,13 @@ export default async function SeriesPage({ searchParams }: PageProps) {
           {(seriesResult.data?.length ?? 0) === 0 ? <Card><CardContent className="pt-6 text-sm text-secondary">No series planned yet.</CardContent></Card> : seriesResult.data?.map((series) => (
             <Card key={series.id}>
               <CardHeader>
-                <div className="flex flex-wrap gap-2"><Badge variant="primary">{series.status}</Badge>{series.format ? <Badge variant="default">{series.format}</Badge> : null}</div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap gap-2"><Badge variant="primary">{series.status}</Badge>{series.format ? <Badge variant="default">{series.format}</Badge> : null}</div>
+                  <form action={deleteSeriesAction}>
+                    <input type="hidden" name="id" value={series.id} />
+                    <ConfirmDeleteButton confirmMessage="Delete this series and all of its parts permanently?" />
+                  </form>
+                </div>
                 <CardTitle>{series.name}</CardTitle><CardDescription>{series.thesis}</CardDescription>
               </CardHeader>
               <CardContent>

@@ -45,6 +45,8 @@ import {
 import { RunIntelligenceButton } from "./intelligence-actions";
 import { LessonActions } from "./lesson-actions";
 import { ManualPostDialog } from "./my-content-actions";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
+import { deletePostAction } from "./actions";
 
 type SearchParams = Promise<{
   q?: string;
@@ -84,38 +86,41 @@ function PostCard({
   const viewsMultiplier = getRelativeMultiplier(post, baselines, "views");
 
   return (
-    <Link
-      href={`/my-content/${post.id}`}
-      className="block rounded-xl border border-outline-variant/20 bg-surface-primary p-5 paper-shadow transition-colors hover:border-primary-container/30"
-    >
-      <div className="flex flex-wrap items-start gap-2">
-        <h3 className="font-headline text-lg font-semibold text-on-background">
-          {post.title || post.caption?.slice(0, 60) || "Untitled post"}
-        </h3>
-        {post.is_winner ? <Badge variant="success">Winner</Badge> : null}
-        {post.needs_review ? <Badge variant="warning">Needs review</Badge> : null}
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Badge variant="default">{post.platform.replace(/_/g, " ")}</Badge>
-        <Badge variant="primary">
-          {post.source === "connected_account"
-            ? sourceLabelForSynced(
-                post.platform,
-                post.metrics_refreshed_at ?? null,
-              )
-            : post.source_label}
-        </Badge>
-      </div>
-      <p className="mt-3 line-clamp-2 text-sm text-secondary">{post.caption}</p>
-      <div className="mt-4 flex flex-wrap gap-3 text-xs text-secondary">
-        <span>{formatDate(post.published_at)}</span>
-        <span>
-          Views: {post.views !== null ? post.views.toLocaleString() : "Unavailable"}
-        </span>
-        {viewsRank ? <span>{viewsRank}</span> : null}
-        {viewsMultiplier ? <span>{viewsMultiplier}</span> : null}
-      </div>
-    </Link>
+    <div className="rounded-xl border border-outline-variant/20 bg-surface-primary p-5 paper-shadow transition-colors hover:border-primary-container/30">
+      <Link href={`/my-content/${post.id}`} className="block">
+        <div className="flex flex-wrap items-start gap-2">
+          <h3 className="font-headline text-lg font-semibold text-on-background">
+            {post.title || post.caption?.slice(0, 60) || "Untitled post"}
+          </h3>
+          {post.is_winner ? <Badge variant="success">Winner</Badge> : null}
+          {post.needs_review ? <Badge variant="warning">Needs review</Badge> : null}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Badge variant="default">{post.platform.replace(/_/g, " ")}</Badge>
+          <Badge variant="primary">
+            {post.source === "connected_account"
+              ? sourceLabelForSynced(
+                  post.platform,
+                  post.metrics_refreshed_at ?? null,
+                )
+              : post.source_label}
+          </Badge>
+        </div>
+        <p className="mt-3 line-clamp-2 text-sm text-secondary">{post.caption}</p>
+        <div className="mt-4 flex flex-wrap gap-3 text-xs text-secondary">
+          <span>{formatDate(post.published_at)}</span>
+          <span>
+            Views: {post.views !== null ? post.views.toLocaleString() : "Unavailable"}
+          </span>
+          {viewsRank ? <span>{viewsRank}</span> : null}
+          {viewsMultiplier ? <span>{viewsMultiplier}</span> : null}
+        </div>
+      </Link>
+      <form action={deletePostAction} className="mt-3">
+        <input type="hidden" name="id" value={post.id} />
+        <ConfirmDeleteButton confirmMessage="Delete this post permanently?" />
+      </form>
+    </div>
   );
 }
 

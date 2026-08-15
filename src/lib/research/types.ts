@@ -36,6 +36,8 @@ export type ResearchAnalysis = {
   hookText: string | null;
   hookType: string | null;
   topic: string | null;
+  /** Production format slug from FORMAT_LIBRARY (tutorial, yap, screen-recording, …). */
+  format: string | null;
   whyItMayWork: string[];
   reusablePattern: string | null;
   caution: string;

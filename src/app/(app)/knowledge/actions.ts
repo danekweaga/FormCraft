@@ -479,3 +479,17 @@ export async function retryProcessing(id: string): Promise<{ error?: string }> {
   revalidateKnowledge(id);
   return {};
 }
+
+export async function deleteCollection(formData: FormData): Promise<void> {
+  const id = String(formData.get("id") ?? "");
+  const auth = await requireUser();
+  if (auth.error || !auth.supabase || !auth.user || !id) return;
+
+  await auth.supabase
+    .from("knowledge_collections")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", auth.user.id);
+
+  revalidatePath("/knowledge");
+}

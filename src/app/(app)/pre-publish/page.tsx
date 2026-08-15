@@ -2,9 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { listStyleProfiles } from "@/lib/editing/style-profiles";
 import { createClient } from "@/lib/supabase/server";
+import { deletePrePublishReviewAction } from "./actions";
 import { PrePublishForm } from "./pre-publish-form";
 
 type ReviewResult = {
@@ -118,10 +120,13 @@ export default async function PrePublishPage({
                 ? result.findings.length
                 : result.checks?.filter((c) => !c.pass).length;
               return (
-                <li key={review.id}>
+                <li
+                  key={review.id}
+                  className="rounded-xl border border-outline-variant/20 bg-surface-primary p-5 paper-shadow"
+                >
                   <Link
                     href={`/pre-publish/${review.id}`}
-                    className="block rounded-xl border border-outline-variant/20 bg-surface-primary p-5 paper-shadow transition hover:border-primary/40"
+                    className="block transition hover:opacity-90"
                   >
                     <div className="flex flex-wrap gap-2">
                       <Badge variant="primary">{review.status}</Badge>
@@ -152,6 +157,10 @@ export default async function PrePublishPage({
                         : null}
                     </p>
                   </Link>
+                  <form action={deletePrePublishReviewAction} className="mt-3">
+                    <input type="hidden" name="id" value={review.id} />
+                    <ConfirmDeleteButton confirmMessage="Delete this pre-publish review permanently?" />
+                  </form>
                 </li>
               );
             })}

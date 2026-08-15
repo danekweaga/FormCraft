@@ -42,7 +42,17 @@ export function ImpressionsHeatmap({ heatmap }: { heatmap: Heatmap }) {
         </p>
       </div>
 
-      <div className="mt-5 overflow-x-auto">
+      {heatmap.total === 0 ? (
+        <div className="mt-5 flex h-32 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-outline-variant/30 px-4 text-center text-sm text-secondary">
+          <p>No impression activity to show for the past year.</p>
+          <p className="text-xs">
+            Sync Instagram so account daily views backfill this heatmap — publish-day
+            only data looks empty.
+          </p>
+        </div>
+      ) : null}
+
+      <div className={`mt-5 overflow-x-auto ${heatmap.total === 0 ? "hidden" : ""}`}>
         <div className="inline-flex min-w-full gap-2">
           <div className="flex shrink-0 flex-col justify-between pt-5 pb-1 text-[10px] text-secondary">
             {DAY_LABELS.map((label, index) => (

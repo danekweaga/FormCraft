@@ -16,6 +16,7 @@ type PersonaValues = {
   content_style: string;
   script_style: string;
   social_bio: string;
+  bio_must_include: string;
   content_pillars: string;
 };
 
@@ -101,6 +102,7 @@ export function PersonaForm({
         <div className="space-y-5 p-5">
           <BioRewritePanel
             postCount={ownedPostCount}
+            initialMustInclude={values.bio_must_include}
             onApply={(bio) => setSocialBio(bio)}
           />
           <div className="grid gap-5 lg:grid-cols-2">

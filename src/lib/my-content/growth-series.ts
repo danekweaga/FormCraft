@@ -283,6 +283,8 @@ export function buildYearHeatmap(params: {
   metric: GrowthMetric;
   now?: Date;
   weeks?: number;
+  externalDaily?: Map<string, number> | null;
+  externalBasis?: GrowthBasis;
 }): Heatmap {
   const weekCount = params.weeks ?? 53;
   const now = params.now ?? new Date();
@@ -292,6 +294,8 @@ export function buildYearHeatmap(params: {
     metric: params.metric,
     days: weekCount * 7,
     now,
+    externalDaily: params.externalDaily,
+    externalBasis: params.externalBasis,
   });
 
   const byDate = new Map(series.points.map((point) => [point.date, point]));

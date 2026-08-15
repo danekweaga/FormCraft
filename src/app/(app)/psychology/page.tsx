@@ -13,9 +13,12 @@ import type { ScholarlyStudy } from "@/lib/psychology/providers/types";
 import {
   addPsychologyPrincipleAction,
   addPsychologySourceAction,
+  deletePsychologyPrincipleAction,
+  deletePsychologySourceAction,
   installPsychologyStarterLibraryAction,
   saveOpenAlexStudyAction,
 } from "./actions";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 
 type PageProps = {
   searchParams: Promise<{
@@ -227,10 +230,56 @@ export default async function PsychologyPage({ searchParams }: PageProps) {
                     {principle.content_application ? <div><p className="font-semibold">Apply it</p><p className="text-secondary">{principle.content_application}</p></div> : null}
                     {principle.limitations ? <div><p className="font-semibold">Limits</p><p className="text-secondary">{principle.limitations}</p></div> : null}
                     {sourceIds.length ? <div><p className="font-semibold">Sources</p><ul className="mt-1 space-y-1 text-secondary">{sourceIds.map((id) => { const source = sourceMap.get(id); return source ? <li key={id}>{source.url ? <a className="text-primary underline" href={source.url} target="_blank" rel="noreferrer">{source.title}</a> : source.title}</li> : null; })}</ul></div> : <p className="text-secondary">No supporting source linked yet.</p>}
+                    <form action={deletePsychologyPrincipleAction} className="pt-1">
+                      <input type="hidden" name="id" value={principle.id} />
+                      <ConfirmDeleteButton confirmMessage="Delete this psychology principle permanently?" />
+                    </form>
                   </CardContent>
                 </Card>
               );
             })}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-4 font-headline text-2xl font-semibold">Source library</h2>
+        {(sourcesResult.data?.length ?? 0) === 0 ? (
+          <Card>
+            <CardContent className="pt-6 text-sm text-secondary">
+              No sources saved yet. Add a DOI, research URL, or OpenAlex study above.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {sourcesResult.data?.map((source) => (
+              <Card key={source.id}>
+                <CardHeader>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="default">
+                      {sourceTypeLabels[source.source_type] ?? source.source_type}
+                    </Badge>
+                  </div>
+                  <CardTitle className="text-lg">{source.title}</CardTitle>
+                  {source.citation ? (
+                    <CardDescription>{source.citation}</CardDescription>
+                  ) : null}
+                </CardHeader>
+                <CardContent className="flex flex-wrap items-center gap-2">
+                  {source.url ? (
+                    <Button asChild size="sm" variant="outline">
+                      <a href={source.url} target="_blank" rel="noreferrer">
+                        Open source
+                      </a>
+                    </Button>
+                  ) : null}
+                  <form action={deletePsychologySourceAction}>
+                    <input type="hidden" name="id" value={source.id} />
+                    <ConfirmDeleteButton confirmMessage="Delete this psychology source permanently? Linked principle associations will be removed." />
+                  </form>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         )}
       </section>

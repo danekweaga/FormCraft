@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AddToCanvasButton } from "@/components/canvas/add-to-canvas-button";
 import { createClient } from "@/lib/supabase/server";
+import { deleteIdeaGateEvaluationAction } from "./actions";
 import { IdeaGateForm } from "./idea-gate-form";
 
 export default async function IdeaGatePage() {
@@ -70,13 +72,17 @@ export default async function IdeaGatePage() {
                     Better angle: {item.better_angle}
                   </p>
                 ) : null}
-                <div className="mt-3">
+                <div className="mt-3 flex flex-wrap items-center gap-2">
                   <AddToCanvasButton
                     nodeType="idea"
                     title={item.idea_text.slice(0, 80)}
                     body={[item.why, item.better_angle].filter(Boolean).join("\n")}
                     entityId={item.id}
                   />
+                  <form action={deleteIdeaGateEvaluationAction}>
+                    <input type="hidden" name="id" value={item.id} />
+                    <ConfirmDeleteButton confirmMessage="Delete this idea evaluation permanently?" />
+                  </form>
                 </div>
               </li>
             ))}

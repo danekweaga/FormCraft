@@ -9,6 +9,7 @@ import {
   normalizeFormatSlug,
 } from "@/lib/library/format-library";
 import { createClient } from "@/lib/supabase/server";
+import { FormatsShowAllToggle } from "./formats-show-all-toggle";
 
 const familyTone: Record<string, string> = {
   "Direct-to-camera": "from-emerald-500/35 via-emerald-500/10",
@@ -33,9 +34,10 @@ type FormatExample = {
 export default async function CollectionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ format?: string; q?: string }>;
+  searchParams: Promise<{ format?: string; q?: string; all?: string }>;
 }) {
   const params = await searchParams;
+  const showAll = params.all === "1";
   const supabase = await createClient();
   const {
     data: { user },
@@ -46,7 +48,7 @@ export default async function CollectionsPage({
     supabase
       .from("research_items")
       .select(
-        "id, title, description, hook_text, transcript, platform, creator_name, views, outlier_score, duration_seconds, analysis, published_at, hidden",
+        "id, title, description, hook_text, transcript, platform, creator_name, views, outlier_score, duration_seconds, analysis, published_at, hidden, format",
       )
       .eq("user_id", user.id)
       .eq("hidden", false)
@@ -60,20 +62,54 @@ export default async function CollectionsPage({
       .limit(120),
   ]);
 
+  // Backfill missing format on research items (cheap heuristic, no LLM).
+  const backfill: Array<{ id: string; format: string }> = [];
+  for (const item of researchItems ?? []) {
+    if (item.format) continue;
+    const format = inferFormatFromEvidence({
+      title: item.title,
+      description: item.description,
+      hookText: item.hook_text,
+      transcript: item.transcript,
+      durationSeconds:
+        item.duration_seconds == null ? null : Number(item.duration_seconds),
+      analysis:
+        item.analysis && typeof item.analysis === "object"
+          ? (item.analysis as Record<string, unknown>)
+          : null,
+    });
+    backfill.push({ id: item.id, format });
+  }
+  if (backfill.length > 0) {
+    await Promise.all(
+      backfill.slice(0, 80).map((row) =>
+        supabase
+          .from("research_items")
+          .update({ format: row.format })
+          .eq("id", row.id)
+          .eq("user_id", user.id),
+      ),
+    );
+  }
+  const backfillMap = new Map(backfill.map((row) => [row.id, row.format]));
+
   const examples: FormatExample[] = [
     ...(researchItems ?? []).map((item) => {
-      const formatSlug = inferFormatFromEvidence({
-        title: item.title,
-        description: item.description,
-        hookText: item.hook_text,
-        transcript: item.transcript,
-        durationSeconds:
-          item.duration_seconds == null ? null : Number(item.duration_seconds),
-        analysis:
-          item.analysis && typeof item.analysis === "object"
-            ? (item.analysis as Record<string, unknown>)
-            : null,
-      });
+      const formatSlug =
+        normalizeFormatSlug(item.format) ??
+        backfillMap.get(item.id) ??
+        inferFormatFromEvidence({
+          title: item.title,
+          description: item.description,
+          hookText: item.hook_text,
+          transcript: item.transcript,
+          durationSeconds:
+            item.duration_seconds == null ? null : Number(item.duration_seconds),
+          analysis:
+            item.analysis && typeof item.analysis === "object"
+              ? (item.analysis as Record<string, unknown>)
+              : null,
+        });
       return {
         id: item.id,
         title: item.title || item.hook_text || "Untitled For You video",
@@ -117,6 +153,15 @@ export default async function CollectionsPage({
           .toLowerCase()
           .includes(query),
   );
+  const withCounts = definitions.map((definition) => ({
+    definition,
+    matches: examples.filter((item) => item.formatSlug === definition.slug),
+  }));
+  const visible = showAll
+    ? withCounts
+    : withCounts.filter((row) => row.matches.length > 0);
+  const hiddenEmpty = withCounts.length - visible.length;
+
   const selected =
     FORMAT_LIBRARY.find((definition) => definition.slug === params.format) ??
     null;
@@ -139,8 +184,9 @@ export default async function CollectionsPage({
       <form
         action="/collections"
         method="get"
-        className="mb-6 flex max-w-xl gap-2"
+        className="mb-4 flex max-w-xl gap-2"
       >
+        {showAll ? <input type="hidden" name="all" value="1" /> : null}
         <input
           type="search"
           name="q"
@@ -153,18 +199,29 @@ export default async function CollectionsPage({
         </Button>
       </form>
 
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <FormatsShowAllToggle
+          showAll={showAll}
+          query={params.q ?? ""}
+          hiddenEmpty={hiddenEmpty}
+        />
+        <p className="text-xs text-secondary">
+          Showing {visible.length} of {withCounts.length} formats
+          {hiddenEmpty > 0 && !showAll
+            ? ` · ${hiddenEmpty} empty hidden`
+            : ""}
+        </p>
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {definitions.map((definition) => {
-          const matches = examples.filter(
-            (item) => item.formatSlug === definition.slug,
-          );
+        {visible.map(({ definition, matches }) => {
           const fypCount = matches.filter((item) =>
             item.href.startsWith("/research"),
           ).length;
           return (
             <Link
               key={definition.slug}
-              href={`/collections?format=${definition.slug}`}
+              href={`/collections?format=${definition.slug}${showAll ? "&all=1" : ""}${params.q ? `&q=${encodeURIComponent(params.q)}` : ""}`}
               className="group overflow-hidden rounded-xl border border-outline-variant/20 bg-surface-primary paper-shadow transition-transform hover:-translate-y-0.5"
             >
               <div
@@ -195,6 +252,13 @@ export default async function CollectionsPage({
         })}
       </div>
 
+      {visible.length === 0 ? (
+        <div className="mt-6 rounded-xl border border-dashed border-outline-variant/30 p-8 text-sm text-secondary">
+          No formats with examples yet. Refresh For You on Research, then open
+          Formats again — or toggle “Show all formats”.
+        </div>
+      ) : null}
+
       {selected ? (
         <section className="mt-8 rounded-xl border border-outline-variant/20 bg-surface-primary p-5 paper-shadow">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -210,7 +274,7 @@ export default async function CollectionsPage({
               </p>
             </div>
             <Button asChild size="sm" variant="ghost">
-              <Link href="/collections">Close</Link>
+              <Link href={`/collections${showAll ? "?all=1" : ""}`}>Close</Link>
             </Button>
           </div>
 

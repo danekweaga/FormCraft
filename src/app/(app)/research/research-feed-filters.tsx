@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, useActionState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -12,7 +13,11 @@ import {
   type ResearchFeedFilters,
 } from "@/lib/research/feed-filters";
 import { MIN_RESEARCH_VIEWS } from "@/lib/research/visibility-policy";
-import { saveResearchFilterAction, type ResearchActionState } from "./actions";
+import {
+  deleteSavedResearchFilterAction,
+  saveResearchFilterAction,
+  type ResearchActionState,
+} from "./actions";
 import {
   ResearchItemCard,
   type ResearchCardItem,
@@ -48,6 +53,15 @@ export function ResearchFeedWithFilters({
   useEffect(() => {
     if (saveState.success) router.refresh();
   }, [router, saveState.success]);
+
+  useEffect(() => {
+    if (
+      selectedSavedFilter &&
+      !savedFilters.some((option) => option.id === selectedSavedFilter)
+    ) {
+      setSelectedSavedFilter("");
+    }
+  }, [savedFilters, selectedSavedFilter]);
 
   const creators = useMemo(() => {
     const names = Array.from(
@@ -104,6 +118,34 @@ export function ResearchFeedWithFilters({
                   </option>
                 ))}
               </select>
+              <ul className="space-y-1">
+                {savedFilters.map((option) => (
+                  <li
+                    key={option.id}
+                    className="flex items-center justify-between gap-2 rounded-md border border-outline-variant/15 px-2 py-1"
+                  >
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 truncate text-left text-xs text-secondary hover:text-on-background"
+                      onClick={() => {
+                        setSelectedSavedFilter(option.id);
+                        setFilters(option.filters);
+                      }}
+                    >
+                      {option.name}
+                    </button>
+                    <form action={deleteSavedResearchFilterAction}>
+                      <input type="hidden" name="id" value={option.id} />
+                      <ConfirmDeleteButton
+                        label="Delete"
+                        confirmMessage={`Delete saved filter “${option.name}”?`}
+                        variant="ghost"
+                        className="h-7 px-2 text-error"
+                      />
+                    </form>
+                  </li>
+                ))}
+              </ul>
               <p className="text-xs text-secondary">
                 Loading a filter restores every saved limit exactly.
               </p>

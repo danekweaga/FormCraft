@@ -23,9 +23,11 @@ import {
   createAnalysisFromUploadAction,
   createAnalysisFromUrlAction,
   createTranscriptAnalysisFromForm,
+  deleteVideoAnalysisAction,
   type AnalyzeActionState,
 } from "./actions";
 import { captureVideoFrames } from "./capture-frames";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 
 const initialState: AnalyzeActionState = {};
 
@@ -289,32 +291,40 @@ export function AnalysisList({
           <p className="text-sm text-secondary">No analyses in this filter.</p>
         ) : (
           filtered.map((analysis) => (
-            <Link
+            <div
               key={analysis.id}
-              href={`/analyze/${analysis.id}`}
-              className="block rounded-lg border border-outline-variant/20 p-3 hover:bg-surface-container-lowest"
+              className="flex items-start gap-2 rounded-lg border border-outline-variant/20"
             >
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="font-medium text-on-background">
-                  {analysis.title || "Untitled analysis"}
+              <Link
+                href={`/analyze/${analysis.id}`}
+                className="min-w-0 flex-1 p-3 hover:bg-surface-container-lowest"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium text-on-background">
+                    {analysis.title || "Untitled analysis"}
+                  </p>
+                  <Badge variant="default">{analysis.analysis_mode}</Badge>
+                  <Badge variant="default">{analysis.status}</Badge>
+                  {analysis.has_visual_evidence ? (
+                    <Badge variant="success">Visual</Badge>
+                  ) : (
+                    <Badge variant="warning">Transcript</Badge>
+                  )}
+                  {analysis.saved ? <Badge variant="primary">Saved</Badge> : null}
+                </div>
+                <p className="mt-1 text-xs text-secondary">
+                  {(analysis.source_type || analysis.subject_type).replace(
+                    /_/g,
+                    " ",
+                  )}{" "}
+                  · {formatDate(analysis.created_at)}
                 </p>
-                <Badge variant="default">{analysis.analysis_mode}</Badge>
-                <Badge variant="default">{analysis.status}</Badge>
-                {analysis.has_visual_evidence ? (
-                  <Badge variant="success">Visual</Badge>
-                ) : (
-                  <Badge variant="warning">Transcript</Badge>
-                )}
-                {analysis.saved ? <Badge variant="primary">Saved</Badge> : null}
-              </div>
-              <p className="mt-1 text-xs text-secondary">
-                {(analysis.source_type || analysis.subject_type).replace(
-                  /_/g,
-                  " ",
-                )}{" "}
-                · {formatDate(analysis.created_at)}
-              </p>
-            </Link>
+              </Link>
+              <form action={deleteVideoAnalysisAction} className="shrink-0 p-2">
+                <input type="hidden" name="id" value={analysis.id} />
+                <ConfirmDeleteButton confirmMessage="Delete this analysis permanently?" />
+              </form>
+            </div>
           ))
         )}
       </CardContent>

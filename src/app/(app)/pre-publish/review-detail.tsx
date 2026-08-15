@@ -21,9 +21,11 @@ import {
 } from "@/lib/editing/schema";
 import {
   assignReviewToExperimentAction,
+  deletePrePublishReviewAction,
   saveEditingFeedbackAction,
   updatePrePublishStatusAction,
 } from "./actions";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 
 function formatClock(seconds: number | null | undefined) {
   if (seconds == null) return null;
@@ -114,6 +116,13 @@ export function PrePublishDetailClient({
               <Button type="submit" size="sm" variant="outline">
                 Needs revision
               </Button>
+            </form>
+            <form action={deletePrePublishReviewAction}>
+              <input type="hidden" name="id" value={review.id} />
+              <ConfirmDeleteButton
+                variant="destructive"
+                confirmMessage="Delete this pre-publish review permanently?"
+              />
             </form>
           </div>
         </CardContent>

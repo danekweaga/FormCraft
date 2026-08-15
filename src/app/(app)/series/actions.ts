@@ -179,3 +179,15 @@ export async function updateSeriesItemStatusAction(formData: FormData) {
     .eq("user_id", user.id);
   revalidatePath("/series");
 }
+
+export async function deleteSeriesAction(formData: FormData) {
+  const id = opportunitySchema.safeParse(formData.get("id"));
+  if (!id.success) return;
+  const { supabase, user } = await authenticated();
+  await supabase
+    .from("content_series")
+    .delete()
+    .eq("id", id.data)
+    .eq("user_id", user.id);
+  revalidatePath("/series");
+}

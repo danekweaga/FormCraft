@@ -176,6 +176,21 @@ export async function runSocialSync(params: {
         },
       })
       .eq("id", params.connectionId);
+
+    try {
+      const { persistAccountMetricSnapshots } = await import(
+        "@/lib/social/account-metric-snapshots"
+      );
+      await persistAccountMetricSnapshots({
+        supabase: admin,
+        userId: params.userId,
+        connectionId: params.connectionId,
+        followerCount: profile.followerCount,
+        insights: accountInsights,
+      });
+    } catch {
+      // Snapshot history is supplemental — never block sync.
+    }
     await mark("profile", "done", profile.displayName ?? profile.username ?? undefined);
 
     if (params.syncType === "profile_refresh") {

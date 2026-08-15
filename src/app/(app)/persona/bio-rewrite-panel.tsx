@@ -12,14 +12,16 @@ import {
 
 export function BioRewritePanel({
   postCount,
+  initialMustInclude = "",
   onApply,
 }: {
   postCount: number;
+  initialMustInclude?: string;
   onApply: (bio: string) => void;
 }) {
   const [pending, startTransition] = useTransition();
   const [state, setState] = useState<BioRewriteActionState>({});
-  const [mustInclude, setMustInclude] = useState("");
+  const [mustInclude, setMustInclude] = useState(initialMustInclude);
 
   const canRewrite = postCount >= 3;
 

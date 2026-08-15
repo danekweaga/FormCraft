@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -49,6 +51,11 @@ export default async function SettingsPage() {
       <PageHeader
         title="Settings"
         description="Account details and every service FormCraft is wired to. Keys stay on the server — this page never shows secrets."
+        actions={
+          <Button asChild variant="outline" size="sm">
+            <Link href="/settings/diagnostics">Diagnostics</Link>
+          </Button>
+        }
       />
 
       <Card className="max-w-xl border-outline-variant/20 bg-surface-primary paper-shadow">

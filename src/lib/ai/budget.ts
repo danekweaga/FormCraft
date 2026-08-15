@@ -10,8 +10,8 @@ function numEnv(name: string, fallback: number): number {
 
 export function getAiBudgets() {
   return {
-    dailyUsd: numEnv("DAILY_AI_BUDGET_USD", 1),
-    monthlyUsd: numEnv("MONTHLY_AI_BUDGET_USD", 10),
+    dailyUsd: numEnv("DAILY_AI_BUDGET_USD", 10),
+    monthlyUsd: numEnv("MONTHLY_AI_BUDGET_USD", 100),
   };
 }
 
@@ -57,8 +57,7 @@ export async function checkAiBudget(
       reason: "daily",
       spentUsd: dailySpend,
       budgetUsd: budgets.dailyUsd,
-      message:
-        "Daily AI budget reached. This request was not sent. Increase DAILY_AI_BUDGET_USD, use a cheaper model, or continue without AI.",
+      message: `Daily AI budget reached ($${dailySpend.toFixed(2)} of $${budgets.dailyUsd.toFixed(2)}). Raise DAILY_AI_BUDGET_USD, use a cheaper model, or wait until tomorrow.`,
     };
   }
   if (monthlySpend >= budgets.monthlyUsd) {
@@ -67,11 +66,49 @@ export async function checkAiBudget(
       reason: "monthly",
       spentUsd: monthlySpend,
       budgetUsd: budgets.monthlyUsd,
-      message:
-        "Monthly AI budget reached. This request was not sent. Increase MONTHLY_AI_BUDGET_USD, use a cheaper model, or continue without AI.",
+      message: `Monthly AI budget reached ($${monthlySpend.toFixed(2)} of $${budgets.monthlyUsd.toFixed(2)}). Raise MONTHLY_AI_BUDGET_USD or use cheaper models.`,
     };
   }
   return { ok: true };
+}
+
+/** Remaining budget for diagnostics / Usage UI. */
+export async function getAiBudgetStatus(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<{
+  dailySpend: number;
+  monthlySpend: number;
+  dailyBudget: number;
+  monthlyBudget: number;
+  dailyRemaining: number;
+  monthlyRemaining: number;
+  blocked: false | "daily" | "monthly";
+}> {
+  const budgets = getAiBudgets();
+  const now = new Date();
+  const startOfDay = new Date(now);
+  startOfDay.setHours(0, 0, 0, 0);
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const [dailySpend, monthlySpend] = await Promise.all([
+    getSpendSince(supabase, userId, startOfDay.toISOString()),
+    getSpendSince(supabase, userId, startOfMonth.toISOString()),
+  ]);
+  const blocked =
+    dailySpend >= budgets.dailyUsd
+      ? ("daily" as const)
+      : monthlySpend >= budgets.monthlyUsd
+        ? ("monthly" as const)
+        : false;
+  return {
+    dailySpend,
+    monthlySpend,
+    dailyBudget: budgets.dailyUsd,
+    monthlyBudget: budgets.monthlyUsd,
+    dailyRemaining: Math.max(0, budgets.dailyUsd - dailySpend),
+    monthlyRemaining: Math.max(0, budgets.monthlyUsd - monthlySpend),
+    blocked,
+  };
 }
 
 export class AiBudgetError extends Error {

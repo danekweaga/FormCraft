@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/card";
 import {
   aggregateInstagramAccountTotals,
-  buildAccountFollowerSeries,
+  buildAccountFollowerGainSeries,
   filterPostsByConnection,
   filterPostsByPreviousRange,
   percentageChange,
@@ -257,7 +257,10 @@ export default async function DashboardPage({
   });
   const followerChanges =
     instagramInsights.length > 0
-      ? buildAccountFollowerSeries({ insights: instagramInsights, days: chartDays })
+      ? buildAccountFollowerGainSeries({
+          insights: instagramInsights,
+          days: chartDays,
+        })
       : postFollowerSeries.points.map((point) => ({
           date: point.date,
           value: point.value,

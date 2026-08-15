@@ -97,6 +97,30 @@ export async function followCreatorFromCatalogAction(formData: FormData): Promis
   revalidatePath("/research");
 }
 
+export async function unfollowCreatorFromCatalogAction(formData: FormData): Promise<void> {
+  const parsed = followSchema.safeParse({
+    username: formData.get("username"),
+    platform: formData.get("platform"),
+  });
+  if (!parsed.success) return;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  await supabase
+    .from("external_creators")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("platform", parsed.data.platform)
+    .eq("handle", parsed.data.username);
+
+  revalidatePath("/creators");
+  revalidatePath("/research");
+}
+
 export async function importCreatorCatalogAction() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

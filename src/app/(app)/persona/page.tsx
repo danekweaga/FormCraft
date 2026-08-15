@@ -17,7 +17,7 @@ export default async function PersonaPage() {
   const [{ data: profile }, { data: posts }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("what_i_make, my_audience, content_style, script_style, social_bio, content_pillars, creator_profile_completed_at")
+      .select("what_i_make, my_audience, content_style, script_style, social_bio, bio_must_include, content_pillars, creator_profile_completed_at")
       .eq("id", user.id)
       .maybeSingle(),
     supabase
@@ -34,6 +34,7 @@ export default async function PersonaPage() {
     content_style: profile?.content_style ?? "",
     script_style: profile?.script_style ?? "",
     social_bio: profile?.social_bio ?? "",
+    bio_must_include: profile?.bio_must_include ?? "",
     content_pillars: (profile?.content_pillars ?? []).join(", "),
   };
   const completed = [

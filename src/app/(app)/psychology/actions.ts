@@ -241,3 +241,27 @@ export async function saveOpenAlexStudyAction(formData: FormData) {
   revalidatePath("/psychology");
   redirect("/psychology?saved=openalex");
 }
+
+export async function deletePsychologySourceAction(formData: FormData) {
+  const id = z.string().uuid().safeParse(formData.get("id"));
+  if (!id.success) return;
+  const { supabase, user } = await authenticated();
+  await supabase
+    .from("psychology_sources")
+    .delete()
+    .eq("id", id.data)
+    .eq("user_id", user.id);
+  revalidatePath("/psychology");
+}
+
+export async function deletePsychologyPrincipleAction(formData: FormData) {
+  const id = z.string().uuid().safeParse(formData.get("id"));
+  if (!id.success) return;
+  const { supabase, user } = await authenticated();
+  await supabase
+    .from("psychology_principles")
+    .delete()
+    .eq("id", id.data)
+    .eq("user_id", user.id);
+  revalidatePath("/psychology");
+}

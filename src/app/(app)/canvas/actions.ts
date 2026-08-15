@@ -1000,31 +1000,36 @@ export async function runCanvasAiAction(input: {
       })),
     });
 
-  if (!usedLlm) {
-    return {
-      error:
-        fallbackReason?.trim() ||
-        `Canvas AI did not run (${modelName}). Check Models / OPENROUTER_API_KEY, then retry.`,
-    };
-  }
-
   const maxX = Math.max(...nodes.map((n) => Number(n.position_x)));
   const avgY =
     nodes.reduce((s, n) => s + Number(n.position_y), 0) / nodes.length;
+
+  const title = usedLlm
+    ? result.title.slice(0, 120)
+    : `[Heuristic] ${result.title}`.slice(0, 120);
+  const bodyParts = [
+    !usedLlm
+      ? `Heuristic — AI unavailable${fallbackReason ? `: ${fallbackReason}` : ""}.`
+      : null,
+    result.summary,
+    ...result.bullets.map((b) => `• ${b}`),
+  ].filter(Boolean);
 
   const created = await insertCanvasNode({
     supabase: auth.supabase,
     userId: auth.user.id,
     boardId: input.boardId,
     nodeType: result.suggestedNodeType,
-    title: result.title.slice(0, 120),
-    body: [result.summary, ...result.bullets.map((b) => `• ${b}`)].join("\n"),
+    title,
+    body: bodyParts.join("\n"),
     position: { x: maxX + 300, y: avgY },
     payload: {
       canvasAiAction: input.action,
       usedLlm,
       modelName,
       sourceNodeIds: input.nodeIds,
+      heuristic: !usedLlm,
+      fallbackReason: fallbackReason ?? null,
     },
   });
 
@@ -1041,7 +1046,9 @@ export async function runCanvasAiAction(input: {
 
   revalidateBoard(input.boardId);
   return {
-    success: `AI result added with ${modelName}.`,
+    success: usedLlm
+      ? `AI result added with ${modelName}.`
+      : `Added heuristic result (AI unavailable${fallbackReason ? `: ${fallbackReason}` : ""}).`,
     nodeId: created.id,
   };
 }

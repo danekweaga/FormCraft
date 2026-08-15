@@ -376,6 +376,21 @@ export async function updatePrePublishStatusAction(formData: FormData) {
   revalidatePath(`/pre-publish/${id}`);
 }
 
+export async function deletePrePublishReviewAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const auth = await requireUser();
+  if (auth.error || !auth.supabase || !auth.user || !id) return;
+
+  await auth.supabase
+    .from("pre_publish_reviews")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", auth.user.id);
+
+  revalidatePath("/pre-publish");
+  redirect("/pre-publish");
+}
+
 export async function assignReviewToExperimentAction(formData: FormData) {
   const reviewId = String(formData.get("reviewId") ?? "");
   const experimentId = String(formData.get("experimentId") ?? "");

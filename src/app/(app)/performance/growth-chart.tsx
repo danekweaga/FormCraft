@@ -129,8 +129,13 @@ export function GrowthChart({
       </div>
 
       {series.total === 0 ? (
-        <div className="flex h-48 items-center justify-center rounded-xl border border-dashed border-outline-variant/30 text-sm text-secondary">
-          No {metricLabel(metric)} recorded in this range.
+        <div className="flex h-48 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-outline-variant/30 px-4 text-center text-sm text-secondary">
+          <p>No {metricLabel(metric)} recorded in this range.</p>
+          <p className="text-xs">
+            {metric === "followers"
+              ? "Sync your Instagram connection so accountInsights (follows) are stored, or check Diagnostics."
+              : "Sync Instagram for account daily views, or ensure posts have view metrics."}
+          </p>
         </div>
       ) : (
         <div className="relative">

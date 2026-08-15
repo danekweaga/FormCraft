@@ -38,6 +38,8 @@ const clusterSchema = z.object({
 export async function refreshAudienceInsights(params: {
   supabase: SupabaseClient;
   userId: string;
+  /** When true, skip cheap LLM clustering (deterministic buckets only). */
+  skipAiCluster?: boolean;
 }): Promise<number> {
   const { data: comments } = await params.supabase
     .from("audience_comments")
@@ -116,7 +118,10 @@ export async function refreshAudienceInsights(params: {
 
   // CHEAP model may add broader clusters from authentic wording
   const samples = comments.slice(0, 40).map((c) => c.body.slice(0, 180));
-  if (samples.length >= SAMPLE_GUARDS.audienceInsightMinMentions) {
+  if (
+    !params.skipAiCluster &&
+    samples.length >= SAMPLE_GUARDS.audienceInsightMinMentions
+  ) {
     const cacheKey = hashAiInput(["audience-cluster-v1", samples]);
     const clustered = await tryStructuredAI({
       supabase: params.supabase,

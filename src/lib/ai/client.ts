@@ -373,33 +373,24 @@ export async function tryStructuredAI<T>(params: {
       params.input,
     );
   } catch (error) {
-    const fallbackReason =
+    let fallbackReason =
       error instanceof Error ? error.message : "AI generation failed.";
+    if (!isLlmConfigured()) {
+      fallbackReason =
+        "OPENROUTER_API_KEY is not configured on the server.";
+    } else if (error instanceof AiBudgetError) {
+      fallbackReason = error.message;
+    } else if (/json|schema|parse/i.test(fallbackReason)) {
+      fallbackReason = `Model returned invalid JSON: ${fallbackReason}`;
+    } else if (/fetch|network|timeout|ECONN|ETIMEDOUT/i.test(fallbackReason)) {
+      fallbackReason = `OpenRouter request failed: ${fallbackReason}`;
+    }
     console.error("[ai:fallback] structured generation unavailable", {
       taskType: params.input.taskType,
       role: params.input.role,
       modelName: params.input.modelName ?? null,
       reason: fallbackReason,
     });
-    if (error instanceof AiBudgetError) {
-      return {
-        text: "",
-        provider: "openrouter",
-        model: "none",
-        role: params.input.role,
-        inputTokens: 0,
-        outputTokens: 0,
-        estimatedCostUsd: 0,
-        actualCostUsd: 0,
-        latencyMs: 0,
-        cached: false,
-        jobId: null,
-        usedLlm: false,
-        data: params.fallback,
-        validationState: "fallback",
-        fallbackReason,
-      };
-    }
     return {
       text: "",
       provider: "openrouter",

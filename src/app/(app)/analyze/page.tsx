@@ -2,8 +2,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { createClient } from "@/lib/supabase/server";
+import {
+  deleteAnalysisComparisonAction,
+  deleteSavedPatternAction,
+} from "./actions";
 import {
   AnalysisList,
   AnalyzeForm,
@@ -41,6 +46,13 @@ export default async function AnalyzePage({
     .select(
       "id, title, analysis_mode, subject_type, source_type, status, has_visual_evidence, saved, created_at, input_type",
     )
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(40);
+
+  const { data: savedPatterns } = await supabase
+    .from("saved_patterns")
+    .select("id, name, pattern_type, created_at, source_analysis_id")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(40);
@@ -103,7 +115,13 @@ export default async function AnalyzePage({
           <CompareForm analyses={analyses ?? []} />
           {comparisonResult ? (
             <div className="rounded-xl border border-outline-variant/20 bg-surface-primary p-4 paper-shadow">
-              <p className="font-semibold text-on-background">Last comparison</p>
+              <div className="flex items-start justify-between gap-3">
+                <p className="font-semibold text-on-background">Last comparison</p>
+                <form action={deleteAnalysisComparisonAction}>
+                  <input type="hidden" name="id" value={comparisonResult.id} />
+                  <ConfirmDeleteButton confirmMessage="Delete this comparison permanently?" />
+                </form>
+              </div>
               <p className="mt-2 text-xs text-secondary">
                 {comparisonResult.left_analysis_id.slice(0, 8)} vs{" "}
                 {comparisonResult.right_analysis_id.slice(0, 8)}
@@ -117,6 +135,44 @@ export default async function AnalyzePage({
               title="Pick two analyses"
               description="Compare hooks, structure, rehooks, and scorecards without implying views equal quality."
             />
+          )}
+        </div>
+      ) : null}
+
+      {tab === "saved" ? (
+        <div className="mb-6 space-y-3">
+          <h2 className="font-headline text-lg font-semibold text-on-background">
+            Saved patterns
+          </h2>
+          {(savedPatterns?.length ?? 0) === 0 ? (
+            <p className="text-sm text-secondary">
+              No reusable patterns saved yet. Save one from an analysis detail page.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {savedPatterns?.map((pattern) => (
+                <li
+                  key={pattern.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-outline-variant/20 bg-surface-primary px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-on-background">
+                      {pattern.name}
+                    </p>
+                    <p className="text-xs text-secondary">
+                      {pattern.pattern_type}
+                      {pattern.source_analysis_id
+                        ? ` · from ${pattern.source_analysis_id.slice(0, 8)}`
+                        : ""}
+                    </p>
+                  </div>
+                  <form action={deleteSavedPatternAction}>
+                    <input type="hidden" name="id" value={pattern.id} />
+                    <ConfirmDeleteButton confirmMessage="Delete this saved pattern permanently?" />
+                  </form>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       ) : null}

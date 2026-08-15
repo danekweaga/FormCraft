@@ -23,10 +23,12 @@ import {
 import {
   saveEditingPatternFromAnalysisAction,
 } from "@/app/(app)/pre-publish/actions";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import {
   addAnalysisToCanvasAction,
   attachRetentionCurveAction,
   createExperimentFromInsight,
+  deleteVideoAnalysisAction,
   reanalyzeTranscript,
   saveAnalysisCorrectionsAction,
   savePatternFromAnalysisAction,
@@ -293,6 +295,13 @@ export function AnalysisDetailClient({ analysis }: { analysis: AnalysisDetail })
             >
               Premium reanalyze
             </Button>
+            <form action={deleteVideoAnalysisAction}>
+              <input type="hidden" name="id" value={analysis.id} />
+              <ConfirmDeleteButton
+                variant="destructive"
+                confirmMessage="Delete this analysis permanently? Media and related comparisons will be removed."
+              />
+            </form>
           </div>
         }
       />

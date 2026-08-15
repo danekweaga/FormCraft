@@ -4,6 +4,11 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { createClient } from "@/lib/supabase/server";
 import { CreateMilestoneForm, CreateRoadmapForm } from "./roadmap-forms";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
+import {
+  deleteMilestoneAction,
+  deleteRoadmapAction,
+} from "./actions";
 
 export default async function RoadmapPage() {
   const supabase = await createClient();
@@ -46,10 +51,16 @@ export default async function RoadmapPage() {
         {active ? (
           <div className="space-y-4">
             <div className="rounded-xl border border-outline-variant/20 bg-surface-primary p-5 paper-shadow">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="primary">{active.status}</Badge>
-                <Badge variant="default">{active.current_phase}</Badge>
-                <Badge variant="default">{`${active.progress_pct}%`}</Badge>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="primary">{active.status}</Badge>
+                  <Badge variant="default">{active.current_phase}</Badge>
+                  <Badge variant="default">{`${active.progress_pct}%`}</Badge>
+                </div>
+                <form action={deleteRoadmapAction}>
+                  <input type="hidden" name="id" value={active.id} />
+                  <ConfirmDeleteButton confirmMessage="Delete this roadmap and all of its milestones permanently?" />
+                </form>
               </div>
               <h2 className="mt-3 font-headline text-2xl font-semibold text-on-background">
                 {active.goal}
@@ -74,10 +85,16 @@ export default async function RoadmapPage() {
                     key={milestone.id}
                     className="rounded-lg border border-outline-variant/15 bg-surface-container-lowest p-4"
                   >
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="default">{milestone.status}</Badge>
-                      <Badge variant="primary">{milestone.source_kind}</Badge>
-                      <Badge variant="default">{milestone.category}</Badge>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="default">{milestone.status}</Badge>
+                        <Badge variant="primary">{milestone.source_kind}</Badge>
+                        <Badge variant="default">{milestone.category}</Badge>
+                      </div>
+                      <form action={deleteMilestoneAction}>
+                        <input type="hidden" name="id" value={milestone.id} />
+                        <ConfirmDeleteButton confirmMessage="Delete this milestone permanently?" />
+                      </form>
                     </div>
                     <p className="mt-2 font-medium text-on-background">
                       {milestone.title}

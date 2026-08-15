@@ -1,9 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { tryStructuredAI } from "@/lib/ai/client";
 import { analyzeTranscriptHeuristic } from "@/lib/analyze/heuristic";
+import {
+  FORMAT_LIBRARY,
+  inferFormatFromEvidence,
+  normalizeFormatSlug,
+} from "@/lib/library/format-library";
 import { z } from "zod";
 import type { ResearchAnalysis, ScoredResearchVideo } from "./types";
 import { fetchYouTubeTranscript } from "./youtube-transcript";
+
+const formatSlugs = FORMAT_LIBRARY.map((f) => f.slug) as [string, ...string[]];
 
 const analysisSchema = z.object({
   items: z.array(
@@ -12,6 +19,7 @@ const analysisSchema = z.object({
       hookText: z.string().nullable(),
       hookType: z.string().nullable(),
       topic: z.string().nullable(),
+      format: z.enum(formatSlugs).nullable().optional(),
       whyItMayWork: z.array(z.string()).max(4),
       reusablePattern: z.string().nullable(),
       caution: z.string(),
@@ -20,6 +28,21 @@ const analysisSchema = z.object({
     }),
   ),
 });
+
+function resolveFormat(params: {
+  video: ScoredResearchVideo;
+  transcriptExcerpt?: string | null;
+  suggested?: string | null;
+}): string {
+  const normalized = normalizeFormatSlug(params.suggested ?? null);
+  if (normalized) return normalized;
+  return inferFormatFromEvidence({
+    title: params.video.title,
+    description: params.video.description,
+    transcript: params.transcriptExcerpt ?? null,
+    durationSeconds: params.video.durationSeconds ?? null,
+  });
+}
 
 function fallbackAnalysis(
   video: ScoredResearchVideo,
@@ -39,6 +62,7 @@ function fallbackAnalysis(
       hookText: hook?.text?.slice(0, 280) ?? video.title,
       hookType: hook?.type ?? null,
       topic: query,
+      format: resolveFormat({ video, transcriptExcerpt }),
       whyItMayWork: [
         video.outlierScore != null
           ? `This video has ${video.outlierScore.toFixed(1)}x the views of the disclosed comparison median.`
@@ -64,6 +88,7 @@ function fallbackAnalysis(
     hookText: null,
     hookType: null,
     topic: query,
+    format: resolveFormat({ video, transcriptExcerpt }),
     whyItMayWork:
       video.outlierScore !== null
         ? [
@@ -117,7 +142,7 @@ export async function analyzeResearchBatch(params: {
         {
           role: "system",
           content:
-            "Analyze public creator-video evidence. Prefer title/description/metrics; when a transcript excerpt is provided, also extract spoken hook, structure, and reusable pattern from that text only. Never claim you watched the video or saw visuals. Never infer retention or causation. Outlier score is unusual views, not proof of why. Set evidenceBasis to metadata_and_transcript only when a transcript excerpt was supplied for that item; otherwise metadata_only. Return JSON exactly matching the schema.",
+            "Analyze public creator-video evidence. Prefer title/description/metrics; when a transcript excerpt is provided, also extract spoken hook, structure, and reusable pattern from that text only. Also set format to one of the production format slugs: yap, talking-head, walking-yap, explainer, tutorial, screen-recording, storytime, personal-story, list, breakdown, reaction, skit, meme-led, interview, voice-over, carousel, panel. Never claim you watched the video or saw visuals. Never infer retention or causation. Outlier score is unusual views, not proof of why. Set evidenceBasis to metadata_and_transcript only when a transcript excerpt was supplied for that item; otherwise metadata_only. Return JSON exactly matching the schema.",
         },
         {
           role: "user",
@@ -148,6 +173,15 @@ export async function analyzeResearchBatch(params: {
       const fallbackItem = fallback.items.find(
         (f) => f.externalId === item.externalId,
       );
+      const video = candidates.find((v) => v.externalId === item.externalId);
+      const transcriptExcerpt = transcripts.get(item.externalId) ?? null;
+      const format = video
+        ? resolveFormat({
+            video,
+            transcriptExcerpt,
+            suggested: item.format ?? fallbackItem?.format ?? null,
+          })
+        : normalizeFormatSlug(item.format ?? null) ?? "talking-head";
       return [
         item.externalId,
         {
@@ -155,6 +189,7 @@ export async function analyzeResearchBatch(params: {
             hookText: hadTranscript ? item.hookText : null,
             hookType: hadTranscript ? item.hookType : null,
             topic: item.topic,
+            format,
             whyItMayWork: item.whyItMayWork,
             reusablePattern: item.reusablePattern,
             caution: item.caution,
