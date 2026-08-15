@@ -16,6 +16,7 @@ import {
 } from "@/lib/analyze/ingest/url";
 import { runStagedAnalysis } from "@/lib/analyze/pipeline/run-analysis";
 import {
+  clipAnalysisTitle,
   createAnalysisInputSchema,
   normalizeAnalysisResult,
   subjectToSourceType,
@@ -380,7 +381,10 @@ export async function analyzeMyContentPost(
   }
 
   const result = await createTranscriptAnalysis({
-    title: post.title || `Analysis: ${post.platform} post`,
+    title: clipAnalysisTitle(
+      post.title,
+      `Analysis: ${post.platform} post`,
+    ),
     transcript,
     mode: "expert",
     subjectType: "own_content",
@@ -804,7 +808,7 @@ export async function breakDownResearchItemAction(
     };
   }
 
-  const title = item.title || "Research breakdown";
+  const title = clipAnalysisTitle(item.title, "Research breakdown");
   const normalized = normalizeTranscriptText(transcript);
   const { data: placeholder, error: placeholderError } = await auth.supabase
     .from("video_analyses")
@@ -966,7 +970,10 @@ export async function reanalyzeTranscript(
   }
 
   return createTranscriptAnalysis({
-    title: parent.title ? `${parent.title} (reanalysis)` : "Reanalysis",
+    title: clipAnalysisTitle(
+      parent.title ? `${parent.title} (reanalysis)` : null,
+      "Reanalysis",
+    ),
     transcript: parent.transcript,
     rawTranscript: parent.raw_transcript,
     mode: options?.mode ?? (parent.analysis_mode as "quick" | "deep" | "expert"),

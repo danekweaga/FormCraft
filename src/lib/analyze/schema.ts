@@ -328,8 +328,23 @@ export const analysisResultSchema = z.object({
   personalComparison: personalComparisonSchema.nullable().default(null),
 });
 
+/** Research/IG captions are often dumped into title — clip instead of rejecting. */
+export const ANALYSIS_TITLE_MAX = 200;
+
+export function clipAnalysisTitle(
+  value: string | null | undefined,
+  fallback = "Untitled analysis",
+): string {
+  const trimmed = value?.trim() || fallback;
+  return trimmed.slice(0, ANALYSIS_TITLE_MAX);
+}
+
 export const createAnalysisInputSchema = z.object({
-  title: z.string().trim().min(1).max(200),
+  title: z
+    .string()
+    .trim()
+    .min(1)
+    .transform((value) => value.slice(0, ANALYSIS_TITLE_MAX)),
   transcript: z.string().trim().min(20).max(200_000),
   mode: z.enum(analysisModes).default("deep"),
   subjectType: z.enum(analysisSubjectTypes).default("unknown"),
