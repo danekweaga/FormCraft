@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { BuildFromHookStudio } from "./build-from-hook";
 import { CreateCaptureForm } from "./create-capture-form";
 import { CreateMyVersion } from "./create-my-version";
+import { PasteLinkIdeaForm } from "./paste-link-idea-form";
 
 export default async function CreatePage({
   searchParams,
@@ -44,7 +45,7 @@ export default async function CreatePage({
     <div>
       <PageHeader
         title="Build"
-        description="Start from a hook or research opportunity, dump your ideas, draft a script, then revise what you like and change what you don’t — or paste a script for FormCraft to grade and improve."
+        description="Paste a video link and add your spin, start from a hook, dump a draft, or grade a script — FormCraft keeps the original as evidence, not a clone."
       />
 
       {hook ? (
@@ -64,35 +65,38 @@ export default async function CreatePage({
           }}
         />
       ) : (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <CreateCaptureForm />
-          <Card className="border-outline-variant/20 bg-surface-primary paper-shadow">
-            <CardHeader>
-              <CardTitle>Start from a hook or opportunity</CardTitle>
-              <CardDescription>
-                Open Hooks and hit Build on any template, or pick a real outlier in
-                Discover and Create My Version.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <Button asChild>
-                  <Link href="/hooks">Browse Hooks</Link>
-                </Button>
-                <Button asChild variant="outline">
-                  <Link href="/research?mode=for-you">Find opportunities</Link>
-                </Button>
-              </div>
-              <div>
-                <AddToCanvasButton
-                  nodeType="draft"
-                  title="Blank draft"
-                  body="Start drafting here"
-                  label="Add blank draft to Canvas"
-                />
-              </div>
-            </CardContent>
-          </Card>
+        <div className="space-y-6">
+          <PasteLinkIdeaForm />
+          <div className="grid gap-6 lg:grid-cols-2">
+            <CreateCaptureForm />
+            <Card className="border-outline-variant/20 bg-surface-primary paper-shadow">
+              <CardHeader>
+                <CardTitle>Start from a hook or opportunity</CardTitle>
+                <CardDescription>
+                  Open Hooks and hit Build on any template, or pick a real outlier in
+                  Discover and Create My Version.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild>
+                    <Link href="/hooks">Browse Hooks</Link>
+                  </Button>
+                  <Button asChild variant="outline">
+                    <Link href="/research?mode=for-you">Find opportunities</Link>
+                  </Button>
+                </div>
+                <div>
+                  <AddToCanvasButton
+                    nodeType="draft"
+                    title="Blank draft"
+                    body="Start drafting here"
+                    label="Add blank draft to Canvas"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
     </div>

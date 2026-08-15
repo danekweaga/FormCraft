@@ -951,3 +951,28 @@ export async function gradeAndImproveScriptAction(
   }
 }
 
+export type StartIdeaFromLinkState = {
+  error?: string;
+};
+
+/** Paste a video URL on Build → save as research reference → open Create My Version (spin). */
+export async function startIdeaFromLinkAction(
+  _previous: StartIdeaFromLinkState,
+  formData: FormData,
+): Promise<StartIdeaFromLinkState> {
+  const { redirect } = await import("next/navigation");
+  const { saveResearchReferenceAction } = await import(
+    "@/app/(app)/research/actions"
+  );
+
+  const result = await saveResearchReferenceAction({}, formData);
+  if (result.error) return { error: result.error };
+  if (!result.id) {
+    return { error: "Could not open that video for Build. Try again." };
+  }
+
+  revalidatePath("/create");
+  redirect(`/create?researchItem=${result.id}`);
+  return {};
+}
+

@@ -29,7 +29,7 @@ export default async function IdeaGatePage() {
     <div>
       <PageHeader
         title="Idea Gate"
-        description="Decide what deserves production time. Paste a video link to invent an original take, or type an idea. FormCraft checks audience, brand fit, originality, proof, format, hook angles, effort, conversion fit, and claim risk."
+        description="Decide what deserves production time. FormCraft checks the whole content system, including audience, brand fit, originality, proof, format, hook angles, effort, conversion fit, and claim risk."
       />
 
       <div className="grid gap-6 lg:grid-cols-2">

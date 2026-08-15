@@ -15,6 +15,7 @@ import { createClient } from "@/lib/supabase/server";
 export type ResearchActionState = {
   error?: string;
   success?: string;
+  id?: string;
   discovered?: number;
   eligible?: number;
   retained?: number;
@@ -284,33 +285,40 @@ export async function saveResearchReferenceAction(
   const transcriptGrounded =
     result?.analysis.evidenceBasis === "metadata_and_transcript";
 
-  const { error } = await supabase.from("research_items").upsert(
-    {
-      user_id: user.id,
-      platform: reference.platform,
-      external_id: reference.externalId,
-      external_url: reference.normalizedUrl,
-      title: title || null,
-      description: notes || null,
-      hook_text: transcriptGrounded ? result?.analysis.hookText ?? null : null,
-      topic: result?.analysis.topic ?? null,
-      format: result?.analysis.format ?? null,
-      analysis: result?.analysis ?? {},
-      analysis_model: result?.model ?? null,
-      transcript: transcript || null,
-      transcript_provider: transcriptProvider,
-      transcript_language: transcriptLanguage,
-      transcript_segments: transcriptSegments,
-      transcript_retrieved_at: transcript ? new Date().toISOString() : null,
-      saved: true,
-      source: "manual_reference",
-    },
-    { onConflict: "user_id,platform,external_id" },
-  );
+  const { data: saved, error } = await supabase
+    .from("research_items")
+    .upsert(
+      {
+        user_id: user.id,
+        platform: reference.platform,
+        external_id: reference.externalId,
+        external_url: reference.normalizedUrl,
+        title: title || null,
+        description: notes || null,
+        hook_text: transcriptGrounded ? result?.analysis.hookText ?? null : null,
+        topic: result?.analysis.topic ?? null,
+        format: result?.analysis.format ?? null,
+        analysis: result?.analysis ?? {},
+        analysis_model: result?.model ?? null,
+        transcript: transcript || null,
+        transcript_provider: transcriptProvider,
+        transcript_language: transcriptLanguage,
+        transcript_segments: transcriptSegments,
+        transcript_retrieved_at: transcript ? new Date().toISOString() : null,
+        saved: true,
+        source: "manual_reference",
+      },
+      { onConflict: "user_id,platform,external_id" },
+    )
+    .select("id")
+    .single();
   if (error) return { error: error.message };
+  if (!saved?.id) return { error: "Reference saved but id was missing." };
 
   revalidatePath("/research");
+  revalidatePath("/create");
   return {
+    id: saved.id,
     success: transcriptGrounded
       ? `Reference saved. The spoken hook was derived from the ${transcriptProvider === "supadata_auto" ? "Supadata transcript" : "provided transcript"}.`
       : "Reference saved with metadata only. Add a transcript or use a supported public video link before analyzing its spoken hook.",
