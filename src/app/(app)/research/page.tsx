@@ -389,9 +389,15 @@ export default async function ResearchPage({
     highPerformingTopics: topics,
     maxAgeDays: 30,
   });
+  // Keep personalization for filtering/reasons, but always show newest posts first.
   const forYou = mixFeedByPolicy(rankedForYou, {
     watchedCreatorIds: [...watchlistCreatorIds],
     targetLength: 120,
+  }).sort((a, b) => {
+    const aTime = a.published_at ? new Date(a.published_at).getTime() : 0;
+    const bTime = b.published_at ? new Date(b.published_at).getTime() : 0;
+    if (bTime !== aTime) return bTime - aTime;
+    return (b.views ?? 0) - (a.views ?? 0);
   });
   const outliers = [...visibleResearch].sort(
     (a, b) => (b.outlier_score ?? -1) - (a.outlier_score ?? -1),
@@ -1098,9 +1104,9 @@ export default async function ResearchPage({
           title="For You ranking"
           confidence="medium"
           why={[
-            "Ranks a mix of new creators first. Watchlist accounts stay in the pool but no longer take over the feed.",
-            "A diversity pass prevents one creator, topic, or platform from taking over the feed.",
-            "Opening the app checks for videos posted since the last scan. Watchlists stay on their own refresh so discovery does not cost a credit per creator.",
+            "Sorted by publish date — most recent videos stay at the top.",
+            "Personalization still filters noise (negative feedback, posts older than 30 days) and explains why each clip fits you.",
+            "The feed mixes niche search, watchlist, and outliers so one creator does not own the whole list — then sorts that mix newest-first.",
           ]}
           evidence={evidence.topics.slice(0, 4)}
           sources={[
