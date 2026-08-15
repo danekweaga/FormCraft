@@ -6,7 +6,10 @@ export type GrowthMetric = "impressions" | "followers";
  * How a daily number was derived. Shown in the UI so a chart point is never
  * mistaken for a platform-reported daily breakdown.
  */
-export type GrowthBasis = "measured_daily_change" | "publish_date_attribution";
+export type GrowthBasis =
+  | "measured_daily_change"
+  | "publish_date_attribution"
+  | "account_daily_followers";
 
 export type MetricSnapshotRow = {
   content_post_id: string;
@@ -167,12 +170,36 @@ function buildMeasuredDailyTotals(
   return totals;
 }
 
+function mapTotal(values: Map<string, number>): number {
+  let total = 0;
+  for (const value of values.values()) total += value;
+  return total;
+}
+
+/**
+ * Snapshot deltas are preferred only when they cover enough days and aren't a
+ * near-empty under-count of lifetime views (common after a few syncs).
+ */
+export function shouldPreferMeasuredDailyChange(
+  measured: Map<string, number>,
+  attributed: Map<string, number>,
+): boolean {
+  const measuredTotal = mapTotal(measured);
+  const attributedTotal = mapTotal(attributed);
+  if (measured.size < 2 || measuredTotal <= 0) return false;
+  if (attributedTotal <= 0) return true;
+  return measuredTotal >= Math.max(50, attributedTotal * 0.2);
+}
+
 export function buildGrowthSeries(params: {
   posts: ContentPostRow[];
   snapshots?: MetricSnapshotRow[];
   metric: GrowthMetric;
   days: number;
   now?: Date;
+  /** Optional absolute/daily series override (e.g. Instagram account insights). */
+  externalDaily?: Map<string, number> | null;
+  externalBasis?: GrowthBasis;
 }): GrowthSeries {
   const { posts, snapshots = [], metric, days } = params;
   const now = params.now ?? new Date();
@@ -182,25 +209,34 @@ export function buildGrowthSeries(params: {
 
   const postsByDay = buildPostsByDay(posts);
 
-  const measured =
-    metric === "impressions" ? buildMeasuredDailyTotals(snapshots) : null;
-  const basis: GrowthBasis = measured
-    ? "measured_daily_change"
-    : "publish_date_attribution";
-
   const attributed = new Map<string, number>();
-  if (!measured) {
-    for (const post of posts) {
-      if (!post.published_at) continue;
-      const value = metricValue(post, metric);
-      if (typeof value !== "number" || !Number.isFinite(value)) continue;
-      const key = toDayKey(post.published_at);
-      if (!key) continue;
-      attributed.set(key, (attributed.get(key) ?? 0) + value);
-    }
+  for (const post of posts) {
+    if (!post.published_at) continue;
+    const value = metricValue(post, metric);
+    if (typeof value !== "number" || !Number.isFinite(value)) continue;
+    const key = toDayKey(post.published_at);
+    if (!key) continue;
+    attributed.set(key, (attributed.get(key) ?? 0) + value);
   }
 
-  const source = measured ?? attributed;
+  const measured =
+    metric === "impressions" && !params.externalDaily
+      ? buildMeasuredDailyTotals(snapshots)
+      : null;
+
+  let basis: GrowthBasis = "publish_date_attribution";
+  let source: Map<string, number> = attributed;
+  let totalMode: "sum" | "latest" = "sum";
+
+  if (params.externalDaily && params.externalDaily.size > 0) {
+    basis = params.externalBasis ?? "account_daily_followers";
+    source = params.externalDaily;
+    totalMode = basis === "account_daily_followers" ? "latest" : "sum";
+  } else if (measured && shouldPreferMeasuredDailyChange(measured, attributed)) {
+    basis = "measured_daily_change";
+    source = measured;
+  }
+
   const points: GrowthPoint[] = [];
   let postCount = 0;
 
@@ -215,7 +251,10 @@ export function buildGrowthSeries(params: {
     });
   }
 
-  const total = points.reduce((sum, point) => sum + point.value, 0);
+  const total =
+    totalMode === "latest"
+      ? [...points].reverse().find((point) => point.value > 0)?.value ?? 0
+      : points.reduce((sum, point) => sum + point.value, 0);
   const bestDay = points.reduce<GrowthPoint | null>(
     (best, point) =>
       point.value > 0 && (!best || point.value > best.value) ? point : best,
@@ -318,9 +357,13 @@ export function snapshotWindowStart(days = 400): string {
 }
 
 export function growthBasisLabel(basis: GrowthBasis): string {
-  return basis === "measured_daily_change"
-    ? "Measured daily change between metric snapshots"
-    : "Lifetime metrics credited to each post's publish date";
+  if (basis === "measured_daily_change") {
+    return "Measured daily change between metric snapshots";
+  }
+  if (basis === "account_daily_followers") {
+    return "Daily follower totals from Instagram account insights";
+  }
+  return "Lifetime metrics credited to each post's publish date";
 }
 
 export function metricLabel(metric: GrowthMetric): string {

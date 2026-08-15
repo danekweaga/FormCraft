@@ -11,6 +11,11 @@ Set these for Production and Preview as appropriate. Never expose server-only va
 - `SOCIAL_TOKEN_ENCRYPTION_KEY`
 - `SOCIAL_OAUTH_STATE_SECRET`
 - `OPENROUTER_API_KEY`
+- Optional OpenRouter model overrides (defaults below if unset):
+  - `AI_MODEL_CHEAP` / `OPENROUTER_CHEAP_MODEL` → `deepseek/deepseek-v4-flash-0731`
+  - `AI_MODEL_STANDARD` / `OPENROUTER_STANDARD_MODEL` → `google/gemini-3.7-flash`
+  - `AI_MODEL_PREMIUM` / `OPENROUTER_PREMIUM_MODEL` → `anthropic/claude-sonnet-4.6`
+  - `AI_MODEL_MULTIMODAL` / `OPENROUTER_MULTIMODAL_MODEL` → `google/gemini-3.7-flash`
 - `DAILY_AI_BUDGET_USD`
 - `MONTHLY_AI_BUDGET_USD`
 - `CRON_SECRET`

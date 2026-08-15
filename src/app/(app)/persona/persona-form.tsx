@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { BioRewritePanel } from "./bio-rewrite-panel";
 import { saveCreatorProfile, type CreatorProfileActionState } from "./actions";
 
 const initialState: CreatorProfileActionState = {};
@@ -30,7 +31,8 @@ const fields: Array<{
     key: "what_i_make",
     title: "What I make",
     badge: "Research",
-    description: "Your niche, recurring topics, expertise, and the transformation your content helps create.",
+    description:
+      "Your niche, recurring topics, expertise, and the transformation your content helps create.",
     placeholder: "I make practical content for... My recurring topics are...",
     rows: 7,
   },
@@ -38,15 +40,18 @@ const fields: Array<{
     key: "my_audience",
     title: "My audience",
     badge: "Personalization",
-    description: "Who they are, what they already know, what they want, and what usually blocks them.",
-    placeholder: "My ideal viewer is... They struggle with... They already understand...",
+    description:
+      "Who they are, what they already know, what they want, and what usually blocks them.",
+    placeholder:
+      "My ideal viewer is... They struggle with... They already understand...",
     rows: 7,
   },
   {
     key: "content_style",
     title: "My content style",
     badge: "Creative direction",
-    description: "Tone, formats, pacing, proof standards, boundaries, and anything FormCraft should avoid.",
+    description:
+      "Tone, formats, pacing, proof standards, boundaries, and anything FormCraft should avoid.",
     placeholder: "Direct and conversational. Prefer... Avoid... Never invent...",
     rows: 10,
   },
@@ -54,7 +59,8 @@ const fields: Array<{
     key: "script_style",
     title: "My script style",
     badge: "Scripting",
-    description: "Paste a real script or writing sample. Use examples here, not instructions pretending to be a sample.",
+    description:
+      "Paste a real script or writing sample. Use examples here, not instructions pretending to be a sample.",
     placeholder: "Paste a script that sounds like you...",
     rows: 16,
   },
@@ -63,11 +69,16 @@ const fields: Array<{
 export function PersonaForm({
   values,
   suggestedBio,
+  ownedPostCount,
 }: {
   values: PersonaValues;
   suggestedBio: string | null;
+  ownedPostCount: number;
 }) {
-  const [state, action, pending] = useActionState(saveCreatorProfile, initialState);
+  const [state, action, pending] = useActionState(
+    saveCreatorProfile,
+    initialState,
+  );
   const [socialBio, setSocialBio] = useState(values.social_bio);
 
   return (
@@ -87,56 +98,64 @@ export function PersonaForm({
             <Badge variant="primary">Positioning</Badge>
           </div>
         </div>
-        <div className="grid gap-5 p-5 lg:grid-cols-2">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <Label htmlFor="social_bio">Current or proposed social bio</Label>
-              <span className="text-xs text-secondary">{socialBio.length}/150</span>
-            </div>
-            <Textarea
-              id="social_bio"
-              name="social_bio"
-              rows={5}
-              value={socialBio}
-              onChange={(event) => setSocialBio(event.currentTarget.value)}
-              maxLength={150}
-              placeholder="What should someone immediately understand about following you?"
-            />
-            {suggestedBio ? (
-              <div className="rounded-lg bg-surface-container-lowest p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-secondary">
-                  Strategy-based draft
-                </p>
-                <p className="mt-2 whitespace-pre-line text-sm text-on-background">
-                  {suggestedBio}
-                </p>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="mt-3"
-                  onClick={() => setSocialBio(suggestedBio)}
-                >
-                  Use this draft
-                </Button>
+        <div className="space-y-5 p-5">
+          <BioRewritePanel
+            postCount={ownedPostCount}
+            onApply={(bio) => setSocialBio(bio)}
+          />
+          <div className="grid gap-5 lg:grid-cols-2">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="social_bio">Current or proposed social bio</Label>
+                <span className="text-xs text-secondary">
+                  {socialBio.length}/150
+                </span>
               </div>
-            ) : null}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="content_pillars">Content pillars</Label>
-            <Textarea
-              id="content_pillars"
-              name="content_pillars"
-              rows={5}
-              defaultValue={values.content_pillars}
-              maxLength={500}
-              required
-              placeholder="Portfolio projects, AI for students, internships, honest CS student life"
-            />
-            <p className="text-xs leading-relaxed text-secondary">
-              Separate 2–8 pillars with commas or new lines. The audit checks
-              recent posts against these pillars.
-            </p>
+              <Textarea
+                id="social_bio"
+                name="social_bio"
+                rows={5}
+                value={socialBio}
+                onChange={(event) => setSocialBio(event.currentTarget.value)}
+                maxLength={150}
+                placeholder="What should someone immediately understand about following you?"
+              />
+              {suggestedBio ? (
+                <div className="rounded-lg bg-surface-container-lowest p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-secondary">
+                    Strategy-based draft
+                  </p>
+                  <p className="mt-2 whitespace-pre-line text-sm text-on-background">
+                    {suggestedBio}
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="mt-3"
+                    onClick={() => setSocialBio(suggestedBio)}
+                  >
+                    Use this draft
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="content_pillars">Content pillars</Label>
+              <Textarea
+                id="content_pillars"
+                name="content_pillars"
+                rows={5}
+                defaultValue={values.content_pillars}
+                maxLength={500}
+                required
+                placeholder="Portfolio projects, AI for students, internships, honest CS student life"
+              />
+              <p className="text-xs leading-relaxed text-secondary">
+                Separate 2–8 pillars with commas or new lines. The audit checks
+                recent posts against these pillars.
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -148,13 +167,17 @@ export function PersonaForm({
         >
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/15 px-5 py-4">
             <div>
-              <h2 className="font-headline text-lg font-semibold text-on-background">{field.title}</h2>
+              <h2 className="font-headline text-lg font-semibold text-on-background">
+                {field.title}
+              </h2>
               <p className="mt-1 text-sm text-secondary">{field.description}</p>
             </div>
             <Badge variant="primary">{field.badge}</Badge>
           </div>
           <div className="space-y-2 p-5">
-            <Label htmlFor={field.key} className="sr-only">{field.title}</Label>
+            <Label htmlFor={field.key} className="sr-only">
+              {field.title}
+            </Label>
             <Textarea
               id={field.key}
               name={field.key}
@@ -164,16 +187,25 @@ export function PersonaForm({
               maxLength={5000}
               required
             />
-            <p className="text-right text-xs text-secondary">Maximum 5,000 characters</p>
+            <p className="text-right text-xs text-secondary">
+              Maximum 5,000 characters
+            </p>
           </div>
         </section>
       ))}
 
       {state.error ? <p className="text-sm text-error">{state.error}</p> : null}
-      {state.success ? <p className="text-sm text-primary-container">{state.success}</p> : null}
+      {state.success ? (
+        <p className="text-sm text-primary-container">{state.success}</p>
+      ) : null}
 
       <div className="sticky bottom-4 flex justify-end">
-        <Button type="submit" size="lg" disabled={pending} className="paper-shadow">
+        <Button
+          type="submit"
+          size="lg"
+          disabled={pending}
+          className="paper-shadow"
+        >
           {pending ? "Saving profile..." : "Save creator profile"}
         </Button>
       </div>

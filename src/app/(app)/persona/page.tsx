@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/server";
 import { auditCreatorProfile } from "@/lib/persona/profile-audit";
+import { postsWithUsableText } from "@/lib/persona/rewrite-bio";
 import { PersonaForm } from "./persona-form";
 import { ProfileAuditPanel } from "./profile-audit-panel";
 
@@ -78,7 +79,22 @@ export default async function PersonaPage() {
         <p className="mb-4 mt-1 text-sm text-secondary">
           Adjust the direction intentionally, then save and rerun the audit.
         </p>
-        <PersonaForm values={values} suggestedBio={audit.suggestedBio} />
+        <PersonaForm
+          values={values}
+          suggestedBio={audit.suggestedBio}
+          ownedPostCount={postsWithUsableText(
+            (posts ?? []).map((post) => ({
+              title: post.title,
+              caption: post.caption,
+              topic: post.topic,
+              contentPillar: post.content_pillar,
+              classification:
+                post.classification && typeof post.classification === "object"
+                  ? (post.classification as Record<string, unknown>)
+                  : null,
+            })),
+          ).length}
+        />
       </div>
     </div>
   );

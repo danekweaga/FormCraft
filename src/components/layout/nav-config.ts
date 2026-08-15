@@ -20,7 +20,6 @@ export const SECONDARY_NAV: NavItem[] = [
   { href: "/performance", label: "Performance", icon: "analytics", group: "Intelligence" },
   { href: "/roadmap", label: "Roadmap", icon: "flag", group: "Intelligence" },
   { href: "/experiments", label: "Experiments", icon: "science", group: "Intelligence" },
-  { href: "/audience", label: "Audience", icon: "groups", group: "Intelligence" },
   { href: "/creators", label: "Creators", icon: "person_search", group: "Workspace" },
   { href: "/hooks", label: "Hooks", icon: "key", group: "Workspace" },
   { href: "/collections", label: "Formats", icon: "collections_bookmark", group: "Workspace" },

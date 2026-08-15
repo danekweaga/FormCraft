@@ -191,6 +191,9 @@ export async function runContentIntelligenceJob(): Promise<{
       taskType: "content_classification",
     });
 
+    // Cap AI classifications per pass so the 60s server-action budget is not blown.
+    const MAX_CLASSIFY_PER_PASS = 5;
+
     const { data: unclassified, error: listError } = await auth.supabase
       .from("content_posts")
       .select(
@@ -199,11 +202,13 @@ export async function runContentIntelligenceJob(): Promise<{
       .eq("user_id", auth.user.id)
       .eq("classification_locked", false)
       .order("published_at", { ascending: false, nullsFirst: false })
-      .limit(25);
+      .limit(40);
 
     if (listError) return { error: listError.message };
 
     let classified = 0;
+    let skippedAlready = 0;
+    let remaining = 0;
     const details: string[] = [];
 
     for (const post of unclassified ?? []) {
@@ -218,7 +223,15 @@ export async function runContentIntelligenceJob(): Promise<{
         existing &&
         existing.queued !== true &&
         typeof existing.content_mode === "string";
-      if (alreadyClassified && !onlyQueuedStub) continue;
+      if (alreadyClassified && !onlyQueuedStub) {
+        skippedAlready += 1;
+        continue;
+      }
+
+      if (classified >= MAX_CLASSIFY_PER_PASS) {
+        remaining += 1;
+        continue;
+      }
 
       const { classification, model } = await classifyPost({
         title: post.title,
@@ -250,8 +263,14 @@ export async function runContentIntelligenceJob(): Promise<{
 
     if ((unclassified?.length ?? 0) === 0) {
       details.push("No posts found to classify. Sync Instagram first.");
-    } else if (classified === 0) {
+    } else if (classified === 0 && remaining === 0) {
       details.push("Posts already classified — skipped reclassification.");
+    } else if (remaining > 0) {
+      details.push(
+        `Classified ${classified} this pass · ${remaining} still need a pass. Run again to continue.`,
+      );
+    } else if (skippedAlready > 0) {
+      details.push(`Skipped ${skippedAlready} already-classified posts.`);
     }
 
     const lessonResult = await generateSuggestedLessons({

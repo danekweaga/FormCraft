@@ -11,11 +11,11 @@ import {
 } from "@/lib/my-content/growth-series";
 
 const LEVEL_CLASS: Record<HeatmapCell["level"], string> = {
-  0: "bg-surface-container-low",
-  1: "bg-primary-container/25",
-  2: "bg-primary-container/45",
-  3: "bg-primary-container/70",
-  4: "bg-primary-container",
+  0: "bg-[#f0f0ec]",
+  1: "bg-[#c8c8c2]",
+  2: "bg-[#8f8f88]",
+  3: "bg-[#52524e]",
+  4: "bg-[#171717]",
 };
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

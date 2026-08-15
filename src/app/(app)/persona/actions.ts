@@ -2,20 +2,54 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import {
+  postsWithUsableText,
+  rewriteBioFromPosts,
+  type BioRewriteResult,
+} from "@/lib/persona/rewrite-bio";
 import { createClient } from "@/lib/supabase/server";
 
 const creatorProfileSchema = z.object({
-  what_i_make: z.string().trim().min(20, "Describe what you make in a little more detail.").max(5000),
-  my_audience: z.string().trim().min(20, "Describe the audience you want to help.").max(5000),
-  content_style: z.string().trim().min(20, "Describe how your content should feel.").max(5000),
-  script_style: z.string().trim().min(20, "Add a real writing or script sample.").max(5000),
-  social_bio: z.string().trim().max(150, "Keep the social bio within 150 characters."),
-  content_pillars: z.string().trim().min(2, "Add at least one content pillar.").max(500),
+  what_i_make: z
+    .string()
+    .trim()
+    .min(20, "Describe what you make in a little more detail.")
+    .max(5000),
+  my_audience: z
+    .string()
+    .trim()
+    .min(20, "Describe the audience you want to help.")
+    .max(5000),
+  content_style: z
+    .string()
+    .trim()
+    .min(20, "Describe how your content should feel.")
+    .max(5000),
+  script_style: z
+    .string()
+    .trim()
+    .min(20, "Add a real writing or script sample.")
+    .max(5000),
+  social_bio: z
+    .string()
+    .trim()
+    .max(150, "Keep the social bio within 150 characters."),
+  content_pillars: z
+    .string()
+    .trim()
+    .min(2, "Add at least one content pillar.")
+    .max(500),
 });
 
 export type CreatorProfileActionState = {
   error?: string;
   success?: string;
+};
+
+export type BioRewriteActionState = {
+  error?: string;
+  usedLlm?: boolean;
+  result?: BioRewriteResult;
 };
 
 export async function saveCreatorProfile(
@@ -32,7 +66,9 @@ export async function saveCreatorProfile(
   });
 
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Check your creator profile." };
+    return {
+      error: parsed.error.issues[0]?.message ?? "Check your creator profile.",
+    };
   }
 
   const supabase = await createClient();
@@ -72,9 +108,82 @@ export async function saveCreatorProfile(
 
   if (error) return { error: error.message };
 
-  for (const path of ["/persona", "/profile", "/brand-brain", "/today", "/research", "/create"]) {
+  for (const path of [
+    "/persona",
+    "/profile",
+    "/brand-brain",
+    "/today",
+    "/research",
+    "/create",
+  ]) {
     revalidatePath(path);
   }
 
-  return { success: "Creator profile saved. Future research, ideas, scripts, and reviews will use it." };
+  return {
+    success:
+      "Creator profile saved. Future research, ideas, scripts, and reviews will use it.",
+  };
+}
+
+export async function rewriteBioFromPostsAction(): Promise<BioRewriteActionState> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+
+  const [{ data: profile }, { data: posts }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("what_i_make, my_audience, social_bio, content_pillars")
+      .eq("id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("content_posts")
+      .select(
+        "title, caption, topic, content_pillar, classification, views, published_at",
+      )
+      .eq("user_id", user.id)
+      .order("published_at", { ascending: false, nullsFirst: false })
+      .limit(40),
+  ]);
+
+  const mapped = (posts ?? []).map((post) => ({
+    title: post.title,
+    caption: post.caption,
+    topic: post.topic,
+    contentPillar: post.content_pillar,
+    classification:
+      post.classification && typeof post.classification === "object"
+        ? (post.classification as Record<string, unknown>)
+        : null,
+    views: post.views,
+  }));
+
+  if (postsWithUsableText(mapped).length < 3) {
+    return {
+      error:
+        "Need at least 3 owned posts with titles or captions before rewriting your bio from what you post.",
+    };
+  }
+
+  try {
+    const { result, usedLlm } = await rewriteBioFromPosts({
+      supabase,
+      userId: user.id,
+      whatIMake: profile?.what_i_make ?? "",
+      audience: profile?.my_audience ?? "",
+      pillars: profile?.content_pillars ?? [],
+      currentBio: profile?.social_bio ?? "",
+      posts: mapped,
+    });
+    return { result, usedLlm };
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not rewrite bio from your posts.",
+    };
+  }
 }

@@ -120,6 +120,24 @@ describe("buildGrowthSeries", () => {
     expect(series.total).toBe(100);
   });
 
+  it("falls back to publish attribution when snapshot deltas under-count lifetime views", () => {
+    const snapshots: MetricSnapshotRow[] = [
+      { content_post_id: "a", captured_at: "2026-08-06T00:00:00.000Z", views: 10_000 },
+      { content_post_id: "a", captured_at: "2026-08-07T00:00:00.000Z", views: 10_020 },
+      { content_post_id: "a", captured_at: "2026-08-08T00:00:00.000Z", views: 10_040 },
+      { content_post_id: "a", captured_at: "2026-08-09T00:00:00.000Z", views: 10_050 },
+    ];
+    const series = buildGrowthSeries({
+      posts: [post({ id: "a", views: 10_050 })],
+      snapshots,
+      metric: "impressions",
+      days: 7,
+      now: NOW,
+    });
+    expect(series.basis).toBe("publish_date_attribution");
+    expect(series.total).toBe(10_050);
+  });
+
   it("uses followers_gained for the followers metric", () => {
     const series = buildGrowthSeries({
       posts: [
@@ -132,6 +150,24 @@ describe("buildGrowthSeries", () => {
     });
     expect(series.total).toBe(12);
     expect(series.basis).toBe("publish_date_attribution");
+  });
+
+  it("can plot Instagram account follower totals via externalDaily", () => {
+    const series = buildGrowthSeries({
+      posts: [post({ id: "a", followers_gained: null })],
+      metric: "followers",
+      days: 3,
+      now: NOW,
+      externalDaily: new Map([
+        ["2026-08-07", 1000],
+        ["2026-08-08", 1010],
+        ["2026-08-09", 1025],
+      ]),
+      externalBasis: "account_daily_followers",
+    });
+    expect(series.basis).toBe("account_daily_followers");
+    expect(series.total).toBe(1025);
+    expect(series.points.at(-1)?.value).toBe(1025);
   });
 
   it("returns zero-valued days rather than gaps", () => {

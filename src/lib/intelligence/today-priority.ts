@@ -135,7 +135,7 @@ export async function buildTodayPriorities(params: {
       rank: 6,
       title: "Audience opportunity",
       why: [insights[0].summary],
-      href: "/audience",
+      href: "/research",
       estimatedMinutes: 25,
     });
   }

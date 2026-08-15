@@ -5,6 +5,19 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { runContentIntelligenceJob } from "./actions";
 
+function friendlyIntelligenceError(error: unknown): string {
+  const message =
+    error instanceof Error ? error.message : "Intelligence pass failed.";
+  if (
+    /unexpected response was received from the server/i.test(message) ||
+    /failed to fetch/i.test(message) ||
+    /networkerror/i.test(message)
+  ) {
+    return "The pass timed out before finishing. FormCraft now classifies a few posts per run — click Run again to continue.";
+  }
+  return message;
+}
+
 export function RunIntelligenceButton() {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -32,11 +45,7 @@ export function RunIntelligenceButton() {
               setDetails(result.details ?? []);
               router.refresh();
             } catch (error) {
-              setMessage(
-                error instanceof Error
-                  ? error.message
-                  : "Intelligence pass failed.",
-              );
+              setMessage(friendlyIntelligenceError(error));
             }
           })
         }

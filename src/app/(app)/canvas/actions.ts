@@ -955,17 +955,26 @@ export async function runCanvasAiAction(input: {
 
   if (!nodes?.length) return { error: "Nodes not found." };
 
-  const { result, usedLlm } = await runCanvasMultiNodeAi({
-    supabase: auth.supabase,
-    userId: auth.user.id,
-    action: input.action as CanvasAiAction,
-    nodes: nodes.map((n) => ({
-      id: n.id,
-      nodeType: n.node_type,
-      title: n.title,
-      body: n.body,
-    })),
-  });
+  const { result, usedLlm, modelName, fallbackReason } =
+    await runCanvasMultiNodeAi({
+      supabase: auth.supabase,
+      userId: auth.user.id,
+      action: input.action as CanvasAiAction,
+      nodes: nodes.map((n) => ({
+        id: n.id,
+        nodeType: n.node_type,
+        title: n.title,
+        body: n.body,
+      })),
+    });
+
+  if (!usedLlm) {
+    return {
+      error:
+        fallbackReason?.trim() ||
+        `Canvas AI did not run (${modelName}). Check Models / OPENROUTER_API_KEY, then retry.`,
+    };
+  }
 
   const maxX = Math.max(...nodes.map((n) => Number(n.position_x)));
   const avgY =
@@ -982,6 +991,7 @@ export async function runCanvasAiAction(input: {
     payload: {
       canvasAiAction: input.action,
       usedLlm,
+      modelName,
       sourceNodeIds: input.nodeIds,
     },
   });
@@ -999,7 +1009,7 @@ export async function runCanvasAiAction(input: {
 
   revalidateBoard(input.boardId);
   return {
-    success: usedLlm ? "AI result added to board." : "Heuristic result added (AI unavailable).",
+    success: `AI result added with ${modelName}.`,
     nodeId: created.id,
   };
 }

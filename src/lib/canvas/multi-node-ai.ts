@@ -60,7 +60,12 @@ export async function runCanvasMultiNodeAi(params: {
     title: string;
     body: string | null;
   }>;
-}): Promise<{ result: CanvasAiResult; usedLlm: boolean; modelName: string }> {
+}): Promise<{
+  result: CanvasAiResult;
+  usedLlm: boolean;
+  modelName: string;
+  fallbackReason?: string | null;
+}> {
   const selection = await resolveTaskModel(params.supabase, {
     userId: params.userId,
     taskType:
@@ -154,5 +159,6 @@ export async function runCanvasMultiNodeAi(params: {
     result: ai.data,
     usedLlm: ai.usedLlm,
     modelName: selection.modelName,
+    fallbackReason: ai.fallbackReason ?? null,
   };
 }

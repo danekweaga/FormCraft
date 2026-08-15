@@ -30,6 +30,9 @@ import {
   summarizeAccountPerformance,
 } from "@/lib/my-content/performance";
 import type { ContentPostRow } from "@/lib/my-content/schemas";
+import { buildAccountFollowerSeries } from "@/lib/my-content/account-dashboard";
+import { getInstagramAccountInsights } from "@/lib/social/instagram-account-insights";
+import type { InstagramAccountInsights } from "@/lib/social/types";
 import { createClient } from "@/lib/supabase/server";
 import { ContentRemix } from "./content-remix";
 import { GrowthChart } from "./growth-chart";
@@ -72,6 +75,7 @@ export default async function PerformancePage({
     { data: posts },
     { data: snapshots },
     { data: savedDrafts },
+    { data: connections },
   ] =
     await Promise.all([
       supabase
@@ -102,6 +106,11 @@ export default async function PerformancePage({
         .is("content_post_id", null)
         .order("created_at", { ascending: false })
         .limit(30),
+      supabase
+        .from("social_connections")
+        .select("id, platform, metadata")
+        .eq("user_id", user.id)
+        .eq("status", "connected"),
     ]);
 
   const selectedPosts = filterPostsByPerformanceRange(
@@ -146,11 +155,26 @@ export default async function PerformancePage({
     metric: "impressions",
     days: seriesDays,
   });
+  const instagramInsights = (connections ?? [])
+    .map((connection) => getInstagramAccountInsights(connection.metadata))
+    .filter((insight): insight is InstagramAccountInsights => Boolean(insight));
+  const accountFollowerDays =
+    instagramInsights.length > 0
+      ? buildAccountFollowerSeries({
+          insights: instagramInsights,
+          days: seriesDays,
+        })
+      : null;
   const followersSeries = buildGrowthSeries({
     posts: allPosts,
     snapshots: metricSnapshots,
     metric: "followers",
     days: seriesDays,
+    externalDaily:
+      accountFollowerDays && accountFollowerDays.some((point) => point.value > 0)
+        ? new Map(accountFollowerDays.map((point) => [point.date, point.value]))
+        : null,
+    externalBasis: "account_daily_followers",
   });
   const heatmap = buildYearHeatmap({
     posts: allPosts,
@@ -163,7 +187,16 @@ export default async function PerformancePage({
       <PageHeader
         title="Performance Dashboard"
         description={`Owned-account analytics for posts published in the last ${labelForRange(range).toLowerCase()}. Metrics are current cumulative values, not invented period deltas.`}
-        actions={<GenerateWeeklyReviewButton />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <a href={`/api/performance/export?range=${range}`}>
+                Export Excel CSV
+              </a>
+            </Button>
+            <GenerateWeeklyReviewButton />
+          </div>
+        }
       />
 
       <div className="mb-6 flex flex-wrap gap-2">

@@ -145,16 +145,8 @@ export function GrowthChart({
           >
             <defs>
               <linearGradient id="growth-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop
-                  offset="0%"
-                  stopColor="var(--color-primary-container)"
-                  stopOpacity="0.28"
-                />
-                <stop
-                  offset="100%"
-                  stopColor="var(--color-primary-container)"
-                  stopOpacity="0"
-                />
+                <stop offset="0%" stopColor="#171717" stopOpacity="0.28" />
+                <stop offset="100%" stopColor="#171717" stopOpacity="0" />
               </linearGradient>
             </defs>
 
@@ -167,14 +159,15 @@ export function GrowthChart({
                     x2={WIDTH - PADDING.right}
                     y1={y}
                     y2={y}
-                    stroke="var(--color-outline-variant)"
-                    strokeOpacity="0.25"
+                    stroke="#d8d8d2"
+                    strokeOpacity="0.9"
                   />
                   <text
                     x={PADDING.left - 10}
                     y={y + 4}
                     textAnchor="end"
-                    className="fill-[var(--color-secondary)] text-[11px]"
+                    fill="#6b6b66"
+                    fontSize="11"
                   >
                     {formatCompact(geometry.maxValue * fraction)}
                   </text>
@@ -186,7 +179,7 @@ export function GrowthChart({
             <path
               d={buildPath(geometry.coords, false)}
               fill="none"
-              stroke="var(--color-primary-container)"
+              stroke="#171717"
               strokeWidth="2.5"
               strokeLinecap="round"
             />
@@ -199,8 +192,8 @@ export function GrowthChart({
                   cx={coord.x}
                   cy={coord.y}
                   r={activeIndex === index ? 6 : 4}
-                  fill="var(--color-primary-container)"
-                  stroke="var(--color-surface-primary)"
+                  fill="#171717"
+                  stroke="#ffffff"
                   strokeWidth="2"
                 />
               );
@@ -213,15 +206,15 @@ export function GrowthChart({
                   x2={activeCoord.x}
                   y1={PADDING.top}
                   y2={PADDING.top + PLOT_HEIGHT}
-                  stroke="var(--color-outline)"
-                  strokeOpacity="0.35"
+                  stroke="#8a8a84"
+                  strokeOpacity="0.55"
                   strokeDasharray="4 4"
                 />
                 <circle
                   cx={activeCoord.x}
                   cy={activeCoord.y}
                   r="5"
-                  fill="var(--color-primary)"
+                  fill="#171717"
                 />
               </g>
             ) : null}
@@ -240,7 +233,8 @@ export function GrowthChart({
                             ? "end"
                             : "middle"
                       }
-                      className="fill-[var(--color-secondary)] text-[11px]"
+                      fill="#6b6b66"
+                      fontSize="11"
                     >
                       {formatShortDayLabel(points[index]!.date)}
                     </text>
