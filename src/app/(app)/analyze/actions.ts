@@ -33,7 +33,6 @@ import {
   isPublicTiktokVideoUrl,
   resolveTiktokPublicVideo,
 } from "@/lib/research/discovery/tiktok-data-provider";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export type AnalyzeActionState = {
@@ -863,6 +862,7 @@ export async function breakDownResearchItemAction(
 
   const analysisId = placeholder.id;
   const userId = auth.user.id;
+  const analysisSupabase = auth.supabase;
   const timedSegments = Array.isArray(timestampedTranscript)
     ? (timestampedTranscript as Array<{
         startSeconds: number;
@@ -873,10 +873,9 @@ export async function breakDownResearchItemAction(
 
   after(() => {
     void (async () => {
-      const admin = createAdminClient();
       try {
         const staged = await runStagedAnalysis({
-          supabase: admin,
+          supabase: analysisSupabase,
           userId,
           analysisId,
           title,
@@ -888,7 +887,7 @@ export async function breakDownResearchItemAction(
           timedSegments,
           frames: [],
         });
-        await admin
+        await analysisSupabase
           .from("video_analyses")
           .update({
             status: "ready",
@@ -908,7 +907,7 @@ export async function breakDownResearchItemAction(
           .eq("user_id", userId);
 
         await persistAnalysisEvidence({
-          supabase: admin,
+          supabase: analysisSupabase,
           userId,
           analysisId,
           result: staged.result,
@@ -916,14 +915,14 @@ export async function breakDownResearchItemAction(
 
         const transcriptHook = staged.result.hooks[0]?.text?.trim() || null;
         if (transcriptHook) {
-          await admin
+          await analysisSupabase
             .from("research_items")
             .update({ hook_text: transcriptHook.slice(0, 500) })
             .eq("id", item.id)
             .eq("user_id", userId);
         }
       } catch (error) {
-        await admin
+        await analysisSupabase
           .from("video_analyses")
           .update({
             status: "failed",

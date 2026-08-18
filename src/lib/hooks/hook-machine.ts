@@ -73,7 +73,7 @@ export async function generateHookPackFromResearch(params: {
   userId: string;
   researchItemId: string;
   topic?: string | null;
-}): Promise<{ pack: HookPack; usedLlm: boolean }> {
+}): Promise<{ pack: HookPack; usedLlm: boolean; fallbackReason?: string }> {
   const { data: item } = await params.supabase
     .from("research_items")
     .select(
@@ -190,12 +190,9 @@ export async function generateHookPackFromResearch(params: {
     },
   });
 
-  if (!result.usedLlm) {
-    throw new Error(
-      result.fallbackReason ??
-        "OpenRouter did not generate hooks. Check OPENROUTER_API_KEY locally and on Vercel, then try again.",
-    );
-  }
-
-  return { pack: result.data, usedLlm: result.usedLlm };
+  return {
+    pack: result.data,
+    usedLlm: result.usedLlm,
+    fallbackReason: result.fallbackReason,
+  };
 }

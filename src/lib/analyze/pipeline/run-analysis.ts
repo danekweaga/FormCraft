@@ -435,7 +435,9 @@ export async function runStagedAnalysis(params: {
     ...result,
     confidenceNotes: [
       ...result.confidenceNotes,
-      `Synthesis via ${ai.model} (${role}).`,
+      ai.usedLlm
+        ? `Synthesis via ${ai.model} (${role}).`
+        : `Heuristic synthesis — ${ai.fallbackReason ?? "OpenRouter unavailable."}`,
       ...(ai.cached ? ["Final synthesis served from AI cache."] : []),
     ],
     sourcesUsed:
@@ -460,7 +462,7 @@ export async function runStagedAnalysis(params: {
   return {
     result,
     stages,
-    modelName: ai.model,
+    modelName: ai.usedLlm ? ai.model : "heuristic-v1",
     promptVersion: PROMPT_VERSION,
     transcriptHash,
     inputHash,

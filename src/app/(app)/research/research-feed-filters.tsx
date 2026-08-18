@@ -35,10 +35,12 @@ export function ResearchFeedWithFilters({
   items,
   watchlists,
   savedFilters = [],
+  showDismissActions = false,
 }: {
   items: ResearchCardItem[];
   watchlists: Array<{ id: string; name: string }>;
   savedFilters?: SavedResearchFilterOption[];
+  showDismissActions?: boolean;
 }) {
   const router = useRouter();
   const [filters, setFilters] = useState<ResearchFeedFilters>(
@@ -345,6 +347,7 @@ export function ResearchFeedWithFilters({
                 key={item.id}
                 item={item}
                 watchlists={watchlists}
+                showDismissActions={showDismissActions}
               />
             ))}
           </div>

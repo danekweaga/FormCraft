@@ -872,6 +872,7 @@ export default async function ResearchPage({
             items={outliers}
             watchlists={watchlistOptions}
             savedFilters={savedFilterOptions}
+            showDismissActions
           />
         </section>
       ) : null}
@@ -1148,6 +1149,7 @@ export default async function ResearchPage({
             <ResearchFeedWithFilters
               items={feedList}
               watchlists={watchlistOptions}
+              showDismissActions={mode === "for-you" || mode === "outliers"}
             />
           </div>
         )

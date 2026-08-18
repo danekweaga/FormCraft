@@ -89,7 +89,24 @@ export async function analyzeTranscriptWithAi(params: {
   });
 
   if (!result.usedLlm && result.validationState === "fallback") {
-    return null;
+    return {
+      result: normalizeAnalysisResult({
+        ...params.heuristic,
+        confidenceNotes: [
+          ...params.heuristic.confidenceNotes,
+          result.fallbackReason
+            ? `Heuristic analysis — ${result.fallbackReason}`
+            : "Heuristic transcript analysis — OpenRouter unavailable.",
+        ],
+      }),
+      modelName: "heuristic-v1",
+      modelTier: params.modelTier,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: null,
+      usedLlm: false,
+      cached: false,
+    };
   }
 
   const normalized = normalizeAnalysisResult({

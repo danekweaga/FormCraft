@@ -74,7 +74,22 @@ export async function reviewScriptWithAi(params: {
     },
   });
 
-  if (!result.usedLlm) return null;
+  if (!result.usedLlm) {
+    return {
+      result: {
+        ...params.heuristic,
+        mode: "openrouter_ai" as const,
+        confidenceNote: `${params.heuristic.confidenceNote} Heuristic review — ${result.fallbackReason ?? "OpenRouter unavailable."}`,
+      },
+      modelName: "heuristic-v1",
+      modelTier: params.modelTier,
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: null,
+      usedLlm: false,
+      cached: false,
+    };
+  }
 
   return {
     result: {

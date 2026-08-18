@@ -6,8 +6,10 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import {
   addResearchItemToCanvasAction,
+  deleteResearchItemAction,
   generateHookMachineAction,
   generateIdeasFromResearchAction,
   submitResearchFeedbackAction,
@@ -140,9 +142,12 @@ function mediaPreviewUrls(item: ResearchCardItem): string[] {
 export function ResearchItemCard({
   item,
   watchlists = [],
+  showDismissActions = false,
 }: {
   item: ResearchCardItem;
   watchlists?: Array<{ id: string; name: string }>;
+  /** Prominent delete / don't-recommend controls for Discover and feed cleanup. */
+  showDismissActions?: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -285,6 +290,40 @@ export function ResearchItemCard({
             {showMore ? "Less" : "More"}
           </Button>
         </div>
+
+        {showDismissActions ? (
+          <div className="grid grid-cols-2 gap-1.5">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              onClick={() =>
+                start(async () => {
+                  const fd = new FormData();
+                  fd.set("itemId", item.id);
+                  fd.set("feedbackType", "not_relevant");
+                  await submitResearchFeedbackAction(fd);
+                  setActionMessage({
+                    kind: "success",
+                    text: "Won't recommend similar videos.",
+                  });
+                  router.refresh();
+                })
+              }
+            >
+              Don't recommend
+            </Button>
+            <form action={deleteResearchItemAction} className="min-w-0">
+              <input type="hidden" name="id" value={item.id} />
+              <ConfirmDeleteButton
+                label="Delete"
+                confirmMessage="Remove this video from your research library?"
+                variant="ghost"
+                className="h-9 w-full text-error hover:text-error"
+              />
+            </form>
+          </div>
+        ) : null}
 
         {hookPack ? (
           <div className="space-y-3 rounded-xl bg-surface-container-lowest p-3">

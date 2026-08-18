@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { ingestPublicVideoUrl } from "@/lib/analyze/ingest/url";
-import { analyzeResearchBatch } from "@/lib/research/analyze";
+import { analyzeResearchBatch, fallbackAnalysis } from "@/lib/research/analyze";
 import { searchablePlatforms } from "@/lib/research/discovery/registry";
 import { runResearchScan } from "@/lib/research/run-scan";
 import { importCreatorCatalog } from "@/lib/research/import-creator-catalog";
@@ -425,13 +425,19 @@ export async function analyzeResearchItemAction(
     videos: [video],
     transcriptsByExternalId,
   });
-  const result = analyzed.get(video.externalId);
-  if (!result) {
-    return {
-      error:
-        "AI analysis unavailable. Your metrics are safe — retry or continue without AI.",
+  const transcriptExcerpt = transcriptsByExternalId.get(video.externalId) ?? null;
+  const result =
+    analyzed.get(video.externalId) ??
+    {
+      analysis: fallbackAnalysis(
+        video,
+        item.topic || "outlier analysis",
+        transcriptExcerpt,
+      ),
+      model: transcriptExcerpt
+        ? "deterministic-transcript-v1"
+        : "deterministic-metadata-v1",
     };
-  }
 
   const transcriptGrounded =
     result.analysis.evidenceBasis === "metadata_and_transcript";
@@ -1035,13 +1041,15 @@ export async function generateHookMachineAction(
     const { generateHookPackFromResearch } = await import(
       "@/lib/hooks/hook-machine"
     );
-    const { pack } = await generateHookPackFromResearch({
+    const { pack, usedLlm, fallbackReason } = await generateHookPackFromResearch({
       supabase,
       userId: user.id,
       researchItemId: id,
     });
     return {
-      success: `Hook Machine: ${pack.original.length} original · ${pack.formatMatched.length} format-matched.`,
+      success: usedLlm
+        ? `Hook Machine: ${pack.original.length} original · ${pack.formatMatched.length} format-matched.`
+        : `Hook Machine (heuristic): ${pack.original.length} original · ${pack.formatMatched.length} format-matched.${fallbackReason ? ` ${fallbackReason}` : ""}`,
       hooks: pack,
     };
   } catch (error) {
@@ -1122,6 +1130,31 @@ export async function submitResearchFeedbackAction(formData: FormData) {
   }
 
   revalidatePath("/research");
+}
+
+export async function deleteResearchItemAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user || !id) return;
+
+  const { data: item } = await supabase
+    .from("research_items")
+    .select("id")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!item) return;
+
+  await supabase.from("research_items").delete().eq("id", id).eq("user_id", user.id);
+
+  revalidatePath("/research");
+  revalidatePath("/collections");
+  revalidatePath("/library");
+  revalidatePath("/canvas");
+  revalidatePath("/create");
 }
 
 export async function setCreatorPriorityAction(formData: FormData) {

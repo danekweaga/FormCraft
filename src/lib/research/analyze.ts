@@ -44,7 +44,7 @@ function resolveFormat(params: {
   });
 }
 
-function fallbackAnalysis(
+export function fallbackAnalysis(
   video: ScoredResearchVideo,
   query: string,
   transcriptExcerpt?: string | null,
