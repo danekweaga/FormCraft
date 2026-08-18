@@ -26,6 +26,7 @@ import {
 } from "@/lib/research/personalized-feed";
 import { normalizeResearchFeedFilters } from "@/lib/research/feed-filters";
 import { shouldRefreshOnVisit } from "@/lib/research/scan-schedule";
+import { isHardExcludedResearchItem } from "@/lib/research/content-universe";
 import {
   meetsForYouViewFloor,
   meetsResearchViewFloor,
@@ -366,10 +367,16 @@ export default async function ResearchPage({
     };
   });
 
-  const visibleResearch = enriched.filter((item) =>
-    mode === "for-you"
-      ? meetsForYouViewFloor(item.views)
-      : meetsResearchViewFloor(item.views),
+  const visibleResearch = enriched.filter(
+    (item) =>
+      !isHardExcludedResearchItem({
+        title: item.title,
+        description: item.description,
+        creatorName: item.creator_name,
+      }) &&
+      (mode === "for-you"
+        ? meetsForYouViewFloor(item.views)
+        : meetsResearchViewFloor(item.views)),
   );
   const watchlistCreatorIds = new Set(
     (watchlistMembers ?? [])

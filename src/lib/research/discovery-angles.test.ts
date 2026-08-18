@@ -12,9 +12,9 @@ describe("buildDiscoveryAngles", () => {
       topics: ["software engineering"],
     });
     expect(angles.some((query) => query.includes("ai"))).toBe(true);
-    expect(angles).toContain("ai model release");
-    expect(angles).toContain("tech news");
-    expect(angles).toContain("ai startup");
+    expect(angles).toContain("ai coding news");
+    expect(angles).toContain("tech news developers");
+    expect(angles).toContain("ai developer tools");
   });
 
   it("rotates query batches so each scan explores a different lane", () => {

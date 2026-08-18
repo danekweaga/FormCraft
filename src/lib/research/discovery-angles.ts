@@ -1,14 +1,14 @@
 import { compactDiscoveryQuery } from "./search-filters";
 
 const TECH_LANES = [
-  "AI model release",
-  "tech news",
-  "AI startup",
-  "AI development",
-  "ChatGPT Claude Gemini",
-  "OpenAI Anthropic",
-  "machine learning news",
-  "startup funding AI",
+  "AI coding news",
+  "tech news developers",
+  "AI developer tools",
+  "AI coding workflow",
+  "ChatGPT Claude coding",
+  "OpenAI Anthropic developers",
+  "machine learning engineering",
+  "startup funding software",
 ];
 
 function uniqueQueries(values: string[]): string[] {

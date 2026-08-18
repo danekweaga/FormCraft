@@ -233,23 +233,19 @@ export async function createMyVersionAction(
       ],
     },
   });
-  if (!ai.usedLlm) {
-    return {
-      error:
-        ai.fallbackReason ??
-        "OpenRouter did not generate this idea. Check OPENROUTER_API_KEY locally and on Vercel, then try again.",
-    };
-  }
+  // Keep going with the heuristic direction when OpenRouter is down/budgeted —
+  // the spin flow must still produce an idea the creator can use.
+  const direction = ai.data;
 
   const gateContext = await buildFormCraftContext(supabase, {
     userId: user.id,
     taskType: "idea_evaluation",
     currentEntityType: "research_item",
     currentEntityId: source.id,
-    query: `${ai.data.topic} ${ai.data.coreArgument}`,
+    query: `${direction.topic} ${direction.coreArgument}`,
   });
   const gate = await evaluateIdeaWithContext({
-    idea: `${ai.data.topic}\n\n${ai.data.suggestedHook}\n\n${ai.data.coreArgument}\n\nSpin: ${parsed.data.spin}`,
+    idea: `${direction.topic}\n\n${direction.suggestedHook}\n\n${direction.coreArgument}\n\nSpin: ${parsed.data.spin}`,
     context: gateContext,
     priorTexts: [],
     supabase,
@@ -260,21 +256,23 @@ export async function createMyVersionAction(
     .from("idea_gate_evaluations")
     .insert({
       user_id: user.id,
-      idea_text: `${ai.data.topic}\n\nHook: ${ai.data.suggestedHook}\n\n${ai.data.coreArgument}`,
+      idea_text: `${direction.topic}\n\nHook: ${direction.suggestedHook}\n\n${direction.coreArgument}`,
       recommendation: toDbRecommendation(gate.recommendation),
       why: `${gate.summary}\n\nDecision: ${gate.recommendation}`,
       evidence: gate.evidence.map((label) => ({ label })),
       risks: gate.weaknesses.map((label) => ({ label })),
       missing_ingredient: gate.requiredPersonalContext[0] ?? null,
       better_angle: gate.suggestedAngle,
-      best_format: gate.suggestedFormat ?? ai.data.suggestedFormat,
+      best_format: gate.suggestedFormat ?? direction.suggestedFormat,
       status: "evaluated",
       related_ids: {
         researchItemId: source.id,
         userSpin: parsed.data.spin,
-        direction: ai.data,
+        direction,
         decision: gate,
         sourcesUsed: gate.sourcesUsed,
+        usedLlm: ai.usedLlm,
+        fallbackReason: ai.fallbackReason ?? null,
       },
     })
     .select("id")
@@ -291,9 +289,9 @@ export async function createMyVersionAction(
     userId: user.id,
     boardId: canvas.boardId,
     nodeType: "idea",
-    title: ai.data.topic,
-    body: [ai.data.suggestedHook, ai.data.coreArgument, `Personal spin: ${parsed.data.spin}`].join("\n\n"),
-    payload: { direction: ai.data, gateDecision: gate.recommendation, userSpin: parsed.data.spin },
+    title: direction.topic,
+    body: [direction.suggestedHook, direction.coreArgument, `Personal spin: ${parsed.data.spin}`].join("\n\n"),
+    payload: { direction, gateDecision: gate.recommendation, userSpin: parsed.data.spin },
     ideaGateEvaluationId: evaluation.id,
   });
   await insertCanvasEdge({
@@ -307,7 +305,7 @@ export async function createMyVersionAction(
 
   for (const path of ["/create", "/idea-gate", "/canvas", "/library"]) revalidatePath(path);
   return {
-    direction: ai.data,
+    direction,
     gateDecision: gate.recommendation,
     boardId: canvas.boardId,
     ideaNodeId: ideaNode.id,
@@ -446,22 +444,22 @@ export async function generateScriptFromDirectionAction(
       ],
     },
   });
-  if (!ai.usedLlm) {
-    return {
-      error:
-        ai.fallbackReason ??
-        "OpenRouter did not write this script. Check OPENROUTER_API_KEY locally and on Vercel, then try again.",
-    };
-  }
+
+  const scriptPackage = ai.data;
 
   const scriptNode = await insertCanvasNode({
     supabase,
     userId: user.id,
     boardId: board.id,
     nodeType: "script",
-    title: ai.data.title,
-    body: ai.data.script,
-    payload: { packaging: ai.data, ideaGateEvaluationId: evaluation.id },
+    title: scriptPackage.title,
+    body: scriptPackage.script,
+    payload: {
+      packaging: scriptPackage,
+      ideaGateEvaluationId: evaluation.id,
+      usedLlm: ai.usedLlm,
+      fallbackReason: ai.fallbackReason ?? null,
+    },
     ideaGateEvaluationId: evaluation.id,
   });
   await insertCanvasEdge({
@@ -475,7 +473,7 @@ export async function generateScriptFromDirectionAction(
 
   for (const path of ["/create", `/canvas/${board.id}`, "/canvas", "/pre-publish"]) revalidatePath(path);
   return {
-    package: ai.data,
+    package: scriptPackage,
     boardId: board.id,
     scriptNodeId: scriptNode.id,
     usedLlm: ai.usedLlm,
@@ -628,15 +626,6 @@ export async function buildScriptFromHookAction(
     },
   });
 
-  if (!ai.usedLlm) {
-    return {
-      error:
-        ai.fallbackReason ??
-        "OpenRouter did not write this script. Check OPENROUTER_API_KEY, then try again.",
-      mode: "generate",
-    };
-  }
-
   try {
     const boardId = await ensureHookBuildBoard({
       supabase,
@@ -655,6 +644,8 @@ export async function buildScriptFromHookAction(
         sourceHook: hook,
         creatorIdeas: ideas,
         mode: "hook_build",
+        usedLlm: ai.usedLlm,
+        fallbackReason: ai.fallbackReason ?? null,
       },
     });
     for (const path of ["/create", "/hooks", `/canvas/${boardId}`, "/pre-publish"]) {
@@ -664,13 +655,14 @@ export async function buildScriptFromHookAction(
       package: ai.data,
       boardId,
       scriptNodeId: scriptNode.id,
-      usedLlm: true,
+      usedLlm: ai.usedLlm,
+      fallbackReason: ai.fallbackReason,
       mode: "generate",
     };
   } catch (error) {
     return {
       package: ai.data,
-      usedLlm: true,
+      usedLlm: ai.usedLlm,
       mode: "generate",
       fallbackReason:
         error instanceof Error
@@ -767,15 +759,6 @@ export async function reviseScriptWithFeedbackAction(
     },
   });
 
-  if (!ai.usedLlm) {
-    return {
-      error:
-        ai.fallbackReason ??
-        "OpenRouter did not revise this script. Check OPENROUTER_API_KEY, then try again.",
-      mode: "revise",
-    };
-  }
-
   if (boardId && scriptNodeId) {
     await supabase
       .from("canvas_nodes")
@@ -787,6 +770,8 @@ export async function reviseScriptWithFeedbackAction(
           sourceHook: hook,
           feedback: { likeParts, changeParts },
           mode: "hook_revise",
+          usedLlm: ai.usedLlm,
+          fallbackReason: ai.fallbackReason ?? null,
         },
       })
       .eq("id", scriptNodeId)
@@ -800,7 +785,8 @@ export async function reviseScriptWithFeedbackAction(
     package: ai.data,
     boardId: boardId || undefined,
     scriptNodeId: scriptNodeId || undefined,
-    usedLlm: true,
+    usedLlm: ai.usedLlm,
+    fallbackReason: ai.fallbackReason,
     mode: "revise",
   };
 }
@@ -878,15 +864,6 @@ export async function gradeAndImproveScriptAction(
     },
   });
 
-  if (!ai.usedLlm) {
-    return {
-      error:
-        ai.fallbackReason ??
-        "OpenRouter did not grade this script. Check OPENROUTER_API_KEY, then try again.",
-      mode: "grade",
-    };
-  }
-
   const improvedPackage: ScriptPackage = {
     title: ai.data.title || "Improved script",
     script: ai.data.improvedScript,
@@ -938,14 +915,16 @@ export async function gradeAndImproveScriptAction(
       review: ai.data,
       boardId,
       scriptNodeId: scriptNode.id,
-      usedLlm: true,
+      usedLlm: ai.usedLlm,
+      fallbackReason: ai.fallbackReason,
       mode: "grade",
     };
   } catch {
     return {
       package: improvedPackage,
       review: ai.data,
-      usedLlm: true,
+      usedLlm: ai.usedLlm,
+      fallbackReason: ai.fallbackReason,
       mode: "grade",
     };
   }

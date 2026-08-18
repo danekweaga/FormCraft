@@ -67,6 +67,16 @@ describe("retainKeywordSearchHits", () => {
           audience: null,
         },
       },
+      {
+        video: { id: "drop-slop" },
+        relevance: {
+          relevant: false,
+          relevanceReason: "Matches excluded AI entertainment slop",
+          topic: "query",
+          format: null,
+          audience: null,
+        },
+      },
     ];
     const kept = retainKeywordSearchHits(rows);
     expect(kept).toHaveLength(1);

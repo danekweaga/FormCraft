@@ -5,7 +5,10 @@ import {
   classifyCheapRelevance,
   type CheapRelevanceResult,
 } from "./cheap-relevance";
-import type { NicheUniverseContext } from "./content-universe";
+import {
+  isHardExclusionReason,
+  type NicheUniverseContext,
+} from "./content-universe";
 import type { ScoredResearchVideo } from "./types";
 import { cacheResearchThumbnail } from "./thumbnail-cache";
 
@@ -80,15 +83,13 @@ export function retainByRelevance<
   return rows.filter((row) => row.relevance.relevant);
 }
 
-const HARD_EXCLUSION = /excluded|off-niche|india-specific|south asian/i;
-
 /** Keyword search already scoped the query; only drop hard off-niche hits. */
 export function retainKeywordSearchHits<
   T extends { relevance: CheapRelevanceResult },
 >(rows: T[]): T[] {
   return rows.flatMap((row) => {
     if (row.relevance.relevant) return [row];
-    if (HARD_EXCLUSION.test(row.relevance.relevanceReason)) return [];
+    if (isHardExclusionReason(row.relevance.relevanceReason)) return [];
     return [
       {
         ...row,
@@ -146,8 +147,11 @@ export async function ingestScoredPosts(params: {
       nicheContext,
     ),
   }));
+  const notHardExcluded = withRelevance.filter(
+    ({ relevance }) => !isHardExclusionReason(relevance.relevanceReason),
+  );
   const retained = params.trustedCreatorPosts
-    ? withRelevance.map(({ video, relevance }) => ({
+    ? notHardExcluded.map(({ video, relevance }) => ({
         video,
         relevance: relevance.relevant
           ? relevance
@@ -162,8 +166,8 @@ export async function ingestScoredPosts(params: {
             },
       }))
     : params.keywordSearch
-      ? retainKeywordSearchHits(withRelevance)
-      : retainByRelevance(withRelevance);
+      ? retainKeywordSearchHits(notHardExcluded)
+      : retainByRelevance(notHardExcluded);
 
   const durableThumbnails = new Map<string, string | null>();
   const socialRows = retained.filter(

@@ -35,8 +35,21 @@ describe("classifyCreatorContentUniverse", () => {
     "Why IIT toppers are ignoring computer science",
     "KCET 2026 CSE First Round Cutoff",
     "कोडिंग कैसे शुरू करें?",
+    "AI fruit cutting ASMR",
+    "Veo 3 watermelon satisfying",
+    "Sora AI generated fruit compilation",
+    "Hyperrealistic AI food ASMR",
+    "Grok imagine making fruit",
+    "GPT fruit cutting",
+    "AI satisfying watermelon",
   ])("drops an unrelated video: %s", (title) => {
     expect(classify(title).relevant).toBe(false);
+  });
+
+  it("labels AI fruit and generative entertainment as slop", () => {
+    const result = classify("AI fruit cutting satisfying");
+    expect(result.relevant).toBe(false);
+    expect(result.reason).toMatch(/ai entertainment slop/i);
   });
 
   it("keeps North American and UK placement content", () => {

@@ -8,6 +8,7 @@ import {
   inferFormatFromEvidence,
   normalizeFormatSlug,
 } from "@/lib/library/format-library";
+import { isHardExcludedResearchItem } from "@/lib/research/content-universe";
 import { createClient } from "@/lib/supabase/server";
 import { FormatsShowAllToggle } from "./formats-show-all-toggle";
 
@@ -63,8 +64,16 @@ export default async function CollectionsPage({
   ]);
 
   // Backfill missing format on research items (cheap heuristic, no LLM).
+  const usableResearch = (researchItems ?? []).filter(
+    (item) =>
+      !isHardExcludedResearchItem({
+        title: item.title,
+        description: item.description,
+        creatorName: item.creator_name,
+      }),
+  );
   const backfill: Array<{ id: string; format: string }> = [];
-  for (const item of researchItems ?? []) {
+  for (const item of usableResearch) {
     if (item.format) continue;
     const format = inferFormatFromEvidence({
       title: item.title,
@@ -94,7 +103,7 @@ export default async function CollectionsPage({
   const backfillMap = new Map(backfill.map((row) => [row.id, row.format]));
 
   const examples: FormatExample[] = [
-    ...(researchItems ?? []).map((item) => {
+    ...(usableResearch).map((item) => {
       const formatSlug =
         normalizeFormatSlug(item.format) ??
         backfillMap.get(item.id) ??
