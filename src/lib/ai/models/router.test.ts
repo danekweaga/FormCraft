@@ -38,5 +38,6 @@ describe("resolveModelName", () => {
     expect(TASK_MODEL_TIER.weekly_review).toBe("premium");
     expect(TASK_MODEL_TIER.content_classification).toBe("cheap");
     expect(TASK_MODEL_TIER.lesson_generation).toBe("cheap");
+    expect(TASK_MODEL_TIER.report_synthesis).toBe("standard");
   });
 });

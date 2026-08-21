@@ -17,6 +17,7 @@ export const CONTEXT_TASK_TYPES = [
   "weekly_review",
   "research_analysis",
   "content_remix",
+  "report_synthesis",
 ] as const;
 
 export type ContextTaskType = (typeof CONTEXT_TASK_TYPES)[number];
@@ -39,6 +40,7 @@ export const TASK_MODEL_TIER: Record<ContextTaskType, ModelTier> = {
   experiment_analysis: "standard",
   roadmap_review: "standard",
   content_remix: "standard",
+  report_synthesis: "standard",
   // Premium = Claude — deep creator judgment
   content_analysis: "premium",
   performance_review: "premium",
@@ -63,6 +65,7 @@ export const TASK_DEFINITIONS: Array<{
   { taskType: "idea_evaluation", label: "Idea evaluation", description: "Score and reshape ideas in Idea Gate.", group: "Strategy" },
   { taskType: "roadmap_review", label: "Roadmap review", description: "Review progress, bottlenecks, and next steps.", group: "Strategy" },
   { taskType: "weekly_review", label: "Weekly review", description: "Summarize progress and evidence across the week.", group: "Strategy" },
+  { taskType: "report_synthesis", label: "Report synthesis", description: "Explain deterministic report evidence without inventing causes.", group: "Strategy" },
   { taskType: "research_analysis", label: "Research outlier analysis", description: "Extract hooks, topics, and testable patterns from saved research evidence.", group: "Analysis" },
   { taskType: "content_remix", label: "Content remix", description: "Combine proven hooks and topics from your own evidence.", group: "Creation" },
   { taskType: "today_recommendation", label: "Today recommendation", description: "Choose the most useful next creator action.", group: "Strategy" },
