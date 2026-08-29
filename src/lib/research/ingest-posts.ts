@@ -6,6 +6,7 @@ import {
   type CheapRelevanceResult,
 } from "./cheap-relevance";
 import {
+  canRescueKeywordSearchHit,
   isHardExclusionReason,
   type NicheUniverseContext,
 } from "./content-universe";
@@ -83,13 +84,32 @@ export function retainByRelevance<
   return rows.filter((row) => row.relevance.relevant);
 }
 
-/** Keyword search already scoped the query; only drop hard off-niche hits. */
+/** Keyword search is scoped, but still drop hard off-niche and unrelated hits. */
 export function retainKeywordSearchHits<
-  T extends { relevance: CheapRelevanceResult },
->(rows: T[]): T[] {
+  T extends {
+    video: {
+      title?: string | null;
+      description?: string | null;
+      creatorName?: string | null;
+    };
+    relevance: CheapRelevanceResult;
+  },
+>(rows: T[], query = ""): T[] {
   return rows.flatMap((row) => {
     if (row.relevance.relevant) return [row];
-    if (isHardExclusionReason(row.relevance.relevanceReason)) return [];
+    if (
+      !canRescueKeywordSearchHit(
+        {
+          title: row.video.title ?? null,
+          description: row.video.description ?? null,
+          creatorName: row.video.creatorName ?? null,
+        },
+        row.relevance.relevanceReason,
+        query,
+      )
+    ) {
+      return [];
+    }
     return [
       {
         ...row,
@@ -166,7 +186,7 @@ export async function ingestScoredPosts(params: {
             },
       }))
     : params.keywordSearch
-      ? retainKeywordSearchHits(notHardExcluded)
+      ? retainKeywordSearchHits(notHardExcluded, params.query)
       : retainByRelevance(notHardExcluded);
 
   const durableThumbnails = new Map<string, string | null>();

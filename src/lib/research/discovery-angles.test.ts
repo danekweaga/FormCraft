@@ -5,16 +5,18 @@ import {
 } from "./discovery-angles";
 
 describe("buildDiscoveryAngles", () => {
-  it("adds tech news and model-release lanes around an AI niche", () => {
+  it("adds CS student lanes around a CS niche", () => {
     const angles = buildDiscoveryAngles({
       niche: "AI for CS students",
       keywords: ["internships"],
       topics: ["software engineering"],
     });
-    expect(angles.some((query) => query.includes("ai"))).toBe(true);
-    expect(angles).toContain("ai coding news");
-    expect(angles).toContain("tech news developers");
-    expect(angles).toContain("ai developer tools");
+    expect(angles.some((query) => query.includes("cs") || query.includes("computer"))).toBe(
+      true,
+    );
+    expect(angles).toContain("computer science student");
+    expect(angles).toContain("leetcode interview prep");
+    expect(angles).toContain("coding internship");
   });
 
   it("rotates query batches so each scan explores a different lane", () => {

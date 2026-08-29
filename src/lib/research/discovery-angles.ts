@@ -1,14 +1,14 @@
 import { compactDiscoveryQuery } from "./search-filters";
 
-const TECH_LANES = [
-  "AI coding news",
-  "tech news developers",
-  "AI developer tools",
-  "AI coding workflow",
-  "ChatGPT Claude coding",
-  "OpenAI Anthropic developers",
-  "machine learning engineering",
-  "startup funding software",
+const CS_LANES = [
+  "computer science student",
+  "software engineering student",
+  "coding internship",
+  "leetcode interview prep",
+  "CS student projects",
+  "learn python javascript",
+  "developer portfolio",
+  "tech internship application",
 ];
 
 function uniqueQueries(values: string[]): string[] {
@@ -45,7 +45,7 @@ export function buildDiscoveryAngles(params: {
   const angles = uniqueQueries([niche, ...extras.slice(0, 6)]);
   const haystack = `${niche} ${extras.join(" ")}`;
   if (!niche || looksLikeTechNiche(haystack)) {
-    angles.push(...uniqueQueries(TECH_LANES));
+    angles.push(...uniqueQueries(CS_LANES));
   }
   return uniqueQueries(angles).slice(0, 8);
 }

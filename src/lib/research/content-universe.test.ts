@@ -42,8 +42,23 @@ describe("classifyCreatorContentUniverse", () => {
     "Grok imagine making fruit",
     "GPT fruit cutting",
     "AI satisfying watermelon",
+    "Fortnite ranked grind tips",
+    "Minecraft survival world tour",
+    "Best gaming setup 2026",
+    "Valorant clutch highlights",
   ])("drops an unrelated video: %s", (title) => {
     expect(classify(title).relevant).toBe(false);
+  });
+
+  it("labels gaming entertainment separately from CS content", () => {
+    const blocked = classify("Fortnite ranked grind clutch montage");
+    expect(blocked.relevant).toBe(false);
+    expect(blocked.reason).toMatch(/gaming entertainment/i);
+
+    const allowed = classify(
+      "I built a game for my computer science class using Unity",
+    );
+    expect(allowed.relevant).toBe(true);
   });
 
   it("labels AI fruit and generative entertainment as slop", () => {

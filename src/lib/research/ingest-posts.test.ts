@@ -45,40 +45,57 @@ describe("retainByRelevance", () => {
 });
 
 describe("retainKeywordSearchHits", () => {
-  it("keeps in-lane search hits that lack a title keyword match", () => {
+  it("rescues only outside-universe hits that match the active query", () => {
     const rows = [
       {
-        video: { id: "keep" },
+        video: {
+          id: "keep",
+          title: "Computer science study tips nobody tells you",
+          description: null,
+          creatorName: null,
+        },
         relevance: {
           relevant: false,
-          relevanceReason: "Outside the allowed student-tech/developer content universe",
+          relevanceReason:
+            "Outside the allowed student-tech/developer content universe",
           topic: "query",
           format: null,
           audience: null,
         },
       },
       {
-        video: { id: "drop" },
+        video: {
+          id: "drop",
+          title: "Fortnite ranked grind",
+          description: null,
+          creatorName: null,
+        },
         relevance: {
           relevant: false,
-          relevanceReason: "Matches an excluded off-niche topic",
+          relevanceReason: "Matches excluded gaming entertainment",
           topic: "query",
           format: null,
           audience: null,
         },
       },
       {
-        video: { id: "drop-slop" },
+        video: {
+          id: "drop-unrelated",
+          title: "Random viral clip",
+          description: null,
+          creatorName: null,
+        },
         relevance: {
           relevant: false,
-          relevanceReason: "Matches excluded AI entertainment slop",
+          relevanceReason:
+            "Outside the allowed student-tech/developer content universe",
           topic: "query",
           format: null,
           audience: null,
         },
       },
     ];
-    const kept = retainKeywordSearchHits(rows);
+    const kept = retainKeywordSearchHits(rows, "computer science student");
     expect(kept).toHaveLength(1);
     expect(kept[0]?.video.id).toBe("keep");
     expect(kept[0]?.relevance.relevant).toBe(true);

@@ -161,6 +161,19 @@ const OFF_NICHE_TERMS = [
   "weight loss diet", "bodybuilding workout", "recipe", "cooking tutorial",
   "fashion haul", "relationship drama", "prank compilation", "dance challenge",
   "admissions open", "enroll today",
+  "gaming", "gameplay", "gamer", "video game", "videogame", "esports", "e sports",
+  "twitch stream", "livestream", "speedrun", "boss fight", "ranked grind",
+  "fortnite", "minecraft", "roblox", "valorant", "league of legends",
+  "call of duty", "apex legends", "gta online", "fifa", "nba 2k",
+  "elden ring", "zelda", "pokemon", "nintendo switch", "playstation",
+  "xbox", "steam deck gaming", "clash royale", "clash of clans",
+];
+
+/** Game-dev education stays in-lane; gameplay entertainment does not. */
+const GAMING_DEV_RESCUE_TERMS = [
+  "game development", "game dev", "gamedev", "game programming",
+  "unity tutorial", "unreal engine", "godot", "build a game",
+  "indie game dev", "learn game development",
 ];
 
 /** Generative-video entertainment, not developer commentary. */
@@ -198,7 +211,7 @@ const DEV_SLOP_RESCUE_TERMS = [
 ];
 
 export const HARD_EXCLUSION_REASON_PATTERN =
-  /excluded|off-niche|india-specific|south asian|ai entertainment slop/i;
+  /excluded|off-niche|india-specific|south asian|ai entertainment slop|gaming entertainment/i;
 
 // Nonso's target audience is North American/English-speaking. These markers
 // identify videos aimed at the Indian education/job market; we do not infer a
@@ -278,6 +291,43 @@ function looksLikeAiEntertainmentSlop(
   return [...generation.slice(0, 2), ...subjects.slice(0, 3)];
 }
 
+function looksLikeGamingEntertainment(haystack: string): string[] {
+  if (matchedTerms(haystack, GAMING_DEV_RESCUE_TERMS).length > 0) return [];
+
+  const gaming = matchedTerms(haystack, OFF_NICHE_TERMS).filter((term) =>
+    /game|gaming|gamer|fortnite|minecraft|roblox|valorant|esport|twitch|speedrun|playstation|xbox|fifa|pokemon|zelda/i.test(
+      term,
+    ),
+  );
+  if (gaming.length > 0) return gaming;
+
+  if (/\bgaming\b/i.test(haystack) || /\bgameplay\b/i.test(haystack)) {
+    return ["gaming"];
+  }
+  return [];
+}
+
+export function canRescueKeywordSearchHit(
+  item: Pick<ScoredResearchVideo, "title" | "description" | "creatorName">,
+  relevanceReason: string,
+  query: string,
+): boolean {
+  if (isHardExclusionReason(relevanceReason)) return false;
+  if (
+    relevanceReason ===
+    "Outside the allowed student-tech/developer content universe"
+  ) {
+    const haystack = normalize(
+      `${item.title ?? ""} ${item.description ?? ""} ${item.creatorName ?? ""}`,
+    );
+    const matches = queryTerms(query).filter((term) =>
+      includesTerm(haystack, term),
+    );
+    return matches.length >= 1;
+  }
+  return false;
+}
+
 export function isHardExcludedResearchItem(
   item: Pick<ScoredResearchVideo, "title" | "description" | "creatorName">,
 ): boolean {
@@ -326,6 +376,16 @@ export function classifyCreatorContentUniverse(
   const excluded = OFF_NICHE_TERMS.filter((term) =>
     includesTerm(detailHaystack, term),
   );
+
+  const gamingMatches = looksLikeGamingEntertainment(detailHaystack);
+  if (gamingMatches.length > 0) {
+    return {
+      relevant: false,
+      category: null,
+      reason: "Matches excluded gaming entertainment",
+      matchedTerms: gamingMatches.slice(0, 5),
+    };
+  }
 
   if (excluded.length > 0) {
     return {
