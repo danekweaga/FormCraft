@@ -4,8 +4,10 @@ import {
   getProviderForPlatform,
 } from "./discovery/registry";
 import {
+  captureScrapeCreatorsUsage,
   getScrapeCreatorsUsage,
   resetScrapeCreatorsUsage,
+  scrapeCreatorsCreditsChargedFromError,
   scrapeCreatorsCreditWarning,
 } from "./discovery/scrapecreators-client";
 import type { SearchPostResult } from "./discovery/types";
@@ -13,10 +15,13 @@ import { ingestScoredPosts } from "./ingest-posts";
 import {
   BUDGETED_DISCOVERY_PROVIDERS,
   DISCOVERY_BUDGET_OPERATIONS,
+  countDiscoveryUsageByPlatform,
   getDiscoveryBudgets,
+  getDiscoveryBudgetsForPlatform,
+  isBudgetedDiscoveryPlatform,
   isDiscoveryProviderBudgeted,
   providerBudgetAllows,
-  remainingDiscoveryCalls,
+  remainingDiscoveryCallsByPlatform,
 } from "./provider-budget";
 import {
   inferPlatformFromHandle,
@@ -95,11 +100,24 @@ export async function runResearchScan(params: {
       : asStringArray(parameters.channelHandles);
   const targetCreators = creatorIds.length > 0 || channelHandles.length > 0;
   const forceFullDiscovery = parameters.force_full_discovery === true;
+  const activePlatforms = scan.platforms.filter(isBudgetedDiscoveryPlatform);
+
+  if (activePlatforms.length === 0) {
+    throw new Error(
+      "YouTube discovery is disabled. Select Instagram and/or TikTok for this scan.",
+    );
+  }
 
   const searchProviders = getConfiguredDiscoveryProviders().filter(
     (p) =>
       p.capabilities().searchPosts &&
-      p.capabilities().platforms.some((plat) => scan.platforms.includes(plat)),
+      p
+        .capabilities()
+        .platforms.some(
+          (plat) =>
+            isBudgetedDiscoveryPlatform(plat) &&
+            activePlatforms.includes(plat),
+        ),
   );
 
   if (!targetCreators && searchProviders.length === 0) {
@@ -114,28 +132,35 @@ export async function runResearchScan(params: {
   const monthStart = new Date(
     Date.UTC(dayStart.getUTCFullYear(), dayStart.getUTCMonth(), 1),
   );
-  const [{ count: callsToday }, { count: callsMonth }] = await Promise.all([
-    params.supabase
-      .from("provider_usage_events")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", params.userId)
-      .in("provider", [...BUDGETED_DISCOVERY_PROVIDERS])
-      .in("operation", [...DISCOVERY_BUDGET_OPERATIONS])
-      .gte("created_at", dayStart.toISOString()),
-    params.supabase
-      .from("provider_usage_events")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", params.userId)
-      .in("provider", [...BUDGETED_DISCOVERY_PROVIDERS])
-      .in("operation", [...DISCOVERY_BUDGET_OPERATIONS])
-      .gte("created_at", monthStart.toISOString()),
-  ]);
-  const budget = providerBudgetAllows({
-    callsToday: callsToday ?? 0,
-    callsMonth: callsMonth ?? 0,
+  const { data: usageRows } = await params.supabase
+    .from("provider_usage_events")
+    .select("provider, metadata, created_at")
+    .eq("user_id", params.userId)
+    .in("provider", [...BUDGETED_DISCOVERY_PROVIDERS])
+    .in("operation", [...DISCOVERY_BUDGET_OPERATIONS])
+    .gte("created_at", monthStart.toISOString())
+    .limit(Math.max(1000, budgets.monthlyCalls * 2));
+  const usageByPlatform = countDiscoveryUsageByPlatform({
+    events: usageRows ?? [],
+    dayStartIso: dayStart.toISOString(),
+  });
+  const remainingByPlatform = remainingDiscoveryCallsByPlatform({
+    usage: usageByPlatform,
     budgets,
   });
-  if (!targetCreators && !budget.ok) throw new Error(budget.message);
+  const platformBudgetErrors = activePlatforms.flatMap((platform) => {
+    const status = providerBudgetAllows({
+      ...usageByPlatform[platform],
+      budgets: getDiscoveryBudgetsForPlatform(platform, budgets),
+    });
+    return status.ok ? [] : [`${platform}: ${status.message}`];
+  });
+  if (
+    !targetCreators &&
+    platformBudgetErrors.length === activePlatforms.length
+  ) {
+    throw new Error(platformBudgetErrors.join(" · "));
+  }
 
   try {
     resetScrapeCreatorsUsage();
@@ -220,8 +245,8 @@ export async function runResearchScan(params: {
       )
         .filter((target) => {
           if (
-            scan.platforms.length > 0 &&
-            !scan.platforms.includes(target.platform)
+            !isBudgetedDiscoveryPlatform(target.platform) ||
+            !activePlatforms.includes(target.platform)
           ) {
             return false;
           }
@@ -235,19 +260,14 @@ export async function runResearchScan(params: {
       // A server action has a 60-second window and each creator profile costs
       // at least one provider request. Manual pulls stay at ten; the scheduled
       // five-minute route can rotate through a larger batch.
-      const remainingBudget = remainingDiscoveryCalls({
-        callsToday: callsToday ?? 0,
-        callsMonth: callsMonth ?? 0,
-        budgets,
-      });
-      let budgetedTargets = 0;
+      const reservedBudget = { ...remainingByPlatform };
       const requestedCreatorLimit = Math.min(
         100,
         Math.max(1, params.maxCreatorTargets ?? 10),
       );
       const fairTargets = interleaveCreatorTargets(
         allUniqueTargets,
-        scan.platforms,
+        activePlatforms,
       );
       const uniqueTargets = fairTargets
         .filter((target) => {
@@ -255,14 +275,17 @@ export async function runResearchScan(params: {
           if (!provider || !isDiscoveryProviderBudgeted(provider.providerName)) {
             return true;
           }
-          if (budgetedTargets >= remainingBudget) return false;
-          budgetedTargets += 1;
+          if (!isBudgetedDiscoveryPlatform(target.platform)) return false;
+          if (reservedBudget[target.platform] <= 0) return false;
+          reservedBudget[target.platform] -= 1;
           return true;
         })
         .slice(0, requestedCreatorLimit);
 
       if (uniqueTargets.length === 0) {
-        if (!budget.ok) throw new Error(budget.message);
+        if (platformBudgetErrors.length > 0) {
+          throw new Error(platformBudgetErrors.join(" · "));
+        }
         throw new Error("No supported creators were selected for this pull.");
       }
 
@@ -274,6 +297,8 @@ export async function runResearchScan(params: {
         ) {
           continue;
         }
+        const scrapeCreditsBefore =
+          getScrapeCreatorsUsage().creditsChargedThisSession;
         try {
           const posts = await provider.getCreatorPosts({
             platform: target.platform as
@@ -284,19 +309,29 @@ export async function runResearchScan(params: {
             platformCreatorId: target.platformCreatorId,
             maxResults: Math.min(15, maxResults),
           });
+          const scrapeCreditsAfter =
+            getScrapeCreatorsUsage().creditsChargedThisSession;
+          const usageUnits =
+            provider.providerName === "scrapecreators"
+              ? Math.max(1, scrapeCreditsAfter - scrapeCreditsBefore)
+              : 1;
           usedProviders.add(provider.providerName);
           discovered.push(...posts);
-          await params.supabase.from("provider_usage_events").insert({
-            user_id: params.userId,
-            provider: provider.providerName,
-            operation: "get_creator_posts",
-            result_count: posts.length,
-            metadata: {
-              scanId: scan.id,
-              platform: target.platform,
-              platformCreatorId: target.platformCreatorId,
-            },
-          });
+          await params.supabase.from("provider_usage_events").insert(
+            Array.from({ length: usageUnits }, (_, index) => ({
+              user_id: params.userId,
+              provider: provider.providerName,
+              operation: "get_creator_posts",
+              result_count: index === 0 ? posts.length : 0,
+              metadata: {
+                scanId: scan.id,
+                platform: target.platform,
+                platformCreatorId: target.platformCreatorId,
+                providerCreditUnit: index + 1,
+                providerCreditsCharged: usageUnits,
+              },
+            })),
+          );
           if (posts.length === 0) {
             providerNotes.push(
               `${provider.providerName}: 0 results for ${target.platformCreatorId}`,
@@ -305,6 +340,28 @@ export async function runResearchScan(params: {
         } catch (error) {
           const message =
             error instanceof Error ? error.message : String(error);
+          const scrapeCreditsAfter =
+            getScrapeCreatorsUsage().creditsChargedThisSession;
+          const usageUnits =
+            provider.providerName === "scrapecreators"
+              ? Math.max(1, scrapeCreditsAfter - scrapeCreditsBefore)
+              : 1;
+          await params.supabase.from("provider_usage_events").insert(
+            Array.from({ length: usageUnits }, (_, index) => ({
+              user_id: params.userId,
+              provider: provider.providerName,
+              operation: "get_creator_posts",
+              result_count: 0,
+              metadata: {
+                scanId: scan.id,
+                platform: target.platform,
+                platformCreatorId: target.platformCreatorId,
+                failed: true,
+                providerCreditUnit: index + 1,
+                providerCreditsCharged: usageUnits,
+              },
+            })),
+          );
           providerErrors.push(`${provider.providerName}: ${message}`);
           console.error(
             `[research-scan] creator pull failed platform=${target.platform} provider=${provider.providerName}: ${message}`,
@@ -344,51 +401,154 @@ export async function runResearchScan(params: {
       const preferLatest =
         Boolean(scan.last_run_at) && !forceFullDiscovery && lookbackDays <= 14;
 
-      const settled = await Promise.allSettled(
-        searchProviders.flatMap((provider) =>
-          batch.map(async (query) => {
-            const posts = await provider.searchPosts({
-              query,
-              platforms: scan.platforms as Array<
-                "youtube" | "instagram" | "tiktok"
-              >,
-              lookbackDays,
-              maxResults: perQuery,
-              minViews: 0,
-              sortBy: preferLatest ? "latest" : "relevance",
-            });
-            return { provider, posts, query };
-          }),
-        ),
-      );
+      const searchReservations = { ...remainingByPlatform };
+      const searchTasks: Array<
+        Promise<{
+          provider: (typeof searchProviders)[number];
+          posts: SearchPostResult[];
+          query: string;
+          platform: "instagram" | "tiktok";
+          usageUnits: number;
+        }>
+      > = [];
+      for (const provider of searchProviders) {
+        const capabilities = provider.capabilities();
+        for (const platform of activePlatforms) {
+          if (!capabilities.platforms.includes(platform)) continue;
+          for (const query of batch) {
+            if (isDiscoveryProviderBudgeted(provider.providerName)) {
+              const maximumCredits =
+                provider.providerName === "scrapecreators"
+                  ? platform === "instagram"
+                    ? lookbackDays <= 2
+                      ? 2
+                      : 6
+                    : 2
+                  : 1;
+              if (searchReservations[platform] < maximumCredits) continue;
+              searchReservations[platform] -= maximumCredits;
+            }
+            searchTasks.push(
+              (async () => {
+                try {
+                  const execute = () =>
+                    provider.searchPosts({
+                      query,
+                      platforms: [platform],
+                      lookbackDays,
+                      maxResults: perQuery,
+                      minViews: 0,
+                      sortBy: preferLatest ? "latest" : "relevance",
+                    });
+                  const captured =
+                    provider.providerName === "scrapecreators"
+                      ? await captureScrapeCreatorsUsage(execute)
+                      : { value: await execute(), creditsCharged: 1 };
+                  return {
+                    provider,
+                    posts: captured.value,
+                    query,
+                    platform,
+                    usageUnits: Math.max(1, captured.creditsCharged),
+                  };
+                } catch (error) {
+                  const cause =
+                    error instanceof Error ? error : new Error(String(error));
+                  Object.assign(cause, {
+                    discoveryPlatform: platform,
+                    discoveryProvider: provider.providerName,
+                  });
+                  throw cause;
+                }
+              })(),
+            );
+          }
+        }
+      }
+
+      if (searchTasks.length === 0) {
+        throw new Error(
+          platformBudgetErrors.length > 0
+            ? platformBudgetErrors.join(" · ")
+            : "No Instagram or TikTok discovery searches could be scheduled.",
+        );
+      }
+
+      const settled = await Promise.allSettled(searchTasks);
 
       for (const result of settled) {
         if (result.status === "fulfilled") {
-          const { provider, posts, query } = result.value;
+          const { provider, posts, query, platform, usageUnits } = result.value;
           usedProviders.add(provider.providerName);
           discovered.push(
             ...posts.map((post) => ({ ...post, matchedQuery: query })),
           );
-          await params.supabase.from("provider_usage_events").insert({
-            user_id: params.userId,
-            provider: provider.providerName,
-            operation: "search_posts",
-            result_count: posts.length,
-            metadata: {
-              scanId: scan.id,
-              query,
-              lookbackDays,
-              incremental: Boolean(scan.last_run_at) && !forceFullDiscovery,
-            },
-          });
+          await params.supabase.from("provider_usage_events").insert(
+            Array.from({ length: usageUnits }, (_, index) => ({
+              user_id: params.userId,
+              provider: provider.providerName,
+              operation: "search_posts",
+              result_count: index === 0 ? posts.length : 0,
+              metadata: {
+                scanId: scan.id,
+                platform,
+                query,
+                lookbackDays,
+                incremental: Boolean(scan.last_run_at) && !forceFullDiscovery,
+                providerCreditUnit: index + 1,
+                providerCreditsCharged: usageUnits,
+              },
+            })),
+          );
           if (posts.length === 0) {
-            providerNotes.push(`${provider.providerName} · ${query}: 0 results`);
+            providerNotes.push(
+              `${provider.providerName} · ${platform} · ${query}: 0 results`,
+            );
           }
         } else {
           const message =
             result.reason instanceof Error
               ? result.reason.message
               : String(result.reason);
+          const capturedUsageUnits = scrapeCreatorsCreditsChargedFromError(
+            result.reason,
+          );
+          const failedPlatform =
+            result.reason && typeof result.reason === "object"
+              ? String(
+                  (result.reason as { discoveryPlatform?: unknown })
+                    .discoveryPlatform ?? "",
+                )
+              : "";
+          const failedProvider =
+            result.reason && typeof result.reason === "object"
+              ? String(
+                  (result.reason as { discoveryProvider?: unknown })
+                    .discoveryProvider ?? "",
+                )
+              : "";
+          const usageUnits =
+            capturedUsageUnits > 0
+              ? capturedUsageUnits
+              : isDiscoveryProviderBudgeted(failedProvider)
+                ? 1
+                : 0;
+          if (usageUnits > 0) {
+            await params.supabase.from("provider_usage_events").insert(
+              Array.from({ length: usageUnits }, (_, index) => ({
+                user_id: params.userId,
+                provider: failedProvider || "scrapecreators",
+                operation: "search_posts",
+                result_count: 0,
+                metadata: {
+                  platform: failedPlatform,
+                  failed: true,
+                  providerCreditUnit: index + 1,
+                  providerCreditsCharged: usageUnits,
+                },
+              })),
+            );
+          }
           providerErrors.push(message);
           console.error(`[research-scan] provider search failed: ${message}`);
         }

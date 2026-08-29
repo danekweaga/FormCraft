@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { createClient } from "@/lib/supabase/server";
+import { stalledAnalysisCutoffIso } from "@/lib/analyze/stalled";
 import {
   deleteAnalysisComparisonAction,
   deleteSavedPatternAction,
@@ -15,7 +16,7 @@ import {
   CompareForm,
 } from "./analyze-form";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const TABS = [
   { id: "new", label: "New" },
@@ -40,6 +41,20 @@ export default async function AnalyzePage({
   } = await supabase.auth.getUser();
 
   if (!user) redirect("/sign-in");
+
+  // Deferred work from older deployments could be abandoned by the runtime.
+  // Surface those jobs as retryable failures instead of showing Processing forever.
+  const stalledBefore = stalledAnalysisCutoffIso();
+  await supabase
+    .from("video_analyses")
+    .update({
+      status: "failed",
+      processing_error:
+        "The previous analysis worker stopped before completion. Retry this analysis; its saved transcript will be reused.",
+    })
+    .eq("user_id", user.id)
+    .in("status", ["queued", "processing"])
+    .lt("updated_at", stalledBefore);
 
   const { data: analyses } = await supabase
     .from("video_analyses")

@@ -141,13 +141,17 @@ describe("Growth K canvas", () => {
 
   it("exposes multi-node AI actions without collaboration features", () => {
     expect(CANVAS_AI_ACTIONS).toEqual([
+      "build_content_brief",
       "analyze_together",
       "common_patterns",
       "contradictions",
+      "generate_angles",
+      "strengthen_hook",
       "generate_ideas",
       "content_gaps",
       "combine_ideas",
       "generate_script",
+      "plan_experiment",
       "create_series",
       "summarize",
       "audience_problems",

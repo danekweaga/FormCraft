@@ -52,7 +52,7 @@ export default async function HooksPage({
       .limit(160),
     supabase
       .from("knowledge_documents")
-      .select("id, processing_status, updated_at")
+      .select("id, processing_status, updated_at, metadata")
       .eq("user_id", user.id)
       .contains("metadata", { starter_pack_id: HOOK_STORY_LIBRARY_ID })
       .limit(1)
@@ -67,6 +67,11 @@ export default async function HooksPage({
   });
   const starterItems = buildStarterHookLibrary();
   const summary = getHookStoryLibrarySummary();
+  const installedVersion =
+    installedLibrary?.metadata && typeof installedLibrary.metadata === "object"
+      ? String((installedLibrary.metadata as Record<string, unknown>).starter_pack_version ?? "")
+      : "";
+  const libraryIsCurrent = installedVersion === summary.version;
   const items = [...starterItems, ...extractedItems];
 
   return (
@@ -77,10 +82,15 @@ export default async function HooksPage({
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="primary">{starterItems.length} templates</Badge>
+            <Badge variant="default">v{summary.version}</Badge>
             <Badge variant="default">{extractedItems.length} evidence-backed</Badge>
             <form action={installHookStoryLibraryAction}>
               <Button type="submit" size="sm" variant={installedLibrary ? "outline" : "default"}>
-                {installedLibrary ? "Refresh taught library" : "Teach FormCraft this library"}
+                {libraryIsCurrent
+                  ? "Refresh taught library"
+                  : installedLibrary
+                    ? `Upgrade taught library to v${summary.version}`
+                    : "Teach FormCraft this library"}
               </Button>
             </form>
           </div>
@@ -88,7 +98,7 @@ export default async function HooksPage({
       />
       {query.library === "installed" ? (
         <div className="mb-4 rounded-xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-on-background">
-          The complete Hook + Story library is indexed in Teach FormCraft and enabled for AI context.
+          Hook + Story Library v{summary.version} is indexed in Teach FormCraft and enabled for AI context.
         </div>
       ) : null}
       {query.error ? (
@@ -96,12 +106,13 @@ export default async function HooksPage({
           {query.error}
         </div>
       ) : null}
-      <section className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {[
           ["Canonical hooks", summary.canonicalHooks],
           ["Story structures", summary.architectures],
           ["Rehooks", summary.rehooks],
           ["Attention anchors", summary.attentionAnchors],
+          ["Viral swipe hooks", summary.viralSwipeHooks],
         ].map(([label, value]) => (
           <div key={label} className="rounded-xl border border-outline-variant/20 bg-surface-primary p-4 paper-shadow">
             <p className="text-xs font-semibold uppercase tracking-wide text-secondary">{label}</p>

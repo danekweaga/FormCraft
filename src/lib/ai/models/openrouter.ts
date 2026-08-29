@@ -113,7 +113,10 @@ export async function callOpenRouter(params: {
     },
   });
 
-  const timeoutMs = Number(process.env.AI_DEFAULT_TIMEOUT_MS ?? "45000");
+  // Deep transcript analysis regularly needs more than 45 seconds on premium
+  // models. The app routes allow five minutes, so give the provider enough time
+  // to finish instead of creating a failed job followed by a stranded retry.
+  const timeoutMs = Number(process.env.AI_DEFAULT_TIMEOUT_MS ?? "90000");
   const abortSignal =
     Number.isFinite(timeoutMs) && timeoutMs > 0
       ? AbortSignal.timeout(timeoutMs)

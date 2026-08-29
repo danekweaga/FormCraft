@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  captureScrapeCreatorsUsage,
   fetchScrapeCreatorsCreditBalance,
   getScrapeCreatorsUsage,
   resetScrapeCreatorsUsage,
@@ -43,6 +44,34 @@ describe("scrapecreators client", () => {
       creditsChargedThisSession: 1,
       exhausted: false,
     });
+  });
+
+  it("tracks concurrent request credits in separate scopes", async () => {
+    vi.stubEnv("SCRAPECREATORS_API_KEY", "test-sc-key");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ credits_charged: 1 }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
+      ),
+    );
+
+    const [one, two] = await Promise.all([
+      captureScrapeCreatorsUsage(() =>
+        scrapecreatorsGet("/v1/tiktok/search/keyword"),
+      ),
+      captureScrapeCreatorsUsage(async () => {
+        await scrapecreatorsGet("/v2/instagram/reels/search");
+        return scrapecreatorsGet("/v2/instagram/reels/search");
+      }),
+    ]);
+
+    expect(one.creditsCharged).toBe(1);
+    expect(two.creditsCharged).toBe(2);
   });
 
   it("throws a credits-finished error on 402", async () => {

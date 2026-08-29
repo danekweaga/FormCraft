@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export type NicheFeedScanSummary = {
@@ -20,22 +20,42 @@ export function NicheFeedRefresh({
   lastStats?: NicheFeedScanSummary | null;
 }) {
   const router = useRouter();
+  const [requestError, setRequestError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!pending) return;
-    const first = window.setTimeout(() => router.refresh(), 8_000);
-    const second = window.setTimeout(() => router.refresh(), 22_000);
+    const controller = new AbortController();
+    let active = true;
+    void fetch("/api/research/refresh", {
+      method: "POST",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        if (!response.ok) {
+          throw new Error(payload?.error || `Refresh failed (${response.status})`);
+        }
+        if (active) router.refresh();
+      })
+      .catch((error) => {
+        if (!active || controller.signal.aborted) return;
+        setRequestError(
+          error instanceof Error ? error.message : "Feed refresh failed.",
+        );
+      });
     return () => {
-      window.clearTimeout(first);
-      window.clearTimeout(second);
+      active = false;
+      controller.abort();
     };
   }, [pending, router]);
 
-  if (lastError) {
+  if (requestError || lastError) {
     return (
       <p className="mb-4 rounded-xl border border-error/30 bg-error/5 px-4 py-3 text-sm text-on-background">
-        Last For You scan failed: {lastError}. Open Research again to retry —
-        FormCraft cleared the cooldown so the next visit can pull.
+        Last For You scan failed: {requestError || lastError}. Reload Research
+        to retry; saved videos are unaffected.
       </p>
     );
   }

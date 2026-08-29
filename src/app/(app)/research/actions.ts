@@ -412,7 +412,22 @@ export async function analyzeResearchItemAction(
         billableRequests: ingested.billableRequests,
         source: "research_analyze",
       });
+    } else {
+      console.warn("[research:analyze] transcript unavailable", {
+        researchItemId: item.id,
+        platform: item.platform,
+        reason: ingested.reason,
+      });
+      return {
+        error: `Transcript unavailable: ${ingested.reason} ${ingested.suggestion}`,
+      };
     }
+  }
+  if (transcript.length < 20) {
+    return {
+      error:
+        "Transcript unavailable. This analysis requires spoken evidence; paste or upload the transcript in Analyze.",
+    };
   }
   if (transcript.length >= 20) {
     transcriptsByExternalId.set(item.external_id, transcript);
@@ -507,8 +522,8 @@ export async function addCreatorToWatchlistAction(
   const handleRaw = String(formData.get("handle") ?? "").trim();
   if (!watchlistId) return { error: "Pick a watchlist." };
   if (handleRaw.length < 2) return { error: "Enter a creator handle." };
-  if (!["tiktok", "youtube", "instagram"].includes(platform)) {
-    return { error: "Pick TikTok, YouTube, or Instagram." };
+  if (!["tiktok", "instagram"].includes(platform)) {
+    return { error: "YouTube discovery is disabled. Pick TikTok or Instagram." };
   }
 
   const { canDiscoverPlatform } = await import(
@@ -519,9 +534,7 @@ export async function addCreatorToWatchlistAction(
       error:
         platform === "instagram"
           ? "Instagram pull needs Meta Business Discovery or SCRAPECREATORS_API_KEY."
-          : platform === "youtube"
-            ? "YouTube pull needs YOUTUBE_DATA_API_KEY (or SCRAPECREATORS_API_KEY)."
-            : "TikTok pull needs SCRAPECREATORS_API_KEY or TIKTOK_DATA_API_KEY.",
+          : "TikTok pull needs SCRAPECREATORS_API_KEY or TIKTOK_DATA_API_KEY.",
     };
   }
 
@@ -542,21 +555,13 @@ export async function addCreatorToWatchlistAction(
   const { resolvePlatformCreatorId, cleanCreatorHandle } = await import(
     "@/lib/research/resolve-creator"
   );
-  const { getProviderForPlatform } = await import(
-    "@/lib/research/discovery/registry"
-  );
-  const { ingestScoredPosts } = await import("@/lib/research/ingest-posts");
-
   const platformCreatorId = await resolvePlatformCreatorId({
     platform,
     handle: handleRaw,
   });
   if (!platformCreatorId) {
     return {
-      error:
-        platform === "youtube"
-          ? "Could not resolve that YouTube handle. Check YOUTUBE_DATA_API_KEY or paste a channel ID (UC…)."
-          : "Could not resolve that handle.",
+      error: "Could not resolve that handle.",
     };
   }
 
@@ -571,8 +576,7 @@ export async function addCreatorToWatchlistAction(
         platform_creator_id: platformCreatorId,
         handle,
         display_name: handle,
-        data_source:
-          platform === "youtube" ? "official_api" : "third_party_api",
+        data_source: "third_party_api",
         data_freshness_at: retrievedAt,
         tracking_paused: false,
       },
@@ -596,51 +600,25 @@ export async function addCreatorToWatchlistAction(
     );
   if (memberError) return { error: memberError.message };
 
-  const provider = getProviderForPlatform(platform);
   let pulled = 0;
-  if (provider?.getCreatorPosts && provider.capabilities().getCreatorPosts) {
-    try {
-      const posts = await provider.getCreatorPosts({
-        platform: platform as "youtube" | "tiktok",
-        platformCreatorId,
-        maxResults: 200,
-        lookbackDays: 30,
-      });
-      const { data: niche } = await supabase
-        .from("niche_profiles")
-        .select("main_niche")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      const ingested = await ingestScoredPosts({
+  try {
+    const { refreshSingleCreatorPosts } = await import(
+      "@/lib/research/watchlist-monitor"
+    );
+    const refreshed = await refreshSingleCreatorPosts({
         supabase,
         userId: user.id,
-        posts,
-        query: niche?.main_niche || handle,
-        minViews: 0,
-        minOutlierScore: 0,
-        retrievedAt,
-        trustedCreatorPosts: true,
+        externalCreatorId: creator.id,
+        maxResults: 200,
       });
-      pulled = ingested.retained;
-      await supabase.from("provider_usage_events").insert({
-        user_id: user.id,
-        provider: provider.providerName,
-        operation: "get_creator_posts",
-        result_count: posts.length,
-        metadata: { watchlistId, externalCreatorId: creator.id },
-      });
-      await supabase
-        .from("external_creators")
-        .update({ data_freshness_at: retrievedAt })
-        .eq("id", creator.id);
-    } catch (error) {
-      revalidatePath("/research");
-      return {
-        success: `Added @${handle} to the watchlist, but the first pull failed: ${
-          error instanceof Error ? error.message : "provider error"
-        }. Try Refresh now later.`,
-      };
-    }
+    pulled = refreshed.retained;
+  } catch (error) {
+    revalidatePath("/research");
+    return {
+      success: `Added @${handle} to the watchlist, but the first pull failed: ${
+        error instanceof Error ? error.message : "provider error"
+      }. Try Refresh now later.`,
+    };
   }
 
   revalidatePath("/research");
@@ -649,7 +627,7 @@ export async function addCreatorToWatchlistAction(
     success:
       pulled > 0
         ? `Added @${handle} and pulled ${pulled} recent posts (creator-relative outliers scored).`
-        : `Added @${handle}. Configure SCRAPECREATORS_API_KEY (or YouTube) then Refresh now to pull posts.`,
+        : `Added @${handle}. Configure the Instagram or TikTok provider, then Refresh now to pull posts.`,
   };
 }
 
@@ -666,7 +644,7 @@ export async function findSimilarCreatorsAction(
         .getAll("platforms")
         .map(String)
         .filter((platform) =>
-          ["instagram", "tiktok", "youtube"].includes(platform),
+          ["instagram", "tiktok"].includes(platform),
         ),
     ),
   );
@@ -1292,7 +1270,7 @@ export async function generateNicheBriefAction(formData: FormData) {
     user_id: user.id,
     name: `Niche brief: ${topic.slice(0, 60)}`,
     query: topic,
-    platforms: ["youtube"],
+    platforms: ["instagram", "tiktok"],
     lookback_days: 30,
     min_views: 0,
     min_outlier_score: 0,

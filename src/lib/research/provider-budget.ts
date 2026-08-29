@@ -5,12 +5,24 @@ export type DiscoveryBudgets = {
   autoDeepAnalysis: boolean;
 };
 
+export type BudgetedDiscoveryPlatform = "instagram" | "tiktok";
+
+export type DiscoveryUsageEvent = {
+  provider: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+};
+
 /** Providers whose requests consume paid credits or a scarce search quota. */
 export const BUDGETED_DISCOVERY_PROVIDERS = [
   "scrapecreators",
-  "youtube_data_api",
   "tiktokapi_store",
 ] as const;
+
+export const BUDGETED_DISCOVERY_PLATFORMS = [
+  "instagram",
+  "tiktok",
+] as const satisfies readonly BudgetedDiscoveryPlatform[];
 
 /** Operations that belong to discovery; transcript/AI usage is budgeted elsewhere. */
 export const DISCOVERY_BUDGET_OPERATIONS = [
@@ -22,6 +34,12 @@ export function isDiscoveryProviderBudgeted(providerName: string): boolean {
   return (BUDGETED_DISCOVERY_PROVIDERS as readonly string[]).includes(
     providerName,
   );
+}
+
+export function isBudgetedDiscoveryPlatform(
+  platform: string,
+): platform is BudgetedDiscoveryPlatform {
+  return (BUDGETED_DISCOVERY_PLATFORMS as readonly string[]).includes(platform);
 }
 
 export function remainingDiscoveryCalls(params: {
@@ -46,6 +64,80 @@ export function getDiscoveryBudgets(): DiscoveryBudgets {
     maxResultsPerQuery:
       Number(process.env.DISCOVERY_MAX_RESULTS_PER_QUERY ?? "50") || 50,
     autoDeepAnalysis: process.env.DISCOVERY_AUTO_DEEP_ANALYSIS === "1",
+  };
+}
+
+/**
+ * Split the shared discovery allowance between the only two live platforms.
+ * Instagram receives 70%; TikTok receives the remaining 30%.
+ */
+export function getDiscoveryBudgetsForPlatform(
+  platform: BudgetedDiscoveryPlatform,
+  budgets: DiscoveryBudgets = getDiscoveryBudgets(),
+): DiscoveryBudgets {
+  const instagramPercent = Math.min(
+    100,
+    Math.max(
+      0,
+      Number(process.env.DISCOVERY_INSTAGRAM_BUDGET_PERCENT ?? "70") || 70,
+    ),
+  );
+  const percent = platform === "instagram" ? instagramPercent : 100 - instagramPercent;
+  return {
+    ...budgets,
+    dailyCalls: Math.floor((budgets.dailyCalls * percent) / 100),
+    monthlyCalls: Math.floor((budgets.monthlyCalls * percent) / 100),
+  };
+}
+
+export function discoveryPlatformForUsageEvent(
+  event: Pick<DiscoveryUsageEvent, "provider" | "metadata">,
+): BudgetedDiscoveryPlatform | null {
+  const platform = String(event.metadata?.platform ?? "").toLowerCase();
+  if (isBudgetedDiscoveryPlatform(platform)) return platform;
+  if (event.provider === "tiktokapi_store") return "tiktok";
+  return null;
+}
+
+export function countDiscoveryUsageByPlatform(params: {
+  events: DiscoveryUsageEvent[];
+  dayStartIso: string;
+}): Record<BudgetedDiscoveryPlatform, { callsToday: number; callsMonth: number }> {
+  const usage = {
+    instagram: { callsToday: 0, callsMonth: 0 },
+    tiktok: { callsToday: 0, callsMonth: 0 },
+  } satisfies Record<
+    BudgetedDiscoveryPlatform,
+    { callsToday: number; callsMonth: number }
+  >;
+  for (const event of params.events) {
+    const platform = discoveryPlatformForUsageEvent(event);
+    if (!platform) continue;
+    usage[platform].callsMonth += 1;
+    if (event.created_at >= params.dayStartIso) {
+      usage[platform].callsToday += 1;
+    }
+  }
+  return usage;
+}
+
+export function remainingDiscoveryCallsByPlatform(params: {
+  usage: Record<
+    BudgetedDiscoveryPlatform,
+    { callsToday: number; callsMonth: number }
+  >;
+  budgets?: DiscoveryBudgets;
+}): Record<BudgetedDiscoveryPlatform, number> {
+  const budgets = params.budgets ?? getDiscoveryBudgets();
+  return {
+    instagram: remainingDiscoveryCalls({
+      ...params.usage.instagram,
+      budgets: getDiscoveryBudgetsForPlatform("instagram", budgets),
+    }),
+    tiktok: remainingDiscoveryCalls({
+      ...params.usage.tiktok,
+      budgets: getDiscoveryBudgetsForPlatform("tiktok", budgets),
+    }),
   };
 }
 

@@ -13,9 +13,11 @@ describe("FormCraft Hook + Story starter library", () => {
     const summary = getHookStoryLibrarySummary();
     const hooks = getCanonicalHookTemplates();
 
-    expect(summary.canonicalHooks).toBe(267);
+    expect(summary.version).toBe("2.0.0");
+    expect(summary.canonicalHooks).toBe(521);
+    expect(summary.viralSwipeHooks).toBe(255);
     expect(summary.architectures).toBe(11);
-    expect(new Set(hooks.map((hook) => hook.canonical_id)).size).toBe(267);
+    expect(new Set(hooks.map((hook) => hook.canonical_id)).size).toBe(521);
     expect(hooks.every((hook) => hook.template.trim().length > 0)).toBe(true);
   });
 
@@ -38,6 +40,9 @@ describe("FormCraft Hook + Story starter library", () => {
     expect(first.length).toBeLessThanOrEqual(8);
     expect(first.some((hook) => hook.family === "storytelling")).toBe(true);
     expect(first.every((hook) => hook.risk_flags.length === 0)).toBe(true);
+    expect(
+      first.some((hook) => hook.source_banks.includes("viral_hooks_255")),
+    ).toBe(true);
   });
 
   it("chooses the matching story architecture and produces complete teaching text", () => {
@@ -53,10 +58,12 @@ describe("FormCraft Hook + Story starter library", () => {
     expect(prompt).toContain("Selected templates");
     expect(prompt).toContain("tutorial");
     expect(prompt).toContain("Ethical guardrails");
+    expect(prompt).toContain("Hook-to-story continuation");
+    expect(prompt).toContain("Viral swipe-bank rule");
 
     const knowledge = buildHookStoryKnowledgeText();
     expect(knowledge).toContain("hook-001");
-    expect(knowledge).toContain("hook-267");
+    expect(knowledge).toContain("hook-521");
     expect(knowledge).toContain("Never manufacture receipts");
   });
 });

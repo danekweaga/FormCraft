@@ -128,7 +128,8 @@ export function PeriodReviewPanel({ posts }: { posts: ContentPostRow[] }) {
   const [showPrefs, setShowPrefs] = useState(false);
 
   useEffect(() => {
-    setPrefs(loadPrefs());
+    const timer = window.setTimeout(() => setPrefs(loadPrefs()), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const review = useMemo(

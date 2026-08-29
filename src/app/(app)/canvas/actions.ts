@@ -1011,8 +1011,40 @@ export async function runCanvasAiAction(input: {
     !usedLlm
       ? `Heuristic — AI unavailable${fallbackReason ? `: ${fallbackReason}` : ""}.`
       : null,
-    result.summary,
-    ...result.bullets.map((b) => `• ${b}`),
+    "VERDICT",
+    result.verdict,
+    result.evidenceUsed.length
+      ? `\nEVIDENCE USED\n${result.evidenceUsed.map((item) => `• ${item}`).join("\n")}`
+      : null,
+    result.insights.length
+      ? `\nWHAT THE EVIDENCE SAYS\n${result.insights
+          .map(
+            (item) =>
+              `• ${item.claim} [${item.confidence}]\n  Evidence: ${item.evidence}\n  Why it matters: ${item.whyItMatters}`,
+          )
+          .join("\n")}`
+      : null,
+    result.originalAngles.length
+      ? `\nORIGINAL ANGLES\n${result.originalAngles
+          .map(
+            (item, index) =>
+              `${index + 1}. ${item.angle}\n   Hook: ${item.hook}\n   Payoff: ${item.payoff}\n   Proof needed: ${item.proofNeeded}`,
+          )
+          .join("\n")}`
+      : null,
+    result.deliverable ? `\nREADY-TO-USE DELIVERABLE\n${result.deliverable}` : null,
+    result.actions.length
+      ? `\nACTION PLAN\n${result.actions
+          .map((item) => `• [${item.priority}] ${item.action} — ${item.reason}`)
+          .join("\n")}`
+      : null,
+    result.risks.length
+      ? `\nRISKS\n${result.risks.map((item) => `• ${item}`).join("\n")}`
+      : null,
+    result.missingEvidence.length
+      ? `\nMISSING EVIDENCE\n${result.missingEvidence.map((item) => `• ${item}`).join("\n")}`
+      : null,
+    `\nNEXT STEP\n${result.nextStep}`,
   ].filter(Boolean);
 
   const created = await insertCanvasNode({
@@ -1030,6 +1062,7 @@ export async function runCanvasAiAction(input: {
       sourceNodeIds: input.nodeIds,
       heuristic: !usedLlm,
       fallbackReason: fallbackReason ?? null,
+      strategicResult: result,
     },
   });
 

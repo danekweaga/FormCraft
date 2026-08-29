@@ -25,6 +25,7 @@ export async function installHookStoryLibraryAction() {
     canonical_hook_count: summary.canonicalHooks,
     raw_hook_count: summary.rawHooks,
     story_architecture_count: summary.architectures,
+    viral_swipe_hook_count: summary.viralSwipeHooks,
     provenance_model: "mixed_with_source_statuses",
   };
 

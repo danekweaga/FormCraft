@@ -48,6 +48,20 @@ async function createJob(
     inputHash?: string;
   },
 ) {
+  const staleBefore = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  await supabase
+    .from("ai_jobs")
+    .update({
+      status: "failed",
+      error_code: "stale_worker",
+      error_message:
+        "The previous AI worker stopped before completion. The task can be retried safely.",
+      completed_at: new Date().toISOString(),
+    })
+    .eq("user_id", input.userId)
+    .eq("status", "processing")
+    .lt("started_at", staleBefore);
+
   const { data } = await supabase
     .from("ai_jobs")
     .insert({

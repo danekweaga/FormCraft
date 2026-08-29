@@ -9,9 +9,11 @@ import { ingestScoredPosts } from "./ingest-posts";
 import {
   BUDGETED_DISCOVERY_PROVIDERS,
   DISCOVERY_BUDGET_OPERATIONS,
+  countDiscoveryUsageByPlatform,
   getDiscoveryBudgets,
+  isBudgetedDiscoveryPlatform,
   isDiscoveryProviderBudgeted,
-  remainingDiscoveryCalls,
+  remainingDiscoveryCallsByPlatform,
 } from "./provider-budget";
 import { filterRecentShortForm } from "./recent-short-form";
 
@@ -144,25 +146,20 @@ export async function runWatchlistMonitor(params: {
   const monthStart = new Date(
     Date.UTC(dayStart.getUTCFullYear(), dayStart.getUTCMonth(), 1),
   );
-  const [{ count: callsToday }, { count: callsMonth }] = await Promise.all([
-    params.supabase
-      .from("provider_usage_events")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", params.userId)
-      .in("provider", [...BUDGETED_DISCOVERY_PROVIDERS])
-      .in("operation", [...DISCOVERY_BUDGET_OPERATIONS])
-      .gte("created_at", dayStart.toISOString()),
-    params.supabase
-      .from("provider_usage_events")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", params.userId)
-      .in("provider", [...BUDGETED_DISCOVERY_PROVIDERS])
-      .in("operation", [...DISCOVERY_BUDGET_OPERATIONS])
-      .gte("created_at", monthStart.toISOString()),
-  ]);
-  const remainingBudget = remainingDiscoveryCalls({
-    callsToday: callsToday ?? 0,
-    callsMonth: callsMonth ?? 0,
+  const { data: usageRows } = await params.supabase
+    .from("provider_usage_events")
+    .select("provider, metadata, created_at")
+    .eq("user_id", params.userId)
+    .in("provider", [...BUDGETED_DISCOVERY_PROVIDERS])
+    .in("operation", [...DISCOVERY_BUDGET_OPERATIONS])
+    .gte("created_at", monthStart.toISOString())
+    .limit(Math.max(1000, budgets.monthlyCalls * 2));
+  const usageByPlatform = countDiscoveryUsageByPlatform({
+    events: usageRows ?? [],
+    dayStartIso: dayStart.toISOString(),
+  });
+  const remainingBudget = remainingDiscoveryCallsByPlatform({
+    usage: usageByPlatform,
     budgets,
   });
 
@@ -257,7 +254,7 @@ export async function runWatchlistMonitor(params: {
       Number(process.env.DISCOVERY_MAX_PAGES_PER_CREATOR ?? "2") || 2,
     ),
   );
-  let remainingBudgetForRun = remainingBudget;
+  const remainingBudgetForRun = { ...remainingBudget };
   let skippedForBudget = 0;
   // Priority creators are checked every run. The rest continue rotating from
   // the stalest data_freshness_at value so a large imported catalog is fair.
@@ -275,18 +272,19 @@ export async function runWatchlistMonitor(params: {
 
   for (const creator of orderedCandidates) {
     if (checkedCreators.length >= requestedMaxCreators) break;
+    if (!isBudgetedDiscoveryPlatform(creator.platform)) continue;
     const provider = getProviderForPlatform(creator.platform);
     if (!provider?.getCreatorPosts || !provider.capabilities().getCreatorPosts) {
       continue;
     }
     const budgeted = isDiscoveryProviderBudgeted(provider.providerName);
-    if (budgeted && remainingBudgetForRun <= 0) {
+    if (budgeted && remainingBudgetForRun[creator.platform] <= 0) {
       skippedForBudget += 1;
       continue;
     }
     const allocatedPages =
       provider.providerName === "scrapecreators"
-        ? Math.min(maxPagesPerCreator, remainingBudgetForRun)
+        ? Math.min(maxPagesPerCreator, remainingBudgetForRun[creator.platform])
         : undefined;
     checkedCreators.push(creator);
     const scrapeCreditsBefore = getScrapeCreatorsUsage().creditsChargedThisSession;
@@ -318,7 +316,10 @@ export async function runWatchlistMonitor(params: {
           ? Math.max(1, scrapeCreditsAfter - scrapeCreditsBefore)
           : 1;
       if (budgeted) {
-        remainingBudgetForRun = Math.max(0, remainingBudgetForRun - usageUnits);
+        remainingBudgetForRun[creator.platform] = Math.max(
+          0,
+          remainingBudgetForRun[creator.platform] - usageUnits,
+        );
       }
       await params.supabase.from("provider_usage_events").insert(
         Array.from({ length: usageUnits }, (_, index) => ({
@@ -329,6 +330,7 @@ export async function runWatchlistMonitor(params: {
           metadata: {
             externalCreatorId: creator.id,
             platformCreatorId: creator.platform_creator_id,
+            platform: creator.platform,
             automaticSuggestion: suggestedCreatorIds.has(creator.id),
             lookbackDays: 30,
             requestedPosts: requestedPostsPerCreator,
@@ -353,7 +355,10 @@ export async function runWatchlistMonitor(params: {
           ? Math.max(1, scrapeCreditsAfter - scrapeCreditsBefore)
           : 1;
       if (budgeted) {
-        remainingBudgetForRun = Math.max(0, remainingBudgetForRun - usageUnits);
+        remainingBudgetForRun[creator.platform] = Math.max(
+          0,
+          remainingBudgetForRun[creator.platform] - usageUnits,
+        );
       }
       await params.supabase.from("provider_usage_events").insert(
         Array.from({ length: usageUnits }, (_, index) => ({
@@ -363,6 +368,7 @@ export async function runWatchlistMonitor(params: {
           result_count: 0,
           metadata: {
             externalCreatorId: creator.id,
+            platform: creator.platform,
             automaticSuggestion: suggestedCreatorIds.has(creator.id),
             failed: true,
             providerCreditUnit: index + 1,
@@ -481,6 +487,11 @@ export async function refreshSingleCreatorPosts(params: {
   if (creator.tracking_paused) {
     throw new Error("Tracking is paused for this creator.");
   }
+  if (!isBudgetedDiscoveryPlatform(creator.platform)) {
+    throw new Error(
+      "YouTube discovery is disabled. FormCraft now pulls only Instagram and TikTok.",
+    );
+  }
 
   const provider = getProviderForPlatform(creator.platform);
   if (!provider?.getCreatorPosts || !provider.capabilities().getCreatorPosts) {
@@ -495,6 +506,35 @@ export async function refreshSingleCreatorPosts(params: {
   const configuredMaxPages =
     params.maxPages ??
     (Number(process.env.DISCOVERY_MAX_PAGES_PER_CREATOR ?? "20") || 20);
+  const budgets = getDiscoveryBudgets();
+  const dayStart = new Date();
+  dayStart.setUTCHours(0, 0, 0, 0);
+  const monthStart = new Date(
+    Date.UTC(dayStart.getUTCFullYear(), dayStart.getUTCMonth(), 1),
+  );
+  const { data: usageRows } = await params.supabase
+    .from("provider_usage_events")
+    .select("provider, metadata, created_at")
+    .eq("user_id", params.userId)
+    .in("provider", [...BUDGETED_DISCOVERY_PROVIDERS])
+    .in("operation", [...DISCOVERY_BUDGET_OPERATIONS])
+    .gte("created_at", monthStart.toISOString())
+    .limit(Math.max(1000, budgets.monthlyCalls * 2));
+  const remainingBudget = remainingDiscoveryCallsByPlatform({
+    usage: countDiscoveryUsageByPlatform({
+      events: usageRows ?? [],
+      dayStartIso: dayStart.toISOString(),
+    }),
+    budgets,
+  });
+  if (
+    isDiscoveryProviderBudgeted(provider.providerName) &&
+    remainingBudget[creator.platform] <= 0
+  ) {
+    throw new Error(
+      `${creator.platform === "instagram" ? "Instagram" : "TikTok"} discovery budget reached. This request was not sent.`,
+    );
+  }
   resetScrapeCreatorsUsage();
   const scrapeCreditsBefore = getScrapeCreatorsUsage().creditsChargedThisSession;
   const posts = await provider.getCreatorPosts({
@@ -508,7 +548,10 @@ export async function refreshSingleCreatorPosts(params: {
             25,
             Math.max(
               1,
-              configuredMaxPages,
+              Math.min(
+                configuredMaxPages,
+                remainingBudget[creator.platform],
+              ),
             ),
           )
         : params.maxPages,
@@ -533,6 +576,7 @@ export async function refreshSingleCreatorPosts(params: {
       metadata: {
         externalCreatorId: creator.id,
         platformCreatorId: creator.platform_creator_id,
+        platform: creator.platform,
         single: true,
         lookbackDays: 30,
         providerCreditUnit: index + 1,

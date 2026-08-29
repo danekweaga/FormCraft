@@ -20,18 +20,16 @@ describe("discovery registry", () => {
 
     const names = getConfiguredDiscoveryProviders().map((p) => p.providerName);
     expect(names).toContain("scrapecreators");
-    expect(names).toContain("youtube_data_api");
+    expect(names).not.toContain("youtube_data_api");
     expect(names).not.toContain("tiktokapi_store");
 
-    expect(getProviderForPlatform("youtube")?.providerName).toBe(
-      "youtube_data_api",
-    );
+    expect(getProviderForPlatform("youtube")).toBeNull();
     expect(getProviderForPlatform("tiktok")?.providerName).toBe("scrapecreators");
     expect(getProviderForPlatform("instagram")?.providerName).toBe(
       "scrapecreators",
     );
 
     const platforms = searchablePlatforms().map((p) => p.platform);
-    expect(platforms).toEqual(["youtube", "tiktok", "instagram"]);
+    expect(platforms).toEqual(["tiktok", "instagram"]);
   });
 });

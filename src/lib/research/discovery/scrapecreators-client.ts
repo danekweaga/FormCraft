@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 const BASE = "https://api.scrapecreators.com";
 
 export const SCRAPECREATORS_LOW_CREDIT_THRESHOLD = 25;
@@ -21,6 +23,7 @@ export type ScrapeCreatorsUsage = {
 };
 
 let usage: ScrapeCreatorsUsage = emptyUsage();
+const scopedUsage = new AsyncLocalStorage<{ creditsCharged: number }>();
 
 function emptyUsage(): ScrapeCreatorsUsage {
   return {
@@ -41,6 +44,31 @@ export function resetScrapeCreatorsUsage(): void {
 
 export function getScrapeCreatorsUsage(): ScrapeCreatorsUsage {
   return { ...usage };
+}
+
+export async function captureScrapeCreatorsUsage<T>(
+  task: () => Promise<T>,
+): Promise<{ value: T; creditsCharged: number }> {
+  const scope = { creditsCharged: 0 };
+  try {
+    const value = await scopedUsage.run(scope, task);
+    return { value, creditsCharged: scope.creditsCharged };
+  } catch (error) {
+    const cause = error instanceof Error ? error : new Error(String(error));
+    Object.assign(cause, {
+      scrapeCreatorsCreditsCharged: scope.creditsCharged,
+    });
+    throw cause;
+  }
+}
+
+export function scrapeCreatorsCreditsChargedFromError(error: unknown): number {
+  if (!error || typeof error !== "object") return 0;
+  const value = Number(
+    (error as { scrapeCreatorsCreditsCharged?: unknown })
+      .scrapeCreatorsCreditsCharged,
+  );
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
 function apiKey(): string {
@@ -76,6 +104,8 @@ function rememberCredits(params: {
 }) {
   if (params.remaining != null) usage.creditsRemaining = params.remaining;
   usage.creditsChargedThisSession += Math.max(0, params.charged);
+  const scope = scopedUsage.getStore();
+  if (scope) scope.creditsCharged += Math.max(0, params.charged);
   usage.lastPath = params.path;
   if (params.exhausted) usage.exhausted = true;
 }

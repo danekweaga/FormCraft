@@ -5,6 +5,8 @@ import { tiktokDataDiscoveryProvider } from "./tiktok-data-provider";
 import { youtubeDiscoveryProvider } from "./youtube-provider";
 import type { ContentDiscoveryProvider, DiscoveryCapabilities } from "./types";
 
+export const ENABLED_DISCOVERY_PLATFORMS = ["instagram", "tiktok"] as const;
+
 export function listDiscoveryProviders(): ContentDiscoveryProvider[] {
   return [
     youtubeDiscoveryProvider,
@@ -18,7 +20,13 @@ export function listDiscoveryProviders(): ContentDiscoveryProvider[] {
 export function getConfiguredDiscoveryProviders(): ContentDiscoveryProvider[] {
   const configured = listDiscoveryProviders().filter(
     (p) =>
-      p.capabilities().searchPosts || p.capabilities().getCreatorPosts,
+      p.providerName !== "youtube_data_api" &&
+      (p.capabilities().searchPosts || p.capabilities().getCreatorPosts) &&
+      p
+        .capabilities()
+        .platforms.some((platform) =>
+          (ENABLED_DISCOVERY_PLATFORMS as readonly string[]).includes(platform),
+        ),
   );
   const scrapeCreatorsOn = configured.some(
     (p) =>
@@ -34,6 +42,9 @@ export function getConfiguredDiscoveryProviders(): ContentDiscoveryProvider[] {
 export function getProviderForPlatform(
   platform: string,
 ): ContentDiscoveryProvider | null {
+  if (!(ENABLED_DISCOVERY_PLATFORMS as readonly string[]).includes(platform)) {
+    return null;
+  }
   const configured = getConfiguredDiscoveryProviders();
   // Meta Business Discovery is excellent for official public metadata but it
   // does not expose competitor Reel plays. Prefer the configured provider
@@ -68,6 +79,11 @@ export function searchablePlatforms(): Array<{
     const caps = provider.capabilities();
     if (!caps.searchPosts) continue;
     for (const platform of caps.platforms) {
+      if (
+        !(ENABLED_DISCOVERY_PLATFORMS as readonly string[]).includes(platform)
+      ) {
+        continue;
+      }
       if (seen.has(platform)) continue;
       seen.add(platform);
       out.push({

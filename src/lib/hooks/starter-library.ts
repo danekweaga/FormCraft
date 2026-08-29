@@ -13,6 +13,7 @@ export type CanonicalHookTemplate = {
   requires: string[];
   risk_flags: string[];
   notes: string[];
+  suggested_script_architectures?: string[];
 };
 
 type ScriptArchitecture = {
@@ -46,6 +47,16 @@ type HookStoryLibrary = {
   formcraft_system_prompt: string;
   ethical_guardrails: Record<string, unknown>;
   source_model: Record<string, string>;
+  hook_bank_metadata?: {
+    viral_hooks_255?: {
+      unique_templates_in_source: number;
+      usage_rule: string;
+    };
+  };
+  hook_to_story_bridge?: Record<
+    string,
+    { default_architecture: string; continuation: string }
+  >;
 };
 
 const library = libraryJson as unknown as HookStoryLibrary;
@@ -55,7 +66,7 @@ const objectiveFamilies: Record<string, string[]> = {
   reach: ["curiosity_gap", "pattern_interrupt", "question", "contrast"],
   follows: ["identity_self_reference", "storytelling", "authority", "reframe"],
   trust: ["authority", "storytelling", "experiment_result", "confession", "reframe"],
-  education: ["authority", "question", "reframe", "curiosity_gap"],
+  education: ["authority", "how_to", "question", "reframe", "listicle", "curiosity_gap"],
   community: ["identity_self_reference", "self_audit", "question", "storytelling"],
   saves: ["authority", "question", "curiosity_gap", "reframe"],
   shares: ["reframe", "controversy", "identity_self_reference", "storytelling"],
@@ -68,7 +79,7 @@ const formatFamilies: Array<{ pattern: RegExp; families: string[] }> = [
   { pattern: /stor(y|ies)|personal|journey/i, families: ["storytelling", "confession", "reframe"] },
   { pattern: /compar|versus|\bvs\b/i, families: ["comparison", "contrast", "question"] },
   { pattern: /experiment|test|review/i, families: ["experiment_result", "authority", "storytelling"] },
-  { pattern: /tutorial|how[- ]?to|educat|explain/i, families: ["authority", "question", "curiosity_gap"] },
+  { pattern: /tutorial|how[- ]?to|educat|explain/i, families: ["how_to", "authority", "question", "listicle", "curiosity_gap"] },
   { pattern: /news|breakdown/i, families: ["authority", "pattern_interrupt", "reframe"] },
   { pattern: /talking head|yap|reality check/i, families: ["reframe", "storytelling", "identity_self_reference"] },
 ];
@@ -88,6 +99,42 @@ const architectureRules: Array<{ pattern: RegExp; id: string }> = [
 
 function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
+}
+
+function deterministicStart(seed: string, length: number): number {
+  let hash = 2166136261;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return length ? (hash >>> 0) % length : 0;
+}
+
+function rotateForContext(
+  templates: CanonicalHookTemplate[],
+  seed: string,
+): CanonicalHookTemplate[] {
+  if (templates.length < 2) return templates;
+  const start = deterministicStart(seed, templates.length);
+  return [...templates.slice(start), ...templates.slice(0, start)];
+}
+
+function contextualPair(
+  templates: CanonicalHookTemplate[],
+  seed: string,
+): CanonicalHookTemplate[] {
+  const rotated = rotateForContext(templates, seed);
+  const primary = rotated[0];
+  if (!primary) return [];
+  const complementary = rotated.find(
+    (template) =>
+      template.canonical_id !== primary.canonical_id &&
+      template.source_banks.includes("viral_hooks_255") !==
+        primary.source_banks.includes("viral_hooks_255"),
+  );
+  return [primary, complementary ?? rotated[1]].filter(
+    (template): template is CanonicalHookTemplate => Boolean(template),
+  );
 }
 
 function requiresUnavailableProof(template: CanonicalHookTemplate): boolean {
@@ -116,6 +163,8 @@ export function getHookStoryLibrarySummary() {
     architectures: library.script_architectures.length,
     rehooks: library.rehooks.length,
     attentionAnchors: library.attention_anchors.length,
+    viralSwipeHooks:
+      library.hook_bank_metadata?.viral_hooks_255?.unique_templates_in_source ?? 0,
   };
 }
 
@@ -151,7 +200,9 @@ export function selectHookTemplates(params: {
       if (params.proofAvailable === false && requiresUnavailableProof(template)) return false;
       return true;
     });
-    selected.push(...matches.slice(0, 2));
+    selected.push(
+      ...contextualPair(matches, `${objective}:${format}:${query}:${family}`),
+    );
     if (selected.length >= limit) break;
   }
 
@@ -167,9 +218,15 @@ export function selectHookTemplates(params: {
   return selected.slice(0, limit);
 }
 
-export function selectScriptArchitecture(format?: string | null): ScriptArchitecture {
+export function selectScriptArchitecture(
+  format?: string | null,
+  hookFamily?: string | null,
+): ScriptArchitecture {
   const normalized = format?.trim() || "";
-  const id = architectureRules.find((rule) => rule.pattern.test(normalized))?.id ?? "yap_talking_head";
+  const id =
+    architectureRules.find((rule) => rule.pattern.test(normalized))?.id ??
+    (hookFamily ? library.hook_to_story_bridge?.[hookFamily]?.default_architecture : null) ??
+    "yap_talking_head";
   return (
     library.script_architectures.find((architecture) => architecture.id === id) ??
     library.script_architectures[0]
@@ -190,13 +247,23 @@ export function buildHookStoryPromptContext(params: {
     requires: template.requires,
     sourceStatus: template.source_statuses,
   }));
-  const architecture = selectScriptArchitecture(params.format);
+  const primaryFamily = templates[0]?.family ?? null;
+  const architecture = selectScriptArchitecture(params.format, primaryFamily);
+  const storyBridge = primaryFamily
+    ? library.hook_to_story_bridge?.[primaryFamily] ?? null
+    : null;
 
   return [
     `FORMCRAFT HOOK + STORY LIBRARY ${library.version}`,
     "This is a deterministic, task-matched selection from the bundled library. Templates are options, not instructions to force a fit.",
     `Selected templates:\n${JSON.stringify(templates, null, 2)}`,
     `Selected story architecture:\n${JSON.stringify(architecture, null, 2)}`,
+    storyBridge
+      ? `Hook-to-story continuation:\n${JSON.stringify(storyBridge, null, 2)}`
+      : "Hook-to-story continuation: use the selected architecture and earn the promised payoff.",
+    library.hook_bank_metadata?.viral_hooks_255?.usage_rule
+      ? `Viral swipe-bank rule:\n${library.hook_bank_metadata.viral_hooks_255.usage_rule}`
+      : "",
     `Runtime rules:\n${library.runtime_rules.map((rule) => `- ${rule}`).join("\n")}`,
     `Ethical guardrails:\n${JSON.stringify(library.ethical_guardrails, null, 2)}`,
   ].join("\n\n");

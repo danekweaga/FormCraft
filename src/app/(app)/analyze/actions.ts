@@ -1,6 +1,5 @@
 "use server";
 
-import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { persistCapturedFrames } from "@/lib/analyze/media/frames";
@@ -10,10 +9,7 @@ import {
   createSignedMediaUrl,
   uploadAnalysisMedia,
 } from "@/lib/analyze/media/store";
-import {
-  captionMetadataTranscript,
-  ingestPublicVideoUrl,
-} from "@/lib/analyze/ingest/url";
+import { ingestPublicVideoUrl } from "@/lib/analyze/ingest/url";
 import { runStagedAnalysis } from "@/lib/analyze/pipeline/run-analysis";
 import {
   clipAnalysisTitle,
@@ -782,28 +778,10 @@ export async function breakDownResearchItemAction(
   }
 
   if (transcript.length < 20) {
-    const caption = captionMetadataTranscript({
-      title: item.title,
-      description: item.description,
-      hookText: item.hook_text,
-    });
-    if (caption) {
-      transcript = caption;
-      provider = "caption_metadata";
-      language = null;
-      timestampedTranscript = null;
-      hasAudioEvidence = false;
-      if (item.platform === "tiktok") inputType = "tiktok_url";
-      else if (item.platform === "instagram") inputType = "instagram_url";
-      else if (item.platform === "youtube") inputType = "youtube_url";
-    }
-  }
-
-  if (transcript.length < 20) {
     return {
       error: transcriptFailure
         ? `Transcript unavailable: ${transcriptFailure.reason} ${transcriptFailure.suggestion}`
-        : "This video has no saved transcript, caption, or public video link. Paste or upload its transcript in Analyze.",
+        : "This video has no saved spoken transcript or usable public video link. Paste or upload its transcript in Analyze.",
     };
   }
 
@@ -839,13 +817,8 @@ export async function breakDownResearchItemAction(
         },
         {
           id: "transcript",
-          label: hasAudioEvidence
-            ? "Spoken transcript ready"
-            : "Using on-screen caption (spoken transcript timed out)",
+          label: "Spoken transcript ready",
           status: "done",
-          detail: hasAudioEvidence
-            ? undefined
-            : "Caption is not spoken words — retry Analyze later for speech-to-text.",
         },
         { id: "structure", label: "Structure mapped", status: "active" },
       ],
@@ -871,76 +844,71 @@ export async function breakDownResearchItemAction(
       }>)
     : undefined;
 
-  after(() => {
-    void (async () => {
-      try {
-        const staged = await runStagedAnalysis({
-          supabase: analysisSupabase,
-          userId,
-          analysisId,
-          title,
-          transcript: normalized,
-          mode: "deep",
-          subjectType: "viral_outlier",
-          sourceType: "external_research",
-          researchItemId: item.id,
-          timedSegments,
-          frames: [],
-        });
-        await analysisSupabase
-          .from("video_analyses")
-          .update({
-            status: "ready",
-            result: staged.result,
-            transcript_hash: staged.transcriptHash,
-            input_hash: staged.inputHash,
-            context_hash: staged.contextHash,
-            processing_stages: staged.stages,
-            model_name: staged.modelName,
-            prompt_version: staged.promptVersion,
-            estimated_cost_usd: staged.estimatedCostUsd,
-            knowledge_sources: staged.knowledgeSources,
-            has_audio_evidence: hasAudioEvidence,
-            processing_error: null,
-          })
-          .eq("id", analysisId)
-          .eq("user_id", userId);
+  try {
+    const staged = await runStagedAnalysis({
+      supabase: analysisSupabase,
+      userId,
+      analysisId,
+      title,
+      transcript: normalized,
+      mode: "deep",
+      subjectType: "viral_outlier",
+      sourceType: "external_research",
+      researchItemId: item.id,
+      timedSegments,
+      frames: [],
+    });
+    await analysisSupabase
+      .from("video_analyses")
+      .update({
+        status: "ready",
+        result: staged.result,
+        transcript_hash: staged.transcriptHash,
+        input_hash: staged.inputHash,
+        context_hash: staged.contextHash,
+        processing_stages: staged.stages,
+        model_name: staged.modelName,
+        prompt_version: staged.promptVersion,
+        estimated_cost_usd: staged.estimatedCostUsd,
+        knowledge_sources: staged.knowledgeSources,
+        has_audio_evidence: hasAudioEvidence,
+        processing_error: null,
+      })
+      .eq("id", analysisId)
+      .eq("user_id", userId);
 
-        await persistAnalysisEvidence({
-          supabase: analysisSupabase,
-          userId,
-          analysisId,
-          result: staged.result,
-        });
+    await persistAnalysisEvidence({
+      supabase: analysisSupabase,
+      userId,
+      analysisId,
+      result: staged.result,
+    });
 
-        const transcriptHook = staged.result.hooks[0]?.text?.trim() || null;
-        if (transcriptHook) {
-          await analysisSupabase
-            .from("research_items")
-            .update({ hook_text: transcriptHook.slice(0, 500) })
-            .eq("id", item.id)
-            .eq("user_id", userId);
-        }
-      } catch (error) {
-        await analysisSupabase
-          .from("video_analyses")
-          .update({
-            status: "failed",
-            processing_error:
-              error instanceof Error
-                ? error.message.slice(0, 500)
-                : "Analysis failed",
-          })
-          .eq("id", analysisId)
-          .eq("user_id", userId);
-        console.error(
-          `[analyze] deferred research breakdown failed: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    })();
-  });
+    const transcriptHook = staged.result.hooks[0]?.text?.trim() || null;
+    if (transcriptHook) {
+      await analysisSupabase
+        .from("research_items")
+        .update({ hook_text: transcriptHook.slice(0, 500) })
+        .eq("id", item.id)
+        .eq("user_id", userId);
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Analysis failed";
+    await analysisSupabase
+      .from("video_analyses")
+      .update({
+        status: "failed",
+        processing_error: message.slice(0, 500),
+      })
+      .eq("id", analysisId)
+      .eq("user_id", userId);
+    console.error(`[analyze] research breakdown failed: ${message}`);
+    return {
+      error: `${message} The transcript was saved, so you can retry without transcribing again.`,
+      analysisId,
+    };
+  }
 
   revalidatePath("/analyze");
   revalidatePath(`/analyze/${analysisId}`);

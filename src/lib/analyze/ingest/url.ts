@@ -104,6 +104,12 @@ export async function ingestPublicVideoUrl(
       ? await fetchYouTubeTranscript(videoId)
       : null;
     if (transcript) {
+      console.info("[transcript:ingest] success", {
+        platform,
+        provider: "youtube_captions",
+        characters: transcript.length,
+        billableRequests: 0,
+      });
       return {
         ok: true,
         platform,
@@ -128,6 +134,12 @@ export async function ingestPublicVideoUrl(
         maxPollMs: options?.maxPollMs,
       });
       const videoId = platform === "youtube" ? extractYouTubeId(trimmed) : null;
+      console.info("[transcript:ingest] success", {
+        platform,
+        provider: transcript.provider,
+        characters: transcript.normalizedTranscript.length,
+        billableRequests: transcript.billableRequests,
+      });
       return {
         ok: true,
         platform,
@@ -146,6 +158,13 @@ export async function ingestPublicVideoUrl(
       };
     } catch (error) {
       if (platform !== "youtube") {
+        console.warn("[transcript:ingest] failed", {
+          platform,
+          reason:
+            error instanceof Error
+              ? error.message
+              : "Supadata could not create a transcript.",
+        });
         return {
           ok: false,
           reason:
@@ -161,12 +180,17 @@ export async function ingestPublicVideoUrl(
     }
   }
 
-  return {
+  const failure = {
     ok: false,
     reason: isSupadataConfigured()
       ? "No usable public transcript was returned."
       : "SUPADATA_API_KEY is not configured for social-video transcripts.",
     platform,
     suggestion: platformSuggestion(platform),
-  };
+  } as const;
+  console.warn("[transcript:ingest] failed", {
+    platform,
+    reason: failure.reason,
+  });
+  return failure;
 }

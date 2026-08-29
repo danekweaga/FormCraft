@@ -179,12 +179,58 @@ describe("provider budget", () => {
   });
 
   it("does not classify official Meta discovery as a paid/quota provider", async () => {
-    const { isDiscoveryProviderBudgeted } = await import("./provider-budget");
+    const {
+      getDiscoveryBudgetsForPlatform,
+      isDiscoveryProviderBudgeted,
+    } = await import("./provider-budget");
     expect(isDiscoveryProviderBudgeted("meta_instagram_business_discovery")).toBe(
       false,
     );
     expect(isDiscoveryProviderBudgeted("scrapecreators")).toBe(true);
+    expect(isDiscoveryProviderBudgeted("youtube_data_api")).toBe(false);
     expect(isDiscoveryProviderBudgeted("supadata")).toBe(false);
+    const base = {
+      dailyCalls: 50,
+      monthlyCalls: 500,
+      maxResultsPerQuery: 50,
+      autoDeepAnalysis: false,
+    };
+    expect(getDiscoveryBudgetsForPlatform("instagram", base)).toMatchObject({
+      dailyCalls: 35,
+      monthlyCalls: 350,
+    });
+    expect(getDiscoveryBudgetsForPlatform("tiktok", base)).toMatchObject({
+      dailyCalls: 15,
+      monthlyCalls: 150,
+    });
+  });
+
+  it("counts only attributed Instagram and TikTok usage", async () => {
+    const { countDiscoveryUsageByPlatform } = await import("./provider-budget");
+    const usage = countDiscoveryUsageByPlatform({
+      dayStartIso: "2026-08-23T00:00:00.000Z",
+      events: [
+        {
+          provider: "scrapecreators",
+          metadata: { platform: "instagram" },
+          created_at: "2026-08-23T01:00:00.000Z",
+        },
+        {
+          provider: "tiktokapi_store",
+          metadata: null,
+          created_at: "2026-08-22T01:00:00.000Z",
+        },
+        {
+          provider: "youtube_data_api",
+          metadata: { platform: "youtube" },
+          created_at: "2026-08-23T01:00:00.000Z",
+        },
+      ],
+    });
+    expect(usage).toEqual({
+      instagram: { callsToday: 1, callsMonth: 1 },
+      tiktok: { callsToday: 0, callsMonth: 1 },
+    });
   });
 });
 

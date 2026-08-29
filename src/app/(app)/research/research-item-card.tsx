@@ -311,7 +311,7 @@ export function ResearchItemCard({
                 })
               }
             >
-              Don't recommend
+              Don&apos;t recommend
             </Button>
             <form action={deleteResearchItemAction} className="min-w-0">
               <input type="hidden" name="id" value={item.id} />

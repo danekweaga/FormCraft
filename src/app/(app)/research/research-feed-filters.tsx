@@ -56,14 +56,11 @@ export function ResearchFeedWithFilters({
     if (saveState.success) router.refresh();
   }, [router, saveState.success]);
 
-  useEffect(() => {
-    if (
-      selectedSavedFilter &&
-      !savedFilters.some((option) => option.id === selectedSavedFilter)
-    ) {
-      setSelectedSavedFilter("");
-    }
-  }, [savedFilters, selectedSavedFilter]);
+  const activeSavedFilter = savedFilters.some(
+    (option) => option.id === selectedSavedFilter,
+  )
+    ? selectedSavedFilter
+    : "";
 
   const creators = useMemo(() => {
     const names = Array.from(
@@ -105,7 +102,7 @@ export function ResearchFeedWithFilters({
               <select
                 id="saved-research-filter"
                 className="h-10 w-full rounded-md border border-outline-variant/30 bg-surface-container-lowest px-3 text-sm"
-                value={selectedSavedFilter}
+                value={activeSavedFilter}
                 onChange={(event) => {
                   const id = event.target.value;
                   setSelectedSavedFilter(id);
