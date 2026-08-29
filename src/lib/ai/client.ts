@@ -123,13 +123,71 @@ async function recordUsage(
   });
 }
 
-function extractJsonObject(text: string): unknown {
+function stripMarkdownCodeFence(text: string): string {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i);
+  if (fenced) return fenced[1]!.trim();
+  return trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+}
+
+function repairJsonPayload(text: string): string {
+  let repaired = stripMarkdownCodeFence(text);
+  repaired = repaired.replace(/,\s*([}\]])/g, "$1");
+  return repaired;
+}
+
+function extractJsonSlice(text: string): string {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start === -1 || end === -1 || end <= start) {
     throw new Error("No JSON object in model response");
   }
-  return JSON.parse(text.slice(start, end + 1));
+  return text.slice(start, end + 1);
+}
+
+/** Parse the first JSON object from a model response, with light repair for common issues. */
+export function parseModelJson(text: string): unknown {
+  const slice = extractJsonSlice(text);
+  const attempts = [
+    () => JSON.parse(slice),
+    () => JSON.parse(repairJsonPayload(slice)),
+    () => JSON.parse(repairJsonPayload(text)),
+  ];
+  let lastError: unknown;
+  for (const attempt of attempts) {
+    try {
+      return attempt();
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Invalid JSON in model response");
+}
+
+function extractJsonObject(text: string): unknown {
+  return parseModelJson(text);
+}
+
+/** Map technical AI errors to short copy safe to show in the product UI. */
+export function humanizeAiFallbackReason(raw: string): string {
+  const message = raw.trim();
+  if (!message) return "A built-in draft was used instead.";
+
+  if (/OPENROUTER_API_KEY|not configured/i.test(message)) {
+    return "AI is not configured on the server. A built-in draft was used instead.";
+  }
+  if (/budget|daily ai spend|monthly ai spend/i.test(message)) {
+    return message;
+  }
+  if (/json|schema|parse|zod|expected.*received|validation failed/i.test(message)) {
+    return "The model returned a broken response. A built-in draft was used instead.";
+  }
+  if (/fetch|network|timeout|ECONN|ETIMEDOUT|429|rate.?limit/i.test(message)) {
+    return "Could not reach the AI service right now. A built-in draft was used instead.";
+  }
+  return "AI generation was unavailable. A built-in draft was used instead.";
 }
 
 export function createFormCraftAI(supabase: SupabaseClient): AIProvider {
@@ -318,7 +376,11 @@ export function createFormCraftAI(supabase: SupabaseClient): AIProvider {
           const repair =
             attempt === 0
               ? ""
-              : "\n\nPrevious response was invalid JSON. Return ONLY valid JSON matching the schema.";
+              : `\n\nYour previous response could not be parsed as valid JSON${
+                  lastError instanceof Error
+                    ? ` (${lastError.message.replace(/\s+/g, " ").slice(0, 180)})`
+                    : ""
+                }. Return ONLY one valid JSON object matching the schema. No markdown fences, comments, or trailing commas.`;
           lastResult = await this.generateText({
             ...input,
             cacheKey:
@@ -387,23 +449,21 @@ export async function tryStructuredAI<T>(params: {
       params.input,
     );
   } catch (error) {
-    let fallbackReason =
+    const rawReason =
       error instanceof Error ? error.message : "AI generation failed.";
-    if (!isLlmConfigured()) {
-      fallbackReason =
-        "OPENROUTER_API_KEY is not configured on the server.";
-    } else if (error instanceof AiBudgetError) {
-      fallbackReason = error.message;
-    } else if (/json|schema|parse/i.test(fallbackReason)) {
-      fallbackReason = `Model returned invalid JSON: ${fallbackReason}`;
-    } else if (/fetch|network|timeout|ECONN|ETIMEDOUT/i.test(fallbackReason)) {
-      fallbackReason = `OpenRouter request failed: ${fallbackReason}`;
-    }
+    const fallbackReason = humanizeAiFallbackReason(
+      !isLlmConfigured()
+        ? "OPENROUTER_API_KEY is not configured on the server."
+        : error instanceof AiBudgetError
+          ? error.message
+          : rawReason,
+    );
     console.error("[ai:fallback] structured generation unavailable", {
       taskType: params.input.taskType,
       role: params.input.role,
       modelName: params.input.modelName ?? null,
-      reason: fallbackReason,
+      reason: rawReason,
+      userMessage: fallbackReason,
     });
     return {
       text: "",

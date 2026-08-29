@@ -104,7 +104,7 @@ export function CreateMyVersion({
           <CardContent className="space-y-5">
             {!directionState.usedLlm && directionState.fallbackReason ? (
               <p className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-on-background">
-                AI was unavailable: {directionState.fallbackReason}
+                {directionState.fallbackReason}
               </p>
             ) : null}
             <div className="grid gap-3 md:grid-cols-2">
@@ -185,7 +185,7 @@ export function CreateMyVersion({
           <CardContent className="space-y-5">
             {!scriptState.usedLlm && scriptState.fallbackReason ? (
               <p className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-on-background">
-                AI was unavailable: {scriptState.fallbackReason}
+                {scriptState.fallbackReason}
               </p>
             ) : null}
             <pre className="whitespace-pre-wrap rounded-lg bg-surface-container-lowest p-5 font-sans text-sm leading-relaxed text-on-background">{scriptState.package.script}</pre>

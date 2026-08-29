@@ -201,7 +201,7 @@ export async function createMyVersionAction(
       promptVersion: "create-my-version-hook-story-library-v4",
       modelName: context.modelName,
       cacheKey: hashAiInput(["create-my-version-hook-story-library-v4", source.id, parsed.data.spin, context.provenance]),
-      maxOutputTokens: 1800,
+      maxOutputTokens: 3200,
       temperature: 0.35,
       schema: contentDirectionSchema,
       messages: [
