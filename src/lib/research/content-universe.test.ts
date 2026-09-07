@@ -42,10 +42,13 @@ describe("classifyCreatorContentUniverse", () => {
     "Grok imagine making fruit",
     "GPT fruit cutting",
     "AI satisfying watermelon",
+    "This cinematic short film was made with Sora and tells the story of a lost astronaut searching for home",
     "Fortnite ranked grind tips",
     "Minecraft survival world tour",
     "Best gaming setup 2026",
     "Valorant clutch highlights",
+    "Este video explica cómo organizar tu rutina diaria y mejorar tus hábitos personales para conseguir mejores resultados cada semana",
+    "यह वीडियो आपको रोजाना बेहतर आदतें बनाने और अपना जीवन सुधारने के आसान तरीके सिखाता है",
   ])("drops an unrelated video: %s", (title) => {
     expect(classify(title).relevant).toBe(false);
   });

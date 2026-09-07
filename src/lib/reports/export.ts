@@ -14,6 +14,7 @@ export function reportToMarkdown(report: ReportResult): string {
     section("Contradictory Evidence", report.contradictoryEvidence),
     section("What This Report Cannot Conclude", report.cannotConclude),
     section("Recommended Actions", report.recommendedActions),
+    ...(report.feedbackPlan ? [section("Next Three Posts", report.feedbackPlan.nextThreePosts), `## Controlled Test\n\n${report.feedbackPlan.controlledTest}\n\n## Success Check\n\n${report.feedbackPlan.successCheck}\n\n## Review\n\n${report.feedbackPlan.reviewAfter}`] : []),
     section("Data Quality", [...report.dataQuality.warnings, `Coverage: ${report.dataQuality.metricsCoveragePct}%`, `Confidence: ${report.dataQuality.confidence}`]),
     `## Provenance\n\nSnapshot: \`${report.provenance.snapshotHash}\`\n\nMetrics: ${report.provenance.metricsUsed.join(", ")}`,
   ].join("\n\n");

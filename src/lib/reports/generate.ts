@@ -11,6 +11,7 @@ import {
   reportTopic,
 } from "./metrics";
 import { reportTemplate } from "./templates";
+import { buildReportFeedbackPlan } from "./feedback-plan";
 import type {
   ReportAction,
   ReportConfidence,
@@ -253,6 +254,7 @@ export async function generateReportRun(params: {
       contradictoryEvidence: ai.data.contradictoryEvidence,
       cannotConclude: ai.data.cannotConclude,
       recommendedActions: ai.data.recommendedActions,
+      feedbackPlan: buildReportFeedbackPlan({ eligiblePosts: posts.length, topics: topicGroups, hooks: hookGroups, formats: formatGroups }),
       dataQuality,
       topicGroups,
       hookGroups,

@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import type { ReportMetricGroup, ReportResult, ReportRunRow } from "@/lib/reports/types";
 import { createClient } from "@/lib/supabase/server";
 import { CopyReportButton } from "./copy-report-button";
+import { buildReportFeedbackPlan } from "@/lib/reports/feedback-plan";
 
 export default async function ReportRunPage({ params }: { params: Promise<{ runId: string }> }) {
   const { runId } = await params;
@@ -19,11 +20,13 @@ export default async function ReportRunPage({ params }: { params: Promise<{ runI
   const report = run.result as ReportResult;
   if (!report?.version) return <div><PageHeader title="Report run" description="This report is not ready yet." /><Badge variant="default">{run.status}</Badge>{run.error_message ? <p className="mt-4 text-error">{run.error_message}</p> : null}</div>;
   const { data: comparable } = await supabase.from("report_runs").select("id,created_at").eq("user_id", user.id).eq("report_type", run.report_type).in("status", ["ready", "partial"]).neq("id", run.id).order("created_at", { ascending: false }).limit(1);
+  const plan = report.feedbackPlan ?? buildReportFeedbackPlan({ eligiblePosts: report.dataQuality.eligiblePosts, topics: report.topicGroups, hooks: report.hookGroups, formats: report.formatGroups });
 
   return <div className="space-y-6">
     <PageHeader title={report.title} description={report.summary} actions={<><CopyReportButton text={`${report.title}\n\n${report.summary}\n\n${report.recommendedActions.join("\n")}`} /><Button asChild variant="outline"><Link href={`/api/reports/${run.id}/export?format=markdown`}>Export Markdown</Link></Button><Button asChild variant="outline"><Link href={`/api/reports/${run.id}/export?format=json`}>Export JSON</Link></Button>{comparable?.[0] ? <Button asChild><Link href={`/reports/compare?left=${comparable[0].id}&right=${run.id}`}>Compare</Link></Button> : null}</>} />
     <div className="flex flex-wrap gap-2"><Badge variant={run.status === "ready" ? "primary" : "default"}>{run.status}</Badge><Badge variant="default">{report.dataQuality.confidence} confidence</Badge><Badge variant="default">{report.dataQuality.metricsCoveragePct}% metric coverage</Badge><Badge variant="default">{report.dataQuality.freshness} data</Badge><Badge variant="default">model: {run.model ?? "deterministic"}</Badge></div>
     <div className="grid gap-4 md:grid-cols-3"><Stat label="Eligible posts" value={report.dataQuality.eligiblePosts} /><Stat label="Audience comments" value={report.provenance.sourceCounts.comments ?? 0} /><Stat label="Retention available" value={report.dataQuality.retentionAvailable} /></div>
+    <Card className="border-primary/40"><CardHeader><CardTitle>Your next content sprint</CardTitle><CardDescription>{plan.focus}</CardDescription></CardHeader><CardContent className="space-y-5"><div><p className="text-xs font-semibold uppercase tracking-wide text-secondary">Why this plan</p><p className="mt-1">{plan.evidence}</p></div><div><p className="text-xs font-semibold uppercase tracking-wide text-secondary">Next three posts</p><ol className="mt-2 space-y-2">{plan.nextThreePosts.map((item, index) => <li key={item} className="flex gap-3"><span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{index + 1}</span><span>{item}</span></li>)}</ol></div><div className="grid gap-3 md:grid-cols-3"><PlanBox label="Test" text={plan.controlledTest} /><PlanBox label="Measure" text={plan.successCheck} /><PlanBox label="Review" text={plan.reviewAfter} /></div><Button asChild><Link href="/create">Build the first post</Link></Button></CardContent></Card>
     <RequiredSection title="Observed Data" items={report.observedData} tone="blue" />
     <RequiredSection title="Patterns" items={report.patterns} />
     <RequiredSection title="AI Interpretation" description="Model interpretation is separated from measured facts." items={report.aiInterpretation} tone="purple" />
@@ -38,6 +41,8 @@ export default async function ReportRunPage({ params }: { params: Promise<{ runI
 }
 
 function Stat({ label, value }: { label: string; value: number }) { return <Card><CardContent className="p-5"><p className="text-sm text-secondary">{label}</p><p className="mt-1 text-3xl font-semibold">{value.toLocaleString()}</p></CardContent></Card>; }
+
+function PlanBox({ label, text }: { label: string; text: string }) { return <div className="rounded-xl bg-surface-container-lowest p-4"><p className="text-xs font-semibold uppercase tracking-wide text-primary">{label}</p><p className="mt-2 text-sm text-secondary">{text}</p></div>; }
 
 function RequiredSection({ title, description, items, tone }: { title: string; description?: string; items: string[]; tone?: "blue" | "purple" | "amber" | "red" | "green" }) {
   const colors = { blue: "border-blue-500/30", purple: "border-purple-500/30", amber: "border-amber-500/30", red: "border-red-500/30", green: "border-emerald-500/30" };

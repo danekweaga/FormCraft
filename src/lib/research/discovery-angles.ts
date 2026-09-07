@@ -42,7 +42,8 @@ export function buildDiscoveryAngles(params: {
   const extras = [...(params.keywords ?? []), ...(params.topics ?? [])]
     .map((value) => value.trim())
     .filter(Boolean);
-  const angles = uniqueQueries([niche, ...extras.slice(0, 6)]);
+  const specificExtras = extras.filter(looksLikeTechNiche);
+  const angles = uniqueQueries([niche, ...specificExtras.slice(0, 4)]);
   const haystack = `${niche} ${extras.join(" ")}`;
   if (!niche || looksLikeTechNiche(haystack)) {
     angles.push(...uniqueQueries(CS_LANES));

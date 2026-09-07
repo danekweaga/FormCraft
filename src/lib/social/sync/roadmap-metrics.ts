@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { SocialConnectionRow } from "../types";
+import { followerProgress, readFollowerGoal } from "@/lib/growth/follower-goal";
 
 /**
  * Updates supported numeric roadmap metrics from sync.
@@ -31,8 +32,15 @@ export async function updateRoadmapFromSync(params: {
     .eq("social_connection_id", params.connection.id);
 
   for (const roadmap of roadmaps) {
+    const goal = readFollowerGoal(roadmap.metadata);
+    // A TikTok refresh must never overwrite an Instagram follower goal.
+    if (goal && goal.connectionId !== params.connection.id) continue;
+    const goalUpdate = goal && params.followerCount != null ? {
+      follower_goal: { ...goal, current: params.followerCount, updatedAt: new Date().toISOString() },
+    } : {};
     const metadata = {
       ...((roadmap.metadata as Record<string, unknown>) ?? {}),
+      ...goalUpdate,
       synced_metrics: {
         platform: params.connection.platform,
         connection_id: params.connection.id,
@@ -43,11 +51,12 @@ export async function updateRoadmapFromSync(params: {
       },
     };
 
-    await admin
+    const { error: updateError } = await admin
       .from("creator_roadmaps")
-      .update({ metadata })
+      .update({ metadata, ...(goal && params.followerCount != null ? { progress_pct: followerProgress(params.followerCount, goal.target) } : {}) })
       .eq("id", roadmap.id)
       .eq("user_id", params.userId);
+    if (updateError) throw updateError;
 
     const { data: milestones } = await admin
       .from("roadmap_milestones")

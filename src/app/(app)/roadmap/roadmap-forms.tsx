@@ -8,6 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   createMilestone,
   createRoadmap,
+  saveFollowerGoal,
+  refreshRoadmapFollowers,
+  updateMilestoneStatus,
   type GrowthActionState,
 } from "./actions";
 
@@ -26,8 +29,7 @@ export function CreateRoadmapForm() {
           Create a roadmap
         </h2>
         <p className="mt-1 text-sm text-secondary">
-          Set a personal growth goal and current phase. Auto and AI milestones
-          stay deferred — only manual entries for now.
+          Set your direction, then connect a follower goal and track your checkpoints.
         </p>
       </div>
       <div className="space-y-2">
@@ -59,6 +61,31 @@ export function CreateRoadmapForm() {
       </Button>
     </form>
   );
+}
+
+export function FollowerGoalForm({ roadmapId, target, current, connectionId, accounts }: {
+  roadmapId: string; target: number; current: number | null; connectionId: string | null;
+  accounts: Array<{ id: string; label: string }>;
+}) {
+  const [state, action, pending] = useActionState(saveFollowerGoal, initial);
+  const [refreshState, refresh, refreshing] = useActionState(refreshRoadmapFollowers, initial);
+  return <div className="space-y-4">
+    <form action={action} className="grid gap-3 sm:grid-cols-2">
+      <input type="hidden" name="roadmapId" value={roadmapId} />
+      <label className="space-y-1 text-sm">Follower goal<Input name="target" type="number" min={1} max={100000000} defaultValue={target} required /></label>
+      <label className="space-y-1 text-sm">Track account<select name="connectionId" defaultValue={connectionId ?? ""} className="w-full rounded-md border border-outline-variant/30 bg-surface-container-lowest p-2"><option value="">Update manually</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.label}</option>)}</select></label>
+      <label className="space-y-1 text-sm">Current followers (manual mode)<Input name="current" type="number" min={0} max={1000000000} defaultValue={current ?? ""} /></label>
+      <p className="text-xs text-secondary">Connected mode uses your latest account sync. Manual values are only used when “Update manually” is selected.</p>
+      <Button disabled={pending}>{pending ? "Saving…" : "Save follower goal"}</Button>
+      {state.error ? <p role="alert" className="text-sm text-error">{state.error}</p> : state.success ? <p role="status" className="text-sm">Goal updated.</p> : null}
+    </form>
+    {connectionId ? <form action={refresh} className="space-y-2"><input type="hidden" name="roadmapId" value={roadmapId} /><Button variant="outline" disabled={refreshing}>{refreshing ? "Refreshing followers…" : "Refresh follower count"}</Button>{refreshState.error ? <p role="alert" className="text-sm text-error">{refreshState.error}</p> : refreshState.success ? <p role="status" className="text-sm">Account refreshed.</p> : null}</form> : null}
+  </div>;
+}
+
+export function MilestoneStatusForm({ id, status }: { id: string; status: string }) {
+  const [state, action, pending] = useActionState(updateMilestoneStatus, initial);
+  return <form action={action} className="mt-3 flex flex-wrap items-center gap-2"><input type="hidden" name="id" value={id} /><select aria-label="Milestone status" name="status" defaultValue={status} className="rounded border border-outline-variant/30 bg-surface-container-lowest p-2 text-sm">{["not_started", "in_progress", "done", "blocked", "skipped"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}</select><Button variant="outline" disabled={pending}>{pending ? "Saving…" : "Update"}</Button>{state.error ? <p role="alert">{state.error}</p> : null}</form>;
 }
 
 export function CreateMilestoneForm({ roadmapId }: { roadmapId: string }) {

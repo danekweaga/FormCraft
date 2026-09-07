@@ -3,7 +3,8 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { createClient } from "@/lib/supabase/server";
-import { CreateMilestoneForm, CreateRoadmapForm } from "./roadmap-forms";
+import { CreateMilestoneForm, CreateRoadmapForm, FollowerGoalForm, MilestoneStatusForm } from "./roadmap-forms";
+import { checkpointPlan, followerCheckpoints, followerProgress, readFollowerGoal } from "@/lib/growth/follower-goal";
 import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import {
   deleteMilestoneAction,
@@ -21,12 +22,16 @@ export default async function RoadmapPage() {
   const { data: roadmaps } = await supabase
     .from("creator_roadmaps")
     .select(
-      "id, goal, current_phase, progress_pct, status, created_at, updated_at",
+      "id, goal, current_phase, progress_pct, status, created_at, updated_at, metadata",
     )
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
-  const active = roadmaps?.[0] ?? null;
+  const active = roadmaps?.find((row) => row.status === "active") ?? roadmaps?.[0] ?? null;
+  const followerGoal = readFollowerGoal(active?.metadata ?? null);
+  const { data: accounts } = await supabase.from("social_connections").select("id,platform,username,display_name").eq("user_id", user.id).eq("account_type", "owned").eq("use_for_roadmap", true).neq("status", "disconnected");
+  const checkpoints = followerCheckpoints(followerGoal?.target ?? 10000);
+  const nextCheckpoint = checkpoints.find((value) => value > (followerGoal?.current ?? -1));
 
   const { data: milestones } = active
     ? await supabase
@@ -42,7 +47,7 @@ export default async function RoadmapPage() {
     <div>
       <PageHeader
         title="Roadmap"
-        description="Aim your creator operating loop. Track a personal goal, phase, and milestones — manual for now; auto and AI-suggested progress stay deferred."
+        description="Track your follower journey, reach checkpoints, and turn each stage into a content plan."
       />
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -66,10 +71,25 @@ export default async function RoadmapPage() {
                 {active.goal}
               </h2>
               <p className="mt-2 text-sm text-secondary">
-                Progress is manual until Experiment Lab and My Content signals
-                can update milestones honestly.
+                Connect a follower goal below. Your progress updates whenever that account syncs.
               </p>
             </div>
+
+            <section className="space-y-5 rounded-xl border border-primary/30 bg-surface-primary p-5">
+              <h2 className="text-xl font-semibold">Your follower journey</h2>
+              <p className="text-3xl font-semibold">{followerGoal?.current?.toLocaleString() ?? "—"} <span className="text-base text-secondary">/ {(followerGoal?.target ?? 10000).toLocaleString()} followers</span></p>
+              <progress className="h-3 w-full accent-primary" aria-label="Follower goal progress" max={100} value={followerProgress(followerGoal?.current ?? null, followerGoal?.target ?? 10000)} />
+              <p className="text-sm text-secondary">{followerGoal?.updatedAt ? `Count updated ${new Date(followerGoal.updatedAt).toLocaleString("en-CA", { timeZone: "UTC" })} UTC` : "Save your current count or connect an account to establish your starting point."}</p>
+              <FollowerGoalForm key={`${active.id}:${followerGoal?.connectionId}:${followerGoal?.updatedAt}`} roadmapId={active.id} target={followerGoal?.target ?? 10000} current={followerGoal?.current ?? null} connectionId={followerGoal?.connectionId ?? null} accounts={(accounts ?? []).map((account) => ({ id: account.id, label: `${account.platform} · ${account.username || account.display_name || "Connected account"}` }))} />
+              <ol className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {checkpoints.map((checkpoint) => {
+                  const reached = followerGoal?.current != null && followerGoal.current >= checkpoint;
+                  const next = checkpoint === nextCheckpoint;
+                  return <li key={checkpoint} aria-current={next ? "step" : undefined} className={`rounded-2xl border p-4 ${reached ? "border-emerald-500/50 bg-emerald-500/10" : next ? "border-primary bg-primary/10" : "border-outline-variant/20"}`}><span className="text-xs text-secondary">{reached ? "✓ Reached" : next ? "Next checkpoint" : "Ahead"}</span><p className="text-xl font-semibold">{checkpoint.toLocaleString()}</p></li>;
+                })}
+              </ol>
+              {nextCheckpoint ? <div className="rounded-xl bg-surface-container-lowest p-4"><h3 className="font-semibold">Plan for {nextCheckpoint.toLocaleString()}</h3><p className="mt-2 text-sm text-secondary">{checkpointPlan(nextCheckpoint)}</p><p className="mt-2 text-xs text-secondary">Suggested experiment for this stage; follower growth is not guaranteed. Review after your next three posts.</p></div> : <p className="font-semibold text-emerald-600">Goal reached. Set your next target when you’re ready.</p>}
+            </section>
 
             <CreateMilestoneForm roadmapId={active.id} />
 
@@ -104,6 +124,7 @@ export default async function RoadmapPage() {
                         {milestone.notes}
                       </p>
                     ) : null}
+                    <MilestoneStatusForm id={milestone.id} status={milestone.status} />
                   </li>
                 ))}
               </ul>
@@ -112,7 +133,7 @@ export default async function RoadmapPage() {
         ) : (
           <EmptyState
             title="No roadmap yet"
-            description="Create a goal to start Phase A of the Creator Growth loop. Later phases will suggest milestones from real performance — never invented metrics."
+            description="Create your roadmap, then set a follower target and choose your connected account."
           />
         )}
       </div>

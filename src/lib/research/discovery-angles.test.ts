@@ -26,4 +26,16 @@ describe("buildDiscoveryAngles", () => {
     expect(first.batch).toEqual(["ai cs students", "tech news"]);
     expect(second.batch).toEqual(["ai startup", "ai cs students"]);
   });
+
+  it("does not spend discovery calls on broad saved topics", () => {
+    const angles = buildDiscoveryAngles({
+      niche: "computer science students",
+      keywords: ["motivation", "breaking", "viral videos"],
+      topics: ["software projects"],
+    });
+    expect(angles).not.toContain("motivation");
+    expect(angles).not.toContain("breaking");
+    expect(angles).not.toContain("viral videos");
+    expect(angles).toContain("software projects");
+  });
 });

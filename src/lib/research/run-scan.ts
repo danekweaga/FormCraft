@@ -394,7 +394,7 @@ export async function runResearchScan(params: {
       const { batch, nextCursor } = nextDiscoveryQueryBatch(
         discoveryQueries.length > 0 ? discoveryQueries : [scan.query],
         Number(parameters.discovery_query_cursor) || 0,
-        4,
+        2,
       );
       parameters.discovery_query_cursor = nextCursor;
       const perQuery = Math.max(8, Math.ceil(maxResults / Math.max(1, batch.length)));

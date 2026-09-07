@@ -119,6 +119,7 @@ export type ReportResult = {
   contradictoryEvidence: string[];
   cannotConclude: string[];
   recommendedActions: string[];
+  feedbackPlan?: import("./feedback-plan").ReportFeedbackPlan;
   dataQuality: ReportDataQuality;
   topicGroups: ReportMetricGroup[];
   hookGroups: ReportMetricGroup[];

@@ -1,4 +1,5 @@
 import type { ScoredResearchVideo } from "./types";
+import { isClearlyNonEnglishText } from "./language-gate";
 
 export type NicheUniverseContext = {
   mainNiche?: string | null;
@@ -211,7 +212,7 @@ const DEV_SLOP_RESCUE_TERMS = [
 ];
 
 export const HARD_EXCLUSION_REASON_PATTERN =
-  /excluded|off-niche|india-specific|south asian|ai entertainment slop|gaming entertainment/i;
+  /excluded|off-niche|non-english|india-specific|south asian|ai entertainment slop|gaming entertainment/i;
 
 // Nonso's target audience is North American/English-speaking. These markers
 // identify videos aimed at the Indian education/job market; we do not infer a
@@ -287,8 +288,9 @@ function looksLikeAiEntertainmentSlop(
   const hasGeneration = generation.length > 0 || genRegex.test(rawMetadata);
   if (!hasGeneration) return [];
 
-  if (subjects.length === 0) return [];
-  return [...generation.slice(0, 2), ...subjects.slice(0, 3)];
+  return subjects.length > 0
+    ? [...generation.slice(0, 2), ...subjects.slice(0, 3)]
+    : [...(generation.length ? generation.slice(0, 3) : ["AI-generated entertainment"])];
 }
 
 function looksLikeGamingEntertainment(haystack: string): string[] {
@@ -360,6 +362,15 @@ export function classifyCreatorContentUniverse(
     `${item.title ?? ""} ${item.creatorName ?? ""}`,
   );
   const detailHaystack = normalize(rawMetadata);
+
+  if (isClearlyNonEnglishText(rawMetadata)) {
+    return {
+      relevant: false,
+      category: null,
+      reason: "Matches excluded non-English content",
+      matchedTerms: ["non-English metadata"],
+    };
+  }
 
   const explicitlyExcluded = (context?.excludedTopics ?? [])
     .map((term) => term.toLowerCase())
