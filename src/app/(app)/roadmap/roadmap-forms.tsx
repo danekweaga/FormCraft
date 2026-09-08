@@ -69,17 +69,17 @@ export function FollowerGoalForm({ roadmapId, target, current, connectionId, acc
 }) {
   const [state, action, pending] = useActionState(saveFollowerGoal, initial);
   const [refreshState, refresh, refreshing] = useActionState(refreshRoadmapFollowers, initial);
+  const selectedConnectionId = connectionId ?? accounts[0]?.id ?? "";
   return <div className="space-y-4">
-    <form action={action} className="grid gap-4">
+    {accounts.length ? <form action={action} className="grid gap-4">
       <input type="hidden" name="roadmapId" value={roadmapId} />
       <label className="space-y-1.5 text-sm font-bold">Final checkpoint<Input name="target" type="number" min={1} max={100000000} defaultValue={target} required /></label>
-      <label className="space-y-1.5 text-sm font-bold">Account to track<select name="connectionId" defaultValue={connectionId ?? ""} className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-2.5 font-medium"><option value="">Update manually</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.label}</option>)}</select></label>
-      <label className="space-y-1.5 text-sm font-bold">Current followers <span className="font-normal text-secondary">(manual only)</span><Input name="current" type="number" min={0} max={1000000000} defaultValue={current ?? ""} /></label>
-      <p className="text-xs text-secondary">Connected mode uses your latest account sync. Manual values are only used when “Update manually” is selected.</p>
+      <label className="space-y-1.5 text-sm font-bold">Account to track<select name="connectionId" defaultValue={selectedConnectionId} className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-2.5 font-medium">{accounts.map((account) => <option key={account.id} value={account.id}>{account.label}</option>)}</select></label>
+      <div className="rounded-2xl bg-emerald-50 p-4 text-emerald-900"><p className="text-xs font-black uppercase tracking-[0.14em]">Automatically synced</p><p className="mt-1 text-2xl font-black">{current?.toLocaleString() ?? "Waiting for first sync"}</p><p className="mt-1 text-xs font-medium">FormCraft reads this count from your connected account. It cannot be edited manually.</p></div>
       <Button className="w-full" disabled={pending}>{pending ? "Saving…" : "Save checkpoint settings"}</Button>
       {state.error ? <p role="alert" className="text-sm text-error">{state.error}</p> : state.success ? <p role="status" className="text-sm">Goal updated.</p> : null}
-    </form>
-    {connectionId ? <form action={refresh} className="space-y-2"><input type="hidden" name="roadmapId" value={roadmapId} /><Button className="w-full" variant="outline" disabled={refreshing}>{refreshing ? "Refreshing followers…" : "↻ Refresh followers now"}</Button>{refreshState.error ? <p role="alert" className="text-sm text-error">{refreshState.error}</p> : refreshState.success ? <p role="status" className="text-sm font-bold text-emerald-700">Follower count updated.</p> : null}</form> : null}
+    </form> : <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm font-medium text-amber-950">Connect Instagram in Connections and enable “Use for roadmap.” Your follower count will then update automatically.</div>}
+    {selectedConnectionId ? <form action={refresh} className="space-y-2"><input type="hidden" name="roadmapId" value={roadmapId} /><input type="hidden" name="connectionId" value={selectedConnectionId} /><Button className="w-full" variant="outline" disabled={refreshing}>{refreshing ? "Checking your account…" : "↻ Check followers now"}</Button>{refreshState.error ? <p role="alert" className="text-sm text-error">{refreshState.error}</p> : refreshState.success ? <p role="status" className="text-sm font-bold text-emerald-700">Follower count and roadmap position updated.</p> : null}</form> : null}
   </div>;
 }
 
