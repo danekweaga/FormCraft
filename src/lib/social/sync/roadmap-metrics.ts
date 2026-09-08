@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { SocialConnectionRow } from "../types";
-import { followerProgress, readFollowerGoal } from "@/lib/growth/follower-goal";
+import { followerProgress, inferFollowerTarget, readFollowerGoal } from "@/lib/growth/follower-goal";
 
 /**
  * Updates supported numeric roadmap metrics from sync.
@@ -18,12 +18,23 @@ export async function updateRoadmapFromSync(params: {
   const admin = createAdminClient();
   const { data: roadmaps } = await admin
     .from("creator_roadmaps")
-    .select("id, metadata, status")
+    .select("id, goal, metadata, status")
     .eq("user_id", params.userId)
     .eq("status", "active")
     .limit(5);
 
   if (!roadmaps?.length) return;
+
+  const { data: roadmapAccounts } = await admin
+    .from("social_connections")
+    .select("id, platform")
+    .eq("user_id", params.userId)
+    .eq("account_type", "owned")
+    .eq("use_for_roadmap", true)
+    .neq("status", "disconnected");
+  const automaticConnectionId = roadmapAccounts?.find((account) => account.platform === "instagram")?.id
+    ?? roadmapAccounts?.[0]?.id
+    ?? params.connection.id;
 
   const { count: postsPublished } = await admin
     .from("content_posts")
@@ -32,11 +43,20 @@ export async function updateRoadmapFromSync(params: {
     .eq("social_connection_id", params.connection.id);
 
   for (const roadmap of roadmaps) {
-    const goal = readFollowerGoal(roadmap.metadata);
-    // A TikTok refresh must never overwrite an Instagram follower goal.
-    if (goal && goal.connectionId !== params.connection.id) continue;
-    const goalUpdate = goal && params.followerCount != null ? {
-      follower_goal: { ...goal, current: params.followerCount, updatedAt: new Date().toISOString() },
+    const savedGoal = readFollowerGoal(roadmap.metadata);
+    const inferredTarget = savedGoal?.target ?? inferFollowerTarget(roadmap.goal);
+    // Avoid binding an unconfigured goal to whichever provider finishes syncing first.
+    const tracksThisConnection = savedGoal?.connectionId
+      ? savedGoal.connectionId === params.connection.id
+      : automaticConnectionId === params.connection.id;
+    const goal = inferredTarget ? {
+      target: inferredTarget,
+      current: savedGoal?.current ?? null,
+      connectionId: savedGoal?.connectionId ?? automaticConnectionId,
+      updatedAt: savedGoal?.updatedAt ?? null,
+    } : null;
+    const goalUpdate = goal && tracksThisConnection && params.followerCount != null ? {
+      follower_goal: { ...goal, current: params.followerCount, connectionId: params.connection.id, updatedAt: new Date().toISOString() },
     } : {};
     const metadata = {
       ...((roadmap.metadata as Record<string, unknown>) ?? {}),
@@ -53,7 +73,7 @@ export async function updateRoadmapFromSync(params: {
 
     const { error: updateError } = await admin
       .from("creator_roadmaps")
-      .update({ metadata, ...(goal && params.followerCount != null ? { progress_pct: followerProgress(params.followerCount, goal.target) } : {}) })
+      .update({ metadata, ...(goal && tracksThisConnection && params.followerCount != null ? { progress_pct: followerProgress(params.followerCount, goal.target) } : {}) })
       .eq("id", roadmap.id)
       .eq("user_id", params.userId);
     if (updateError) throw updateError;
@@ -74,7 +94,7 @@ export async function updateRoadmapFromSync(params: {
         title.includes("follower") ||
         title.includes("subscriber")
       ) {
-        nextValue = params.followerCount;
+        nextValue = tracksThisConnection ? params.followerCount : null;
       } else if (
         category.includes("post") ||
         title.includes("publish") ||

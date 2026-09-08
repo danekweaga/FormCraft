@@ -4,7 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { createClient } from "@/lib/supabase/server";
 import { CreateMilestoneForm, CreateRoadmapForm, FollowerGoalForm, MilestoneStatusForm } from "./roadmap-forms";
-import { checkpointPlan, followerCheckpoints, followerProgress, readFollowerGoal } from "@/lib/growth/follower-goal";
+import { checkpointPlan, followerCheckpoints, followerProgress, inferFollowerTarget, readFollowerGoal } from "@/lib/growth/follower-goal";
+import { connectionFollowerCount } from "@/lib/social/freshness";
 import { ConfirmDeleteButton } from "@/components/ui/confirm-delete-button";
 import {
   deleteMilestoneAction,
@@ -28,8 +29,22 @@ export default async function RoadmapPage() {
     .order("created_at", { ascending: false });
 
   const active = roadmaps?.find((row) => row.status === "active") ?? roadmaps?.[0] ?? null;
-  const followerGoal = readFollowerGoal(active?.metadata ?? null);
-  const { data: accounts } = await supabase.from("social_connections").select("id,platform,username,display_name").eq("user_id", user.id).eq("account_type", "owned").eq("use_for_roadmap", true).neq("status", "disconnected");
+  const savedFollowerGoal = readFollowerGoal(active?.metadata ?? null);
+  const { data: accounts } = await supabase.from("social_connections").select("id,platform,username,display_name,metadata,last_successful_sync_at").eq("user_id", user.id).eq("account_type", "owned").eq("use_for_roadmap", true).neq("status", "disconnected");
+  const selectedAccount = (accounts ?? []).find((account) => account.id === savedFollowerGoal?.connectionId)
+    ?? (accounts ?? []).find((account) => account.platform === "instagram")
+    ?? accounts?.[0]
+    ?? null;
+  const liveFollowerCount = selectedAccount ? connectionFollowerCount(selectedAccount.metadata) : null;
+  const inferredTarget = savedFollowerGoal?.target ?? inferFollowerTarget(active?.goal) ?? 10000;
+  const followerGoal = {
+    target: inferredTarget,
+    current: liveFollowerCount ?? savedFollowerGoal?.current ?? null,
+    connectionId: selectedAccount?.id ?? savedFollowerGoal?.connectionId ?? null,
+    updatedAt: liveFollowerCount != null
+      ? selectedAccount?.last_successful_sync_at ?? savedFollowerGoal?.updatedAt ?? null
+      : savedFollowerGoal?.updatedAt ?? null,
+  };
   const checkpoints = followerCheckpoints(followerGoal?.target ?? 10000);
   const nextCheckpoint = checkpoints.find((value) => value > (followerGoal?.current ?? -1));
 
